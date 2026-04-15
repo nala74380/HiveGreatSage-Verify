@@ -1,0 +1,13 @@
+[Unit]
+Description=HiveGreatSage Verify Service
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/HiveGreatSage-Verify
+Environment="PATH=/opt/HiveGreatSage-Verify/venv/bin"
+ExecStart=/opt/HiveGreatSage-Verify/venv/bin/uvicorn app.main:app --uds /var/run/hive-verify.sock
+
+[Install]
+WantedBy=multi-user.target
