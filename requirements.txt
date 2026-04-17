@@ -1,13 +1,35 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.0
-sqlalchemy==2.0.35
-asyncpg==0.29.0
-alembic==1.13.0
-redis==5.0.0
+# HiveGreatSage-Verify — Python 依赖
+# 生成时间：2026-04-16
+# WSL2 + Ubuntu 24.04 + Python 3.11+
+# 安装命令：pip install -r requirements.txt
+
+# ── Web 框架 ──────────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# ── 数据库 ────────────────────────────────────────────────────
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# ── Redis + 任务队列 ──────────────────────────────────────────
+redis==5.2.1
 celery==5.4.0
-python-dotenv==1.0.0
-pydantic-settings==2.4.0
-bcrypt==4.1.0
+
+# ── 配置管理 ──────────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# ── 安全（JWT + 密码哈希）────────────────────────────────────
 python-jose[cryptography]==3.3.0
-loguru==0.7.2
-sentry-sdk==2.8.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# ── 日志与监控 ────────────────────────────────────────────────
+loguru==0.7.3
+sentry-sdk[fastapi]==2.19.2
+
+# ── 工具 ──────────────────────────────────────────────────────
+python-multipart==0.0.20    # 文件上传支持
+httpx==0.28.1               # 异步 HTTP 客户端（测试用）
