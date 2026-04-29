@@ -147,7 +147,6 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh, User } from '@element-plus/icons-vue'
-import { deviceApi } from '@/api/device'
 import { useDevicePoller } from '@/composables/useDevicePoller'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { formatRelativeTime, formatDatetime } from '@/utils/format'
@@ -184,14 +183,15 @@ const filteredDevices = computed(() => {
 const runningCount = computed(() => devices.value.filter(d => d.status === 'running').length)
 
 // ── 详情抽屉 ─────────────────────────────────────────────────
+// 后台设备列表本身已经返回详情所需字段，不再调用 /api/device/data。
+// /api/device/data 是 User Token 终端接口，Admin / Agent 后台直接调用会 401。
 const drawer = ref({ visible: false, loading: false, data: null })
+
 const openDetail = async (row) => {
-  drawer.value = { visible: true, loading: true, data: null }
-  try {
-    const res = await deviceApi.data(row.device_id)
-    drawer.value.data = res.data
-  } finally {
-    drawer.value.loading = false
+  drawer.value = {
+    visible: true,
+    loading: false,
+    data: { ...row },
   }
 }
 </script>

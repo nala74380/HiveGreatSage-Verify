@@ -1,51 +1,33 @@
 /**
  * 文件位置: src/api/project.js
- * 功能说明: 项目管理 + 代理项目授权接口
+ * 名称: 项目 API 兼容门面
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.1.0
+ * 功能及相关说明:
+ *   兼容旧页面 import { projectApi } from '@/api/project' 的写法。
+ *   当前项目 CRUD 与代理项目授权均属于管理端能力，实际实现已拆到：
+ *     - src/api/admin/project.js
  *
- * 后端路由对照（严格对齐 app/routers/projects.py）：
+ * 改进内容:
+ *   V1.1.0 - 拆分 adminProjectApi，并保留兼容门面
+ *   V1.0.0 - 初始项目管理 + 代理项目授权接口
  *
- *   POST   /admin/api/projects/                          创建项目
- *   GET    /admin/api/projects/                          项目列表
- *   GET    /admin/api/projects/{id}                      项目详情
- *   PATCH  /admin/api/projects/{id}                      更新项目
- *
- *   POST   /admin/api/agents/{agent_id}/project-auths/          授予代理项目授权
- *   GET    /admin/api/agents/{agent_id}/project-auths/          查询代理项目授权列表
- *   PATCH  /admin/api/agents/{agent_id}/project-auths/{auth_id} 更新授权
- *   DELETE /admin/api/agents/{agent_id}/project-auths/{auth_id} 停用授权
+ * 调试信息:
+ *   新页面优先直接引入 adminProjectApi；旧页面可继续使用 projectApi。
  */
+import { adminProjectApi } from './admin/project'
 
-import http from './http'
+export { adminProjectApi }
 
 export const projectApi = {
-  // ── 项目 CRUD ────────────────────────────────────────────
-  create(data) {
-    return http.post('/admin/api/projects/', data)
-  },
-  list(params = {}) {
-    return http.get('/admin/api/projects/', { params })
-  },
-  detail(projectId) {
-    return http.get(`/admin/api/projects/${projectId}`)
-  },
-  update(projectId, data) {
-    return http.patch(`/admin/api/projects/${projectId}`, data)
-  },
-  delete(projectId) {
-    return http.delete(`/admin/api/projects/${projectId}`)
-  },
-
-  // ── 代理项目授权 ─────────────────────────────────────────
-  grantAgentAuth(agentId, data) {
-    return http.post(`/admin/api/agents/${agentId}/project-auths/`, data)
-  },
-  listAgentAuths(agentId) {
-    return http.get(`/admin/api/agents/${agentId}/project-auths/`)
-  },
-  updateAgentAuth(agentId, authId, data) {
-    return http.patch(`/admin/api/agents/${agentId}/project-auths/${authId}`, data)
-  },
-  revokeAgentAuth(agentId, authId) {
-    return http.delete(`/admin/api/agents/${agentId}/project-auths/${authId}`)
-  },
+  create: adminProjectApi.create,
+  list: adminProjectApi.list,
+  detail: adminProjectApi.detail,
+  update: adminProjectApi.update,
+  delete: adminProjectApi.delete,
+  grantAgentAuth: adminProjectApi.grantAgentAuth,
+  listAgentAuths: adminProjectApi.listAgentAuths,
+  updateAgentAuth: adminProjectApi.updateAgentAuth,
+  revokeAgentAuth: adminProjectApi.revokeAgentAuth,
 }

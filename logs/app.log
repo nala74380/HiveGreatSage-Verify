@@ -846,3 +846,109 @@
 2026-04-29 12:13:13.167 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
 2026-04-29 12:14:13.197 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
 2026-04-29 12:15:13.186 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 13:17:56.566 | INFO     | app.main:_setup_sentry:79 - Sentry DSN 未配置，跳过初始化
+2026-04-29 13:17:56.567 | INFO     | app.main:lifespan:121 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
+2026-04-29 13:24:01.777 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 13:24:11.747 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 13:24:18.729 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 13:24:22.235 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 13:24:24.947 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 13:25:12.163 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 13:25:15.055 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 13:25:16.249 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 13:39:54.729 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:04:00.621 | INFO     | app.main:lifespan:130 - 关闭数据库连接池...
+2026-04-29 14:04:00.640 | INFO     | app.main:lifespan:132 - HiveGreatSage-Verify 已关闭
+2026-04-29 14:04:02.401 | INFO     | app.main:_setup_sentry:80 - Sentry DSN 未配置，跳过初始化
+2026-04-29 14:04:02.402 | INFO     | app.main:lifespan:122 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
+2026-04-29 14:04:03.732 | INFO     | app.main:_setup_sentry:80 - Sentry DSN 未配置，跳过初始化
+2026-04-29 14:04:03.737 | INFO     | app.main:lifespan:122 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
+2026-04-29 14:05:37.062 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:05:47.069 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:05:57.084 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:06:37.072 | INFO     | app.main:lifespan:131 - 关闭数据库连接池...
+2026-04-29 14:06:37.107 | INFO     | app.main:lifespan:133 - HiveGreatSage-Verify 已关闭
+2026-04-29 14:06:43.384 | INFO     | app.main:_setup_sentry:80 - Sentry DSN 未配置，跳过初始化
+2026-04-29 14:06:43.384 | INFO     | app.main:lifespan:122 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
+2026-04-29 14:06:46.671 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:06:51.638 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:07:01.640 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:07:04.418 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:07:15.330 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:07:18.001 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:07:25.323 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:08:29.321 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:08:39.325 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:08:49.318 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:09:26.266 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:09:46.893 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:09:56.914 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:10:06.924 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:10:16.904 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:10:25.986 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:10:27.331 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:10:37.327 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:10:47.337 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:10:57.350 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:11:00.016 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:11:07.347 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:11:15.477 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:11:17.332 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:11:25.487 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:11:27.334 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:11:35.486 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:11:37.334 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:11:45.490 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:11:55.483 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:12:05.488 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:12:13.340 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:12:15.504 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:12:25.500 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:12:35.487 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:12:41.563 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:12:46.328 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:12:46.932 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:12:56.345 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:12:56.941 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:13:06.335 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:13:06.897 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:13:16.331 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:13:16.915 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:13:26.323 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:13:26.921 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:13:36.332 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:13:36.901 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:13:46.907 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:13:56.904 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:14:06.929 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:14:13.332 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:14:16.927 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:15:13.324 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:15:48.534 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:15:55.494 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:16:05.478 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:16:15.481 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:16:25.489 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:16:35.488 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:16:36.314 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:16:45.484 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:16:55.480 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:16:57.155 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 14:17:05.483 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:17:07.158 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 14:17:15.488 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:17:17.190 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 14:17:25.499 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:17:27.159 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 14:17:35.489 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:17:37.158 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 14:17:45.489 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:17:47.172 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 14:17:55.489 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:17:57.160 | INFO     | app.routers.admin:get_user_devices:168 - [get_user_devices] user_id=1, 共询到 0 条 DeviceBinding
+2026-04-29 14:18:00.356 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-29 14:18:05.499 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:18:15.492 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:18:25.507 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:18:35.475 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None
+2026-04-29 14:18:45.503 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=1 user_id_filter=None

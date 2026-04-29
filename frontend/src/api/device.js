@@ -1,44 +1,39 @@
 /**
  * 文件位置: src/api/device.js
- * 功能说明: 设备数据相关接口
+ * 名称: 设备 API 兼容门面
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.1.0
+ * 功能及相关说明:
+ *   兼容旧页面 import { deviceApi } from '@/api/device' 的写法。
+ *   实际实现已拆到：
+ *     - src/api/admin/device.js   Admin / Agent 后台设备监控
+ *     - src/api/client/device.js  User Token 终端设备接口
  *
- * 后端路由对照（严格对齐 app/routers/device.py）：
+ *   关键边界：
+ *     - /admin/api/devices/* 可由 Admin / Agent 后台调用。
+ *     - /api/device/* 只适合 PC 中控 / 安卓脚本的 User Token 调用。
  *
- *   GET /api/device/list
- *     Response: DeviceListResponse { devices, total, online_count }
- *     devices 每项: { device_id, user_id, status, last_seen, game_data, is_online }
+ * 改进内容:
+ *   V1.1.0 - 拆分 adminDeviceApi / clientDeviceApi，并保留兼容门面
+ *   V1.0.0 - 初始设备接口
  *
- *   GET /api/device/data?device_fingerprint=xxx
- *     Response: DeviceDataResponse { device_id, user_id, status, last_seen, game_data, is_online, source }
- *
- * 权限说明：
- *   - 两个接口的 get_current_user 依赖只接受 User Token（终端用户）。
- *   - Admin / Agent Token 调用会返回 401（权限不足，非 Token 失效）。
- *   - 已配置 _skipAuthRedirect: true，401 时不跳登录页，由 useDevicePoller 静默处理。
- *   - Phase 2 将新增 /admin/api/devices/ 供管理后台直接调用。
+ * 调试信息:
+ *   管理后台设备页应使用 adminDeviceApi；终端客户端使用 clientDeviceApi。
  */
+import { adminDeviceApi } from './admin/device'
+import { clientDeviceApi } from './client/device'
 
-import http from './http'
+export { adminDeviceApi, clientDeviceApi }
 
 export const deviceApi = {
-  /**
-   * 拉取设备状态列表
-   * Admin / Agent Token 调用会收到 401，useDevicePoller 已做静默处理。
-   * @returns {Promise}
-   */
-  list() {
-    return http.get('/api/device/list', { _skipAuthRedirect: true })
-  },
+  // 兼容旧命名：用户态设备列表
+  list: clientDeviceApi.list,
+  data: clientDeviceApi.data,
 
-  /**
-   * 拉取单台设备运行数据详情
-   * @param {string} deviceFingerprint
-   * @returns {Promise}
-   */
-  data(deviceFingerprint) {
-    return http.get('/api/device/data', {
-      params: { device_fingerprint: deviceFingerprint },
-      _skipAuthRedirect: true,
-    })
-  },
+  // 新命名：后台设备监控
+  adminListAll: adminDeviceApi.listAll,
+  adminListByProject: adminDeviceApi.listByProject,
+  adminUserBindings: adminDeviceApi.userBindings,
+  adminUnbindUserDevice: adminDeviceApi.unbindUserDevice,
 }

@@ -1,56 +1,51 @@
 /**
  * 文件位置: src/api/balance.js
- * 功能说明: 点数余额与项目定价接口
+ * 名称: 点数余额兼容 API 门面
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.1.0
+ * 功能及相关说明:
+ *   兼容旧页面 import { balanceApi } from '@/api/balance' 的写法。
+ *   实际实现已拆到：
+ *     - src/api/admin/balance.js  管理员专用 /admin/api/*
+ *     - src/api/agent/balance.js  代理专用 /api/agents/*
+ *
+ *   这样可以先治理“按调用方分层”的 API 边界，同时避免一次性大范围修改
+ *   所有 Vue 页面 import 路径，降低开发阶段联动风险。
+ *
+ * 改进内容:
+ *   V1.1.0 - 拆分 adminBalanceApi / agentBalanceApi，并保留兼容门面
+ *   V1.0.0 - 初始点数余额与项目定价接口
+ *
+ * 调试信息:
+ *   新页面优先直接引入 adminBalanceApi 或 agentBalanceApi；旧页面可继续使用 balanceApi。
  */
-import http from './http'
+import { adminBalanceApi } from './admin/balance'
+import { agentBalanceApi } from './agent/balance'
+
+export { adminBalanceApi, agentBalanceApi }
 
 export const balanceApi = {
   // ── 项目定价（Admin）──────────────────────────────────────
-  getPrices(projectId) {
-    return http.get(`/admin/api/prices/${projectId}`)
-  },
-  setPrice(projectId, userLevel, data) {
-    return http.put(`/admin/api/prices/${projectId}/${userLevel}`, data)
-  },
-  deletePrice(projectId, userLevel) {
-    return http.delete(`/admin/api/prices/${projectId}/${userLevel}`)
-  },
+  getPrices: adminBalanceApi.getPrices,
+  setPrice: adminBalanceApi.setPrice,
+  deletePrice: adminBalanceApi.deletePrice,
 
   // ── 定价目录（Agent 查看）────────────────────────────────
-  catalog() {
-    return http.get('/api/agents/catalog')
-  },
+  catalog: agentBalanceApi.catalog,
 
   // ── 代理余额（Admin 操作）────────────────────────────────
-  getBalance(agentId) {
-    return http.get(`/admin/api/agents/${agentId}/balance`)
-  },
-  recharge(agentId, data) {
-    return http.post(`/admin/api/agents/${agentId}/recharge`, data)
-  },
-  credit(agentId, data) {
-    return http.post(`/admin/api/agents/${agentId}/credit`, data)
-  },
-  freeze(agentId, data) {
-    return http.post(`/admin/api/agents/${agentId}/freeze`, data)
-  },
-  unfreeze(agentId, data) {
-    return http.post(`/admin/api/agents/${agentId}/unfreeze`, data)
-  },
-  getTransactions(agentId, params = {}) {
-    return http.get(`/admin/api/agents/${agentId}/transactions`, { params })
-  },
+  getBalance: adminBalanceApi.getBalance,
+  recharge: adminBalanceApi.recharge,
+  credit: adminBalanceApi.credit,
+  freeze: adminBalanceApi.freeze,
+  unfreeze: adminBalanceApi.unfreeze,
+  getTransactions: adminBalanceApi.getTransactions,
 
   // ── 代理列表（含余额+项目）────────────────────────────────
-  agentsFull(params = {}) {
-    return http.get('/admin/api/agents-full', { params })
-  },
+  agentsFull: adminBalanceApi.agentsFull,
 
   // ── 代理自查 ──────────────────────────────────────────────
-  myBalance() {
-    return http.get('/api/agents/my/balance')
-  },
-  myTransactions(params = {}) {
-    return http.get('/api/agents/my/transactions', { params })
-  },
+  myBalance: agentBalanceApi.myBalance,
+  myTransactions: agentBalanceApi.myTransactions,
 }

@@ -3,7 +3,7 @@ r"""
 文件名称: main.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-16
-版本: v1.0.1
+版本: v1.0.2
 功能说明:
     FastAPI 应用入口。负责：
       1. 应用生命周期管理（lifespan：启动检查 + 关闭清理）
@@ -14,6 +14,7 @@ r"""
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
 
 改进历史:
+    v1.0.2 (2026-04-29) - 拆分 balance_admin / balance_agent 路由，移除 balance.router 双前缀挂载
     v1.0.1 (2026-04-25) - 注册 update_admin 路由（POST /admin/api/updates/，C06）
     v1.0.0 - 初始版本
 调试信息:
@@ -68,7 +69,7 @@ def _setup_logging() -> None:
         _logger.addFilter(_InvalidRequestFilter())
 
     # 屏蔽 SQLAlchemy SQL 语句级别输出（默认 INFO 会把所有 SQL 刷屏幕）
-    _sa_log_level = getattr(logging, getattr(settings, 'SQLALCHEMY_LOG_LEVEL', 'WARNING'), logging.WARNING)
+    _sa_log_level = getattr(logging, getattr(settings, "SQLALCHEMY_LOG_LEVEL", "WARNING"), logging.WARNING)
     for _sa_name in ("sqlalchemy", "sqlalchemy.engine", "sqlalchemy.engine.Engine", "sqlalchemy.pool", "sqlalchemy.orm"):
         logging.getLogger(_sa_name).setLevel(_sa_log_level)
 
@@ -156,7 +157,8 @@ from app.routers import (  # noqa: E402
     admin,
     agents,
     auth,
-    balance,
+    balance_admin,
+    balance_agent,
     device,
     device_admin,
     params,
@@ -167,19 +169,19 @@ from app.routers import (  # noqa: E402
     users,
 )
 
-app.include_router(auth.router,         prefix="/api/auth",          tags=["认证"])
-app.include_router(users.router,        prefix="/api/users",         tags=["用户管理"])
-app.include_router(agents.router,       prefix="/api/agents",        tags=["代理管理"])
-app.include_router(device.router,       prefix="/api/device",        tags=["设备数据"])
-app.include_router(params.router,       prefix="/api/params",        tags=["脚本参数"])
-app.include_router(update.router,       prefix="/api/update",        tags=["热更新"])
-app.include_router(admin.router,        prefix="/admin/api",         tags=["管理后台"])
-app.include_router(projects.router,     prefix="/admin/api",         tags=["项目管理"])
-app.include_router(update_admin.router, prefix="/admin/api/updates", tags=["热更新管理"])
-app.include_router(device_admin.router, prefix="/admin/api/devices", tags=["设备监控"])
-app.include_router(stats.router,        prefix="/api/stats",         tags=["统计数据"])
-app.include_router(balance.router,      prefix="/admin/api",         tags=["点数管理"])
-app.include_router(balance.router,      prefix="/api/agents",        tags=["代理余额"])
+app.include_router(auth.router,          prefix="/api/auth",          tags=["认证"])
+app.include_router(users.router,         prefix="/api/users",         tags=["用户管理"])
+app.include_router(agents.router,        prefix="/api/agents",        tags=["代理管理"])
+app.include_router(device.router,        prefix="/api/device",        tags=["设备数据"])
+app.include_router(params.router,        prefix="/api/params",        tags=["脚本参数"])
+app.include_router(update.router,        prefix="/api/update",        tags=["热更新"])
+app.include_router(admin.router,         prefix="/admin/api",         tags=["管理后台"])
+app.include_router(projects.router,      prefix="/admin/api",         tags=["项目管理"])
+app.include_router(update_admin.router,  prefix="/admin/api/updates", tags=["热更新管理"])
+app.include_router(device_admin.router,  prefix="/admin/api/devices", tags=["设备监控"])
+app.include_router(stats.router,         prefix="/api/stats",         tags=["统计数据"])
+app.include_router(balance_admin.router, prefix="/admin/api",         tags=["点数管理"])
+app.include_router(balance_agent.router, prefix="/api/agents",        tags=["代理余额"])
 
 
 # ── 健康检查 ──────────────────────────────────────────────────
