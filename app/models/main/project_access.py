@@ -3,13 +3,18 @@ r"""
 文件名称: project_access.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     代理等级驱动的项目准入与授权申请 ORM 模型。
 
 说明:
     该文件使用同一个 Base。
     与 app/models/main/models.py 中的主模型分离，避免主模型文件继续膨胀。
+
+当前业务口径:
+    - AgentLevelPolicy 不再包含用户配额字段。
+    - 用户数量只作为统计展示。
+    - 代理商业边界由项目准入、项目授权、点数余额、下级代理能力和风险状态治理。
 """
 
 from datetime import datetime
@@ -50,7 +55,6 @@ class AgentLevelPolicy(Base):
     default_credit_limit: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, server_default="0")
     max_credit_limit: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, server_default="0")
 
-    max_users_default: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     can_create_sub_agents: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     max_sub_agents: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 

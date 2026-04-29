@@ -3,9 +3,14 @@ r"""
 文件名称: project_access.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     代理项目准入、申请、审核相关 Pydantic v2 Schema。
+
+当前业务口径:
+    - 项目准入使用 AgentBusinessProfile.tier_level。
+    - Agent.level 只表示组织层级 / 代理树深度。
+    - 代理等级策略不再包含用户配额。
 """
 
 from datetime import datetime
@@ -26,7 +31,6 @@ class AgentLevelPolicyResponse(BaseModel):
     description: str | None = None
     default_credit_limit: float
     max_credit_limit: float
-    max_users_default: int
     can_create_sub_agents: bool
     max_sub_agents: int
     can_auto_open_project: bool
@@ -121,36 +125,3 @@ class ApproveProjectAuthRequest(BaseModel):
 
 class RejectProjectAuthRequest(BaseModel):
     review_note: str = Field(..., min_length=1, max_length=1000)
-
-
-class ProjectPriceItem(BaseModel):
-    level: str
-    level_name: str
-    points: float | None
-    unit_label: str
-
-
-class AgentProjectCatalogItem(BaseModel):
-    id: int
-    code_name: str
-    display_name: str
-    project_type: str
-
-    prices: list[ProjectPriceItem]
-
-    access_status: str = Field(
-        description="authorized / pending / rejected / auto_open_available / apply_available / unavailable"
-    )
-    action_type: str = Field(description="none / apply / auto_open / view_request")
-    is_authorized: bool
-    is_visible: bool
-
-    visibility_mode: str
-    open_mode: str
-
-    pending_request_id: int | None = None
-    last_request_status: str | None = None
-    last_request_id: int | None = None
-    last_review_note: str | None = None
-
-    auth_valid_until: datetime | None = None

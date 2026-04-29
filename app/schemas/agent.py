@@ -2,17 +2,22 @@ r"""
 文件位置: app/schemas/agent.py
 文件名称: agent.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-22
-版本: V1.0.1
+日期/时间: 2026-04-29
+版本: V1.1.0
 功能说明:
     代理管理及管理员登录相关的 Pydantic v2 请求/响应模型。
     覆盖：管理员登录、代理登录、代理 CRUD、代理树形结构。
 
+当前业务口径:
+    - Agent.level 表示代理组织层级 / 代理树深度。
+    - AgentBusinessProfile.tier_level 表示代理业务等级 Lv.1 - Lv.4。
+    - 用户数量只作为统计展示，不再作为代理配额硬约束。
+    - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
+
 改进历史:
-    V1.0.1 (2026-04-25) - 新增 AgentTreeNode / AgentSubtreeResponse，支持 Phase 2 多级代理树形查询
-    V1.0.0 - 初始版本
-调试信息:
-    已知问题: 无
+    V1.1.0 (2026-04-29) - 删除 max_users 用户配额旧口径。
+    V1.0.1 (2026-04-25) - 新增 AgentTreeNode / AgentSubtreeResponse，支持 Phase 2 多级代理树形查询。
+    V1.0.0 - 初始版本。
 """
 
 from __future__ import annotations
@@ -50,7 +55,7 @@ class AgentLoginResponse(BaseModel):
     expires_in: int = Field(description="Token 有效期（秒）", examples=[28800])
     agent_id: int
     username: str
-    level: int
+    level: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
 
 
 # ── 代理 CRUD ─────────────────────────────────────────────────
@@ -69,11 +74,6 @@ class AgentCreateRequest(BaseModel):
         default=None,
         description="父代理 ID，None 表示创建顶级代理（由管理员直接管理）",
     )
-    max_users: int = Field(
-        default=0,
-        ge=0,
-        description="可创建用户数量上限，0 表示无限制",
-    )
     commission_rate: float | None = Field(
         default=None,
         ge=0,
@@ -87,11 +87,6 @@ class AgentUpdateRequest(BaseModel):
         default=None,
         pattern="^(active|suspended)$",
         description="更新状态",
-    )
-    max_users: int | None = Field(
-        default=None,
-        ge=0,
-        description="更新用户配额上限",
     )
     commission_rate: float | None = Field(
         default=None,
@@ -107,17 +102,16 @@ class AgentResponse(BaseModel):
     """代理详情响应。"""
     id: int
     username: str
-    level: int
+    level: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
     parent_agent_id: int | None
     created_by_admin_id: int | None
-    max_users: int = Field(description="用户配额上限，0=无限制")
     commission_rate: float | None
     status: str
     created_at: datetime
     updated_at: datetime | None = None
     users_count: int = Field(
         default=0,
-        description="该代理直接创建的用户数量",
+        description="该代理直接创建的用户数量，仅作统计，不作为配额限制",
     )
 
     model_config = {"from_attributes": True}
@@ -142,13 +136,12 @@ class AgentTreeNode(BaseModel):
     """
     id: int
     username: str
-    level: int
+    level: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
     parent_agent_id: int | None
     status: str
-    max_users: int
     commission_rate: float | None
-    users_count: int = Field(description="该代理直接创建的用户数")
-    subtree_user_count: int = Field(description="该代理及所有下级代理的用户总数")
+    users_count: int = Field(description="该代理直接创建的用户数，仅作统计")
+    subtree_user_count: int = Field(description="该代理及所有下级代理的用户总数，仅作统计")
     children: list[AgentTreeNode] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
@@ -169,7 +162,7 @@ class AgentSubtreeResponse(BaseModel):
     """
     root: AgentTreeNode
     total_agents: int = Field(description="子树内代理总数（含根节点）")
-    total_users: int = Field(description="子树内所有用户总数")
+    total_users: int = Field(description="子树内所有用户总数，仅作统计")
 
 
 class AgentFlatListResponse(BaseModel):

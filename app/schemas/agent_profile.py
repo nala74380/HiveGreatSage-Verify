@@ -3,9 +3,14 @@ r"""
 文件名称: agent_profile.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     代理业务等级、代理业务画像、代理密码重置相关 Schema。
+
+当前业务口径:
+    - 代理等级策略不再包含用户配额。
+    - 用户数量仅作为统计展示。
+    - 代理业务能力由授信、下级代理能力、自动开通能力、风险状态等字段表达。
 """
 
 from datetime import datetime
@@ -26,7 +31,6 @@ class AgentLevelPolicyAdminResponse(BaseModel):
     default_credit_limit: float
     max_credit_limit: float
 
-    max_users_default: int
     can_create_sub_agents: bool
     max_sub_agents: int
 
@@ -48,7 +52,6 @@ class AgentLevelPolicyUpdateRequest(BaseModel):
     default_credit_limit: float | None = Field(default=None, ge=0)
     max_credit_limit: float | None = Field(default=None, ge=0)
 
-    max_users_default: int | None = Field(default=None, ge=0)
     can_create_sub_agents: bool | None = None
     max_sub_agents: int | None = Field(default=None, ge=0)
 
