@@ -3,16 +3,21 @@ r"""
 文件名称: redis_client.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-16
-版本: v1.0.0
+版本: v1.0.2
 功能说明:
     Redis 客户端封装，提供：
       1. 连接单例（get_redis FastAPI 依赖）
       2. Token 黑名单操作（revoke / is_revoked）
       3. Refresh Token 存储操作（store / get / delete）
-      4. 设备心跳缓冲操作（set_heartbeat / get_heartbeat）
+      4. 设备心跳缓冲操作（set_heartbeat / get_heartbeat / get_user_heartbeats）
       5. 限流计数（incr_rate_limit）
+      6. RT 反查索引（store_refresh_token_v2 / get_refresh_token_by_value）
     Key 规划与 API鉴权方案.md / 架构设计.md 保持一致。
-改进历史: 无
+改进历史:
+    v1.0.2 - 新增 get_user_heartbeats（按用户维度扫描心跳，供 device/list 接口使用）
+    v1.0.1 - 新增 RT 反查索引（store_refresh_token_v2 / get_refresh_token_by_value /
+             delete_refresh_token_v2），修复 refresh 接口 SCAN 全表性能问题；
+             RT 存储补入 game_project_code 字段
 调试信息:
     Redis 连接失败时检查 REDIS_URL 环境变量，以及 Redis 服务是否启动。
     WSL2 下 Redis 安装：sudo apt install redis-server && sudo service redis-server start
@@ -23,7 +28,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import redis.asyncio as aioredis
-
+import hashlib
 from app.config import settings
 
 # ── 连接池（全局单例）─────────────────────────────────────────
@@ -168,6 +173,35 @@ async def get_heartbeat(
     return json.loads(raw)
 
 
+async def get_user_heartbeats(
+    redis: aioredis.Redis,
+    game_id: int,
+    user_id: int,
+) -> list[dict]:
+    """
+    获取指定用户在指定游戏中所有在线设备的心跳数据。
+    PC 中控拉取设备列表时调用（只看当前登录用户的设备）。
+
+    与 get_all_heartbeats_for_game 的区别：
+      - 本函数按 user_id 过滤，只返回该用户的设备
+      - get_all_heartbeats_for_game 返回整个游戏所有设备（Celery 落库使用）
+    """
+    pattern = f"device:runtime:{game_id}:{user_id}:*"
+    results = []
+    async for key in redis.scan_iter(pattern):
+        raw = await redis.get(key)
+        if raw:
+            # Key 格式：device:runtime:{game_id}:{user_id}:{device_fp}
+            parts = key.split(":")
+            if len(parts) >= 5:
+                results.append({
+                    "user_id": int(parts[3]),
+                    "device_fp": parts[4],
+                    "data": json.loads(raw),
+                })
+    return results
+
+
 async def get_all_heartbeats_for_game(
     redis: aioredis.Redis,
     game_id: int,
@@ -217,3 +251,83 @@ async def incr_rate_limit(
         # 首次创建，设置过期时间
         await redis.expire(key, window_seconds)
     return count <= limit, count
+
+def _rt_lookup_key(rt_value: str) -> str:
+    """
+    生成 RT 反查索引的 Redis Key。
+    对 rt_value 做 SHA-256 哈希，避免 Key 过长，同时防止明文 RT 出现在 Key 中。
+    格式：rt_lookup:{sha256(rt_value)[:32]}
+    """
+    digest = hashlib.sha256(rt_value.encode()).hexdigest()[:32]
+    return f"rt_lookup:{digest}"
+
+
+async def store_refresh_token_v2(
+    redis: aioredis.Redis,
+    user_id: int,
+    jti: str,
+    rt_value: str,
+    device_fingerprint: str | None,
+    game_project_code: str,
+    ttl_seconds: int,
+) -> None:
+    """
+    存储 Refresh Token（v2）。
+
+    同时写入两个 Key：
+      1. 主数据 Key：refresh:{user_id}:{jti}  → JSON（RT 详情）
+      2. 反查索引 Key：rt_lookup:{hash}        → "{user_id}:{jti}"
+
+    反查索引使客户端刷新时只传 rt_value 即可 O(1) 定位主 Key，
+    无需 SCAN 全表（解决 refresh 接口性能问题）。
+    """
+    main_data = json.dumps({
+        "rt_value": rt_value,
+        "user_id": user_id,
+        "jti": jti,
+        "device_fingerprint": device_fingerprint,
+        "game_project_code": game_project_code,   # v2 新增，修复 refresh 丢失 project 问题
+    })
+    lookup_value = f"{user_id}:{jti}"
+    lookup_key = _rt_lookup_key(rt_value)
+
+    pipe = redis.pipeline()
+    pipe.setex(f"refresh:{user_id}:{jti}", ttl_seconds, main_data)
+    pipe.setex(lookup_key, ttl_seconds, lookup_value)
+    await pipe.execute()
+
+
+async def get_refresh_token_by_value(
+    redis: aioredis.Redis,
+    rt_value: str,
+) -> dict | None:
+    """
+    通过 rt_value 直接查找 RT 数据（O(1)，无需 SCAN）。
+    找不到返回 None（RT 已过期或不存在）。
+    """
+    lookup_key = _rt_lookup_key(rt_value)
+    pointer = await redis.get(lookup_key)
+    if pointer is None:
+        return None
+
+    user_id_str, jti = pointer.split(":", 1)
+    raw = await redis.get(f"refresh:{user_id_str}:{jti}")
+    if raw is None:
+        return None
+
+    return json.loads(raw)
+
+
+async def delete_refresh_token_v2(
+    redis: aioredis.Redis,
+    user_id: int,
+    jti: str,
+    rt_value: str,
+) -> None:
+    """
+    删除 RT 主 Key 及反查索引 Key（登出时调用）。
+    """
+    pipe = redis.pipeline()
+    pipe.delete(f"refresh:{user_id}:{jti}")
+    pipe.delete(_rt_lookup_key(rt_value))
+    await pipe.execute()

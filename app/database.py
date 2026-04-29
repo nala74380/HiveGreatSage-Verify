@@ -3,7 +3,7 @@ r"""
 文件名称: database.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-16
-版本: v1.0.0
+版本: v1.0.1
 功能说明:
     数据库连接管理。支持：
       1. 主库 hive_platform（用户管理，固定连接）
@@ -14,11 +14,17 @@ r"""
 调试信息:
     连接失败时检查 .env 中的 DATABASE_MAIN_URL 和 PostgreSQL 服务是否启动。
     WSL2 环境下 PostgreSQL 监听地址确认为 127.0.0.1 而非 localhost（IPv6 问题）。
+    Windows 开发环境：asyncpg 默认尝试 SSL 握手，开发库未启用 SSL 时会抛出
+    ConnectionRefusedError [WinError 1225]，通过 connect_args={"ssl": False} 禁用。
+改进历史:
+    v1.0.1 - 主库引擎和游戏库引擎均加入 connect_args={"ssl": False}，
+             修复 Windows 开发环境 asyncpg SSL 握手失败问题（WinError 1225）
 """
 
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from sqlalchemy.engine.url import make_url as _make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -41,6 +47,7 @@ _main_engine: AsyncEngine = create_async_engine(
     pool_size=10,                   # 连接池大小
     max_overflow=20,                # 超出 pool_size 后最多额外创建的连接数
     pool_pre_ping=True,             # 每次取连接前 ping 一次，自动处理断线重连
+    connect_args={"ssl": False},    # 禁用 SSL：开发环境未启用 SSL，asyncpg 默认会尝试握手导致 WinError 1225
 )
 
 _main_session_factory = async_sessionmaker(
@@ -79,13 +86,19 @@ def _get_game_engine(code_name: str) -> AsyncEngine:
     code_name 示例：'game_001'，对应数据库 hive_game_001。
     """
     if code_name not in _game_engines:
-        url = f"{settings.DATABASE_GAME_PREFIX}{code_name}"
+        # D003 修复：DATABASE_GAME_PREFIX 已含 "hive_game_" 后缀，
+        # 若直接拼接 code_name="game_001" 会变成 hive_game_game_001。
+        # 改用 make_url 基于主库连接串只替换数据库名：
+        # "hive_" + "game_001" = "hive_game_001"，与 game_project.db_name 一致。
+        db_name = "hive_" + code_name
+        url = str(_make_url(settings.DATABASE_MAIN_URL).set(database=db_name))
         _game_engines[code_name] = create_async_engine(
             url,
             echo=settings.DEBUG,
             pool_size=5,
             max_overflow=10,
             pool_pre_ping=True,
+            connect_args={"ssl": False},    # 同主库，禁用 SSL
         )
         _game_session_factories[code_name] = async_sessionmaker(
             bind=_game_engines[code_name],

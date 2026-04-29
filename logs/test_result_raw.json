@@ -1,0 +1,3277 @@
+{
+  "created": 1777125873.8934362,
+  "duration": 31.407989978790283,
+  "exitcode": 0,
+  "root": "E:\\Hive-GreatSage\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\HiveGreatSage\\HiveGreatSage-Verify",
+  "environment": {},
+  "summary": {
+    "passed": 71,
+    "skipped": 24,
+    "total": 95,
+    "collected": 95
+  },
+  "collectors": [
+    {
+      "nodeid": "",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests",
+          "type": "Dir"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/integration",
+      "outcome": "passed",
+      "result": []
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAdminLogin",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_admin.py::TestAdminLogin::test_admin_login_success",
+          "type": "Coroutine",
+          "lineno": 15
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAdminLogin::test_admin_login_wrong_password",
+          "type": "Coroutine",
+          "lineno": 25
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAdminLogin::test_dashboard_requires_token",
+          "type": "Coroutine",
+          "lineno": 32
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAdminLogin::test_dashboard_success",
+          "type": "Coroutine",
+          "lineno": 36
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_create_normal_user",
+          "type": "Coroutine",
+          "lineno": 45
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_create_tester_by_admin",
+          "type": "Coroutine",
+          "lineno": 57
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_duplicate_username_fails",
+          "type": "Coroutine",
+          "lineno": 67
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_list_users",
+          "type": "Coroutine",
+          "lineno": 75
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_get_user_detail",
+          "type": "Coroutine",
+          "lineno": 82
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_update_user_status",
+          "type": "Coroutine",
+          "lineno": 97
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_grant_and_revoke_authorization",
+          "type": "Coroutine",
+          "lineno": 112
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_user_not_found",
+          "type": "Coroutine",
+          "lineno": 138
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement::test_requires_auth",
+          "type": "Coroutine",
+          "lineno": 142
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAgentManagement",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_admin.py::TestAgentManagement::test_create_agent",
+          "type": "Coroutine",
+          "lineno": 148
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAgentManagement::test_create_sub_agent",
+          "type": "Coroutine",
+          "lineno": 161
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAgentManagement::test_agent_login_and_create_user",
+          "type": "Coroutine",
+          "lineno": 179
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAgentManagement::test_agent_cannot_create_tester",
+          "type": "Coroutine",
+          "lineno": 210
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAgentManagement::test_list_agents",
+          "type": "Coroutine",
+          "lineno": 231
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAgentManagement::test_update_agent",
+          "type": "Coroutine",
+          "lineno": 236
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_admin.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_admin.py::TestAdminLogin",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestUserManagement",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_admin.py::TestAgentManagement",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_requires_admin",
+          "type": "Coroutine",
+          "lineno": 117
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_root_contains_all_descendants",
+          "type": "Coroutine",
+          "lineno": 123
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_level_correct",
+          "type": "Coroutine",
+          "lineno": 144
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_leaf_node",
+          "type": "Coroutine",
+          "lineno": 170
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_nonexistent_agent",
+          "type": "Coroutine",
+          "lineno": 185
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_user_count",
+          "type": "Coroutine",
+          "lineno": 195
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree::test_tree_requires_admin",
+          "type": "Coroutine",
+          "lineno": 213
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree::test_tree_returns_list",
+          "type": "Coroutine",
+          "lineno": 217
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree::test_tree_contains_our_root",
+          "type": "Coroutine",
+          "lineno": 229
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_scope_requires_agent_token",
+          "type": "Coroutine",
+          "lineno": 250
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_root_agent_sees_all_descendants",
+          "type": "Coroutine",
+          "lineno": 254
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_child_agent_sees_own_subtree_only",
+          "type": "Coroutine",
+          "lineno": 275
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_leaf_agent_sees_only_self",
+          "type": "Coroutine",
+          "lineno": 295
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_scope_pagination",
+          "type": "Coroutine",
+          "lineno": 311
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestRevokeAll",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_requires_auth",
+          "type": "Coroutine",
+          "lineno": 363
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_success",
+          "type": "Coroutine",
+          "lineno": 367
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_then_refresh_fails",
+          "type": "Coroutine",
+          "lineno": 383
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_me_still_works_briefly",
+          "type": "Coroutine",
+          "lineno": 403
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py::TestRevokeAll",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestLogin",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_auth.py::TestLogin::test_login_success",
+          "type": "Coroutine",
+          "lineno": 42
+        },
+        {
+          "nodeid": "tests/test_auth.py::TestLogin::test_login_wrong_password",
+          "type": "Coroutine",
+          "lineno": 59
+        },
+        {
+          "nodeid": "tests/test_auth.py::TestLogin::test_login_nonexistent_user",
+          "type": "Coroutine",
+          "lineno": 71
+        },
+        {
+          "nodeid": "tests/test_auth.py::TestLogin::test_login_invalid_project",
+          "type": "Coroutine",
+          "lineno": 82
+        },
+        {
+          "nodeid": "tests/test_auth.py::TestLogin::test_login_no_authorization",
+          "type": "Coroutine",
+          "lineno": 94
+        },
+        {
+          "nodeid": "tests/test_auth.py::TestLogin::test_login_suspended_user",
+          "type": "Coroutine",
+          "lineno": 113
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestRefreshAndLogout",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_auth.py::TestRefreshAndLogout::test_get_me",
+          "type": "Coroutine",
+          "lineno": 145
+        },
+        {
+          "nodeid": "tests/test_auth.py::TestRefreshAndLogout::test_logout_then_me_fails",
+          "type": "Coroutine",
+          "lineno": 156
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_auth.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_auth.py::TestLogin",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_auth.py::TestRefreshAndLogout",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_device.py::TestHeartbeat",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_device.py::TestHeartbeat::test_heartbeat_success",
+          "type": "Coroutine",
+          "lineno": 43
+        },
+        {
+          "nodeid": "tests/test_device.py::TestHeartbeat::test_heartbeat_wrong_device",
+          "type": "Coroutine",
+          "lineno": 55
+        },
+        {
+          "nodeid": "tests/test_device.py::TestHeartbeat::test_heartbeat_requires_auth",
+          "type": "Coroutine",
+          "lineno": 67
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_device.py::TestDeviceList",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_device.py::TestDeviceList::test_device_list_after_heartbeat",
+          "type": "Coroutine",
+          "lineno": 77
+        },
+        {
+          "nodeid": "tests/test_device.py::TestDeviceList::test_device_data_after_heartbeat",
+          "type": "Coroutine",
+          "lineno": 98
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_device.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_device.py::TestHeartbeat",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_device.py::TestDeviceList",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_requires_auth",
+          "type": "Coroutine",
+          "lineno": 73
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_admin_can_access",
+          "type": "Coroutine",
+          "lineno": 78
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_agent_can_access_own_scope",
+          "type": "Coroutine",
+          "lineno": 99
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_nonexistent_game_returns_404",
+          "type": "Coroutine",
+          "lineno": 130
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_pagination_params",
+          "type": "Coroutine",
+          "lineno": 138
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_online_only_filter",
+          "type": "Coroutine",
+          "lineno": 150
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_device_has_required_fields",
+          "type": "Coroutine",
+          "lineno": 162
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestImsiUpload",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_requires_auth",
+          "type": "Coroutine",
+          "lineno": 209
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_upload_success",
+          "type": "Coroutine",
+          "lineno": 216
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_upload_unbound_device_fails",
+          "type": "Coroutine",
+          "lineno": 235
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_overwrite",
+          "type": "Coroutine",
+          "lineno": 249
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_empty_string_fails",
+          "type": "Coroutine",
+          "lineno": 273
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_device_admin.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_device_admin.py::TestAdminDeviceList",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_device_admin.py::TestImsiUpload",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_params.py::TestGetParams",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_params.py::TestGetParams::test_get_params_returns_all_with_defaults",
+          "type": "Coroutine",
+          "lineno": 113
+        },
+        {
+          "nodeid": "tests/test_params.py::TestGetParams::test_get_params_requires_auth",
+          "type": "Coroutine",
+          "lineno": 133
+        },
+        {
+          "nodeid": "tests/test_params.py::TestGetParams::test_get_params_enum_has_options",
+          "type": "Coroutine",
+          "lineno": 138
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_int_param",
+          "type": "Coroutine",
+          "lineno": 154
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_multiple_params",
+          "type": "Coroutine",
+          "lineno": 174
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_invalid_int_fails",
+          "type": "Coroutine",
+          "lineno": 193
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_invalid_bool_fails",
+          "type": "Coroutine",
+          "lineno": 209
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_nonexistent_key_fails",
+          "type": "Coroutine",
+          "lineno": 223
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_partial_success",
+          "type": "Coroutine",
+          "lineno": 238
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_upsert_overwrites",
+          "type": "Coroutine",
+          "lineno": 255
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams::test_set_requires_auth",
+          "type": "Coroutine",
+          "lineno": 273
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_params.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_params.py::TestGetParams",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_params.py::TestSetParams",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_requires_auth",
+          "type": "Coroutine",
+          "lineno": 115
+        },
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_invalid_version_format",
+          "type": "Coroutine",
+          "lineno": 120
+        },
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_invalid_client_type",
+          "type": "Coroutine",
+          "lineno": 129
+        },
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_old_version_needs_update",
+          "type": "Coroutine",
+          "lineno": 138
+        },
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_same_version_no_update",
+          "type": "Coroutine",
+          "lineno": 154
+        },
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_newer_version_no_update",
+          "type": "Coroutine",
+          "lineno": 164
+        },
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_pc_client",
+          "type": "Coroutine",
+          "lineno": 174
+        },
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_redis_cache",
+          "type": "Coroutine",
+          "lineno": 185
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_update.py::TestDownloadUpdate",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_requires_auth",
+          "type": "Coroutine",
+          "lineno": 203
+        },
+        {
+          "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_android_returns_url",
+          "type": "Coroutine",
+          "lineno": 207
+        },
+        {
+          "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_url_contains_token",
+          "type": "Coroutine",
+          "lineno": 221
+        },
+        {
+          "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_invalid_client_type",
+          "type": "Coroutine",
+          "lineno": 231
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_update.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_update.py::TestCheckUpdate",
+          "type": "Class"
+        },
+        {
+          "nodeid": "tests/test_update.py::TestDownloadUpdate",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_requires_admin_token",
+          "type": "Coroutine",
+          "lineno": 67
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalid_client_type",
+          "type": "Coroutine",
+          "lineno": 76
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalid_version_format",
+          "type": "Coroutine",
+          "lineno": 86
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalid_file_extension",
+          "type": "Coroutine",
+          "lineno": 96
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_empty_file",
+          "type": "Coroutine",
+          "lineno": 106
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_android_success",
+          "type": "Coroutine",
+          "lineno": 118
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_pc_success",
+          "type": "Coroutine",
+          "lineno": 141
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_force_update",
+          "type": "Coroutine",
+          "lineno": 158
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_idempotent_same_version",
+          "type": "Coroutine",
+          "lineno": 175
+        },
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalidates_redis_cache",
+          "type": "Coroutine",
+          "lineno": 201
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_update_admin.py",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/test_update_admin.py::TestUploadVersion",
+          "type": "Class"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/unit",
+      "outcome": "passed",
+      "result": []
+    },
+    {
+      "nodeid": "tests",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests/integration",
+          "type": "Dir"
+        },
+        {
+          "nodeid": "tests/test_admin.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/test_agents_recursive.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/test_auth.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/test_device.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/test_device_admin.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/test_params.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/test_update.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/test_update_admin.py",
+          "type": "Module"
+        },
+        {
+          "nodeid": "tests/unit",
+          "type": "Dir"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "nodeid": "tests/test_admin.py::TestAdminLogin::test_admin_login_success",
+      "lineno": 15,
+      "outcome": "passed",
+      "keywords": [
+        "test_admin_login_success",
+        "asyncio",
+        "TestAdminLogin",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0765638998709619,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.32448500022292137,
+        "outcome": "passed",
+        "log": [
+          {
+            "name": "passlib.handlers.bcrypt",
+            "msg": "(trapped) error reading bcrypt version",
+            "args": null,
+            "levelname": "WARNING",
+            "levelno": 30,
+            "pathname": "D:\\ProgramData\\anaconda3\\envs\\TZYMIR\\Lib\\site-packages\\passlib\\handlers\\bcrypt.py",
+            "filename": "bcrypt.py",
+            "module": "bcrypt",
+            "exc_info": null,
+            "exc_text": "Traceback (most recent call last):\n  File \"D:\\ProgramData\\anaconda3\\envs\\TZYMIR\\Lib\\site-packages\\passlib\\handlers\\bcrypt.py\", line 620, in _load_backend_mixin\n    version = _bcrypt.__about__.__version__\n              ^^^^^^^^^^^^^^^^^\nAttributeError: module 'bcrypt' has no attribute '__about__'",
+            "stack_info": null,
+            "lineno": 622,
+            "funcName": "_load_backend_mixin",
+            "created": 1777125842.7646506,
+            "msecs": 764.0,
+            "relativeCreated": 1442.0421123504639,
+            "thread": 32316,
+            "threadName": "MainThread",
+            "processName": "MainProcess",
+            "process": 43196
+          }
+        ]
+      },
+      "teardown": {
+        "duration": 0.0003391001373529434,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAdminLogin::test_admin_login_wrong_password",
+      "lineno": 25,
+      "outcome": "passed",
+      "keywords": [
+        "test_admin_login_wrong_password",
+        "asyncio",
+        "TestAdminLogin",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0004985001869499683,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.24487419985234737,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.000291699543595314,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAdminLogin::test_dashboard_requires_token",
+      "lineno": 32,
+      "outcome": "passed",
+      "keywords": [
+        "test_dashboard_requires_token",
+        "asyncio",
+        "TestAdminLogin",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0004823002964258194,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0008857999928295612,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00020929984748363495,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAdminLogin::test_dashboard_success",
+      "lineno": 36,
+      "outcome": "passed",
+      "keywords": [
+        "test_dashboard_success",
+        "asyncio",
+        "TestAdminLogin",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007265000604093075,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03670800011605024,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00032480014488101006,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_create_normal_user",
+      "lineno": 45,
+      "outcome": "passed",
+      "keywords": [
+        "test_create_normal_user",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007981001399457455,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.25490849977359176,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0003016996197402477,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_create_tester_by_admin",
+      "lineno": 57,
+      "outcome": "passed",
+      "keywords": [
+        "test_create_tester_by_admin",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007707998156547546,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.25323590030893683,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00029769958928227425,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_duplicate_username_fails",
+      "lineno": 67,
+      "outcome": "passed",
+      "keywords": [
+        "test_duplicate_username_fails",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007434999570250511,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.2829057998023927,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002812999300658703,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_list_users",
+      "lineno": 75,
+      "outcome": "passed",
+      "keywords": [
+        "test_list_users",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007763998582959175,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03906540013849735,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0003167996183037758,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_get_user_detail",
+      "lineno": 82,
+      "outcome": "passed",
+      "keywords": [
+        "test_get_user_detail",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007453998550772667,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.27536260010674596,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00026979995891451836,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_update_user_status",
+      "lineno": 97,
+      "outcome": "passed",
+      "keywords": [
+        "test_update_user_status",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007262998260557652,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.2775821997784078,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00026960019022226334,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_grant_and_revoke_authorization",
+      "lineno": 112,
+      "outcome": "passed",
+      "keywords": [
+        "test_grant_and_revoke_authorization",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007740003056824207,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.3499638997018337,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00028320029377937317,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_user_not_found",
+      "lineno": 138,
+      "outcome": "passed",
+      "keywords": [
+        "test_user_not_found",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000719199888408184,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03135369997471571,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00025959964841604233,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestUserManagement::test_requires_auth",
+      "lineno": 142,
+      "outcome": "passed",
+      "keywords": [
+        "test_requires_auth",
+        "asyncio",
+        "TestUserManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0004283003509044647,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.000717800110578537,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0001942003145813942,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAgentManagement::test_create_agent",
+      "lineno": 148,
+      "outcome": "passed",
+      "keywords": [
+        "test_create_agent",
+        "asyncio",
+        "TestAgentManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000650700181722641,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.24842659989371896,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00027900002896785736,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAgentManagement::test_create_sub_agent",
+      "lineno": 161,
+      "outcome": "passed",
+      "keywords": [
+        "test_create_sub_agent",
+        "asyncio",
+        "TestAgentManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007201000116765499,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.4986451002769172,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0004945001564919949,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAgentManagement::test_agent_login_and_create_user",
+      "lineno": 179,
+      "outcome": "passed",
+      "keywords": [
+        "test_agent_login_and_create_user",
+        "asyncio",
+        "TestAgentManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007497998885810375,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.7182110999710858,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00028030015528202057,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAgentManagement::test_agent_cannot_create_tester",
+      "lineno": 210,
+      "outcome": "passed",
+      "keywords": [
+        "test_agent_cannot_create_tester",
+        "asyncio",
+        "TestAgentManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007091998122632504,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5176440002396703,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002725999802350998,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAgentManagement::test_list_agents",
+      "lineno": 231,
+      "outcome": "passed",
+      "keywords": [
+        "test_list_agents",
+        "asyncio",
+        "TestAgentManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007070000283420086,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03435629978775978,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00037029990926384926,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_admin.py::TestAgentManagement::test_update_agent",
+      "lineno": 236,
+      "outcome": "passed",
+      "keywords": [
+        "test_update_agent",
+        "asyncio",
+        "TestAgentManagement",
+        "test_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007613003253936768,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.2852110001258552,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00027479976415634155,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_requires_admin",
+      "lineno": 117,
+      "outcome": "passed",
+      "keywords": [
+        "test_subtree_requires_admin",
+        "asyncio",
+        "TestAgentSubtree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.9990106001496315,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0008572996594011784,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.14110990008339286,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_root_contains_all_descendants",
+      "lineno": 123,
+      "outcome": "passed",
+      "keywords": [
+        "test_subtree_root_contains_all_descendants",
+        "asyncio",
+        "TestAgentSubtree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 1.026926300022751,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03419949999079108,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.1345057999715209,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_level_correct",
+      "lineno": 144,
+      "outcome": "passed",
+      "keywords": [
+        "test_subtree_level_correct",
+        "asyncio",
+        "TestAgentSubtree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 1.0133988000452518,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03258799994364381,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.13905799994245172,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_leaf_node",
+      "lineno": 170,
+      "outcome": "passed",
+      "keywords": [
+        "test_subtree_leaf_node",
+        "asyncio",
+        "TestAgentSubtree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 1.0071415998972952,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03370609972625971,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.1334653003141284,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_nonexistent_agent",
+      "lineno": 185,
+      "outcome": "passed",
+      "keywords": [
+        "test_subtree_nonexistent_agent",
+        "asyncio",
+        "TestAgentSubtree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000744400080293417,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.030207700096070766,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002655000425875187,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentSubtree::test_subtree_user_count",
+      "lineno": 195,
+      "outcome": "passed",
+      "keywords": [
+        "test_subtree_user_count",
+        "asyncio",
+        "TestAgentSubtree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.9935263996012509,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03472519991919398,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.13827200001105666,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree::test_tree_requires_admin",
+      "lineno": 213,
+      "outcome": "passed",
+      "keywords": [
+        "test_tree_requires_admin",
+        "asyncio",
+        "TestFullAgentTree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0005006003193557262,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0008093998767435551,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00022350018844008446,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree::test_tree_returns_list",
+      "lineno": 217,
+      "outcome": "passed",
+      "keywords": [
+        "test_tree_returns_list",
+        "asyncio",
+        "TestFullAgentTree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 1.003123499918729,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.26638909988105297,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.13487539999186993,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestFullAgentTree::test_tree_contains_our_root",
+      "lineno": 229,
+      "outcome": "passed",
+      "keywords": [
+        "test_tree_contains_our_root",
+        "asyncio",
+        "TestFullAgentTree",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.976780700031668,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.27006349992007017,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.13741880003362894,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_scope_requires_agent_token",
+      "lineno": 250,
+      "outcome": "passed",
+      "keywords": [
+        "test_scope_requires_agent_token",
+        "asyncio",
+        "TestAgentScopeList",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.00046580005437135696,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.000781400129199028,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.000206800177693367,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_root_agent_sees_all_descendants",
+      "lineno": 254,
+      "outcome": "passed",
+      "keywords": [
+        "test_root_agent_sees_all_descendants",
+        "asyncio",
+        "TestAgentScopeList",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.9778170003555715,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.26951760007068515,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.14201769977808,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_child_agent_sees_own_subtree_only",
+      "lineno": 275,
+      "outcome": "passed",
+      "keywords": [
+        "test_child_agent_sees_own_subtree_only",
+        "asyncio",
+        "TestAgentScopeList",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.9952857000753284,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.2815927998162806,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.13701159972697496,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_leaf_agent_sees_only_self",
+      "lineno": 295,
+      "outcome": "passed",
+      "keywords": [
+        "test_leaf_agent_sees_only_self",
+        "asyncio",
+        "TestAgentScopeList",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.9992388002574444,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.28903850028291345,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.15463689994066954,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestAgentScopeList::test_scope_pagination",
+      "lineno": 311,
+      "outcome": "passed",
+      "keywords": [
+        "test_scope_pagination",
+        "asyncio",
+        "TestAgentScopeList",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 1.012495799921453,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.2767667002044618,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.13921370031312108,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_requires_auth",
+      "lineno": 363,
+      "outcome": "passed",
+      "keywords": [
+        "test_revoke_all_requires_auth",
+        "asyncio",
+        "TestRevokeAll",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0005824998952448368,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0006636995822191238,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00020880019292235374,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_success",
+      "lineno": 367,
+      "outcome": "passed",
+      "keywords": [
+        "test_revoke_all_success",
+        "asyncio",
+        "TestRevokeAll",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007333997637033463,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5857135001569986,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002812999300658703,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_then_refresh_fails",
+      "lineno": 383,
+      "outcome": "passed",
+      "keywords": [
+        "test_revoke_all_then_refresh_fails",
+        "asyncio",
+        "TestRevokeAll",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008157999254763126,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5641461000777781,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00027639977633953094,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_agents_recursive.py::TestRevokeAll::test_revoke_all_me_still_works_briefly",
+      "lineno": 403,
+      "outcome": "passed",
+      "keywords": [
+        "test_revoke_all_me_still_works_briefly",
+        "asyncio",
+        "TestRevokeAll",
+        "test_agents_recursive.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007969001308083534,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5688408999703825,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0003223000094294548,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestLogin::test_login_success",
+      "lineno": 42,
+      "outcome": "passed",
+      "keywords": [
+        "test_login_success",
+        "asyncio",
+        "TestLogin",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008559003472328186,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5537980999797583,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002802000381052494,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestLogin::test_login_wrong_password",
+      "lineno": 59,
+      "outcome": "passed",
+      "keywords": [
+        "test_login_wrong_password",
+        "asyncio",
+        "TestLogin",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000826400239020586,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.568393100053072,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002813003957271576,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestLogin::test_login_nonexistent_user",
+      "lineno": 71,
+      "outcome": "passed",
+      "keywords": [
+        "test_login_nonexistent_user",
+        "asyncio",
+        "TestLogin",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0004658997058868408,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.06313770031556487,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00026459991931915283,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestLogin::test_login_invalid_project",
+      "lineno": 82,
+      "outcome": "passed",
+      "keywords": [
+        "test_login_invalid_project",
+        "asyncio",
+        "TestLogin",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008264998905360699,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5535308001562953,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00029189977794885635,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestLogin::test_login_no_authorization",
+      "lineno": 94,
+      "outcome": "passed",
+      "keywords": [
+        "test_login_no_authorization",
+        "asyncio",
+        "TestLogin",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007167998701334,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.532294400036335,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0005438998341560364,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestLogin::test_login_suspended_user",
+      "lineno": 113,
+      "outcome": "passed",
+      "keywords": [
+        "test_login_suspended_user",
+        "asyncio",
+        "TestLogin",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0015746001154184341,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.6076500997878611,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0003068000078201294,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestRefreshAndLogout::test_get_me",
+      "lineno": 145,
+      "outcome": "passed",
+      "keywords": [
+        "test_get_me",
+        "asyncio",
+        "TestRefreshAndLogout",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008426997810602188,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5702161001972854,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00028319982811808586,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_auth.py::TestRefreshAndLogout::test_logout_then_me_fails",
+      "lineno": 156,
+      "outcome": "passed",
+      "keywords": [
+        "test_logout_then_me_fails",
+        "asyncio",
+        "TestRefreshAndLogout",
+        "test_auth.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007716999389231205,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5431452998891473,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002641999162733555,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device.py::TestHeartbeat::test_heartbeat_success",
+      "lineno": 43,
+      "outcome": "passed",
+      "keywords": [
+        "test_heartbeat_success",
+        "asyncio",
+        "TestHeartbeat",
+        "test_device.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007668002508580685,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5825085998512805,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00036009959876537323,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device.py::TestHeartbeat::test_heartbeat_wrong_device",
+      "lineno": 55,
+      "outcome": "passed",
+      "keywords": [
+        "test_heartbeat_wrong_device",
+        "asyncio",
+        "TestHeartbeat",
+        "test_device.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000951599795371294,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5655074003152549,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002768002450466156,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device.py::TestHeartbeat::test_heartbeat_requires_auth",
+      "lineno": 67,
+      "outcome": "passed",
+      "keywords": [
+        "test_heartbeat_requires_auth",
+        "asyncio",
+        "TestHeartbeat",
+        "test_device.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0004739002324640751,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0008467002771794796,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00019910000264644623,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device.py::TestDeviceList::test_device_list_after_heartbeat",
+      "lineno": 77,
+      "outcome": "passed",
+      "keywords": [
+        "test_device_list_after_heartbeat",
+        "asyncio",
+        "TestDeviceList",
+        "test_device.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007197996601462364,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.6750496001914144,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00026670005172491074,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device.py::TestDeviceList::test_device_data_after_heartbeat",
+      "lineno": 98,
+      "outcome": "passed",
+      "keywords": [
+        "test_device_data_after_heartbeat",
+        "asyncio",
+        "TestDeviceList",
+        "test_device.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008382000960409641,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.6280822004191577,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00037139980122447014,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_requires_auth",
+      "lineno": 73,
+      "outcome": "passed",
+      "keywords": [
+        "test_requires_auth",
+        "asyncio",
+        "TestAdminDeviceList",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0005993000231683254,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0010181996040046215,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002639000304043293,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_admin_can_access",
+      "lineno": 78,
+      "outcome": "passed",
+      "keywords": [
+        "test_admin_can_access",
+        "asyncio",
+        "TestAdminDeviceList",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008564000017940998,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.07200649986043572,
+        "outcome": "passed",
+        "log": [
+          {
+            "name": "app.services.device_admin_service",
+            "msg": "\u6e38\u620f\u5e93\u79bb\u7ebf\u8bbe\u5907\u67e5\u8be2\u5931\u8d25\uff08\u4f18\u96c5\u964d\u7ea7\uff09: password authentication failed for user \"hive_user\"",
+            "args": null,
+            "levelname": "WARNING",
+            "levelno": 30,
+            "pathname": "E:\\Hive-GreatSage\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\HiveGreatSage\\HiveGreatSage-Verify\\app\\services\\device_admin_service.py",
+            "filename": "device_admin_service.py",
+            "module": "device_admin_service",
+            "exc_info": null,
+            "exc_text": null,
+            "stack_info": null,
+            "lineno": 308,
+            "funcName": "_fetch_offline_from_db",
+            "created": 1777125870.012672,
+            "msecs": 12.0,
+            "relativeCreated": 28690.0634765625,
+            "thread": 32316,
+            "threadName": "MainThread",
+            "processName": "MainProcess",
+            "process": 43196
+          }
+        ]
+      },
+      "teardown": {
+        "duration": 0.0002663000486791134,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_agent_can_access_own_scope",
+      "lineno": 99,
+      "outcome": "passed",
+      "keywords": [
+        "test_agent_can_access_own_scope",
+        "asyncio",
+        "TestAdminDeviceList",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008527003228664398,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5197511999867857,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002848999574780464,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_nonexistent_game_returns_404",
+      "lineno": 130,
+      "outcome": "passed",
+      "keywords": [
+        "test_nonexistent_game_returns_404",
+        "asyncio",
+        "TestAdminDeviceList",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007058000192046165,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03125050012022257,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00026849983260035515,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_pagination_params",
+      "lineno": 138,
+      "outcome": "passed",
+      "keywords": [
+        "test_pagination_params",
+        "asyncio",
+        "TestAdminDeviceList",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007078000344336033,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.07979079987853765,
+        "outcome": "passed",
+        "log": [
+          {
+            "name": "app.services.device_admin_service",
+            "msg": "\u6e38\u620f\u5e93\u79bb\u7ebf\u8bbe\u5907\u67e5\u8be2\u5931\u8d25\uff08\u4f18\u96c5\u964d\u7ea7\uff09: password authentication failed for user \"hive_user\"",
+            "args": null,
+            "levelname": "WARNING",
+            "levelno": 30,
+            "pathname": "E:\\Hive-GreatSage\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\HiveGreatSage\\HiveGreatSage-Verify\\app\\services\\device_admin_service.py",
+            "filename": "device_admin_service.py",
+            "module": "device_admin_service",
+            "exc_info": null,
+            "exc_text": null,
+            "stack_info": null,
+            "lineno": 308,
+            "funcName": "_fetch_offline_from_db",
+            "created": 1777125870.6471522,
+            "msecs": 647.0,
+            "relativeCreated": 29324.543714523315,
+            "thread": 32316,
+            "threadName": "MainThread",
+            "processName": "MainProcess",
+            "process": 43196
+          }
+        ]
+      },
+      "teardown": {
+        "duration": 0.00027660001069307327,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_online_only_filter",
+      "lineno": 150,
+      "outcome": "passed",
+      "keywords": [
+        "test_online_only_filter",
+        "asyncio",
+        "TestAdminDeviceList",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007573999464511871,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.05223030038177967,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002999003045260906,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestAdminDeviceList::test_device_has_required_fields",
+      "lineno": 162,
+      "outcome": "passed",
+      "keywords": [
+        "test_device_has_required_fields",
+        "asyncio",
+        "TestAdminDeviceList",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008064000867307186,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.6215980998240411,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0004588998854160309,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_requires_auth",
+      "lineno": 209,
+      "outcome": "passed",
+      "keywords": [
+        "test_imsi_requires_auth",
+        "asyncio",
+        "TestImsiUpload",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0005675000138580799,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0010387999936938286,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00022239983081817627,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_upload_success",
+      "lineno": 216,
+      "outcome": "passed",
+      "keywords": [
+        "test_imsi_upload_success",
+        "asyncio",
+        "TestImsiUpload",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008089998736977577,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5754761002026498,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00030739977955818176,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_upload_unbound_device_fails",
+      "lineno": 235,
+      "outcome": "passed",
+      "keywords": [
+        "test_imsi_upload_unbound_device_fails",
+        "asyncio",
+        "TestImsiUpload",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007931999862194061,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.5656516999006271,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0004781000316143036,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_overwrite",
+      "lineno": 249,
+      "outcome": "passed",
+      "keywords": [
+        "test_imsi_overwrite",
+        "asyncio",
+        "TestImsiUpload",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0009277998469769955,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.6113387998193502,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0005876999348402023,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_device_admin.py::TestImsiUpload::test_imsi_empty_string_fails",
+      "lineno": 273,
+      "outcome": "passed",
+      "keywords": [
+        "test_imsi_empty_string_fails",
+        "asyncio",
+        "TestImsiUpload",
+        "test_device_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008360999636352062,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.6014808998443186,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0003264998085796833,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestGetParams::test_get_params_returns_all_with_defaults",
+      "lineno": 113,
+      "outcome": "skipped",
+      "keywords": [
+        "test_get_params_returns_all_with_defaults",
+        "asyncio",
+        "TestGetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.024005800019949675,
+        "outcome": "skipped",
+        "stdout": "\n\u26a0\ufe0f  hive_game_001 \u4e0d\u53ef\u8bbf\u95ee: password authentication failed for user \"hive_user\"\n   \u8bf7\u8fd0\u884c: psql -U postgres -p 15432 -f scripts/setup_game_db.sql\n\n",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 114, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00027740001678466797,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestGetParams::test_get_params_requires_auth",
+      "lineno": 133,
+      "outcome": "passed",
+      "keywords": [
+        "test_get_params_requires_auth",
+        "asyncio",
+        "TestGetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.00039900001138448715,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0007563000544905663,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0001933998428285122,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestGetParams::test_get_params_enum_has_options",
+      "lineno": 138,
+      "outcome": "skipped",
+      "keywords": [
+        "test_get_params_enum_has_options",
+        "asyncio",
+        "TestGetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007333001121878624,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 139, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022319983690977097,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_int_param",
+      "lineno": 154,
+      "outcome": "skipped",
+      "keywords": [
+        "test_set_int_param",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0010100998915731907,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 155, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.0002313000150024891,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_multiple_params",
+      "lineno": 174,
+      "outcome": "skipped",
+      "keywords": [
+        "test_set_multiple_params",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007327999919652939,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 175, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022409996017813683,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_invalid_int_fails",
+      "lineno": 193,
+      "outcome": "skipped",
+      "keywords": [
+        "test_set_invalid_int_fails",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007322998717427254,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 194, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00023040035739541054,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_invalid_bool_fails",
+      "lineno": 209,
+      "outcome": "skipped",
+      "keywords": [
+        "test_set_invalid_bool_fails",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000840300228446722,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 210, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022030016407370567,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_nonexistent_key_fails",
+      "lineno": 223,
+      "outcome": "skipped",
+      "keywords": [
+        "test_set_nonexistent_key_fails",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007360000163316727,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 224, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022929999977350235,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_partial_success",
+      "lineno": 238,
+      "outcome": "skipped",
+      "keywords": [
+        "test_set_partial_success",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000723700039088726,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 239, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.0003626001998782158,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_upsert_overwrites",
+      "lineno": 255,
+      "outcome": "skipped",
+      "keywords": [
+        "test_set_upsert_overwrites",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008284999057650566,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_params.py', 256, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00026609981432557106,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_params.py::TestSetParams::test_set_requires_auth",
+      "lineno": 273,
+      "outcome": "passed",
+      "keywords": [
+        "test_set_requires_auth",
+        "asyncio",
+        "TestSetParams",
+        "test_params.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.00041319988667964935,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0008613001555204391,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00020619994029402733,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_requires_auth",
+      "lineno": 115,
+      "outcome": "passed",
+      "keywords": [
+        "test_check_requires_auth",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.00039299996569752693,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0008340999484062195,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00022190017625689507,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_invalid_version_format",
+      "lineno": 120,
+      "outcome": "skipped",
+      "keywords": [
+        "test_check_invalid_version_format",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007964000105857849,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 121, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022879987955093384,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_invalid_client_type",
+      "lineno": 129,
+      "outcome": "skipped",
+      "keywords": [
+        "test_check_invalid_client_type",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007822001352906227,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 130, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00023610005155205727,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_old_version_needs_update",
+      "lineno": 138,
+      "outcome": "skipped",
+      "keywords": [
+        "test_check_old_version_needs_update",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008880002424120903,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 139, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00023380015045404434,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_same_version_no_update",
+      "lineno": 154,
+      "outcome": "skipped",
+      "keywords": [
+        "test_check_same_version_no_update",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007751001976430416,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 155, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022190017625689507,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_newer_version_no_update",
+      "lineno": 164,
+      "outcome": "skipped",
+      "keywords": [
+        "test_check_newer_version_no_update",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007483996450901031,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 165, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022709975019097328,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_pc_client",
+      "lineno": 174,
+      "outcome": "skipped",
+      "keywords": [
+        "test_check_pc_client",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000740900170058012,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 175, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.0002305000089108944,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestCheckUpdate::test_check_redis_cache",
+      "lineno": 185,
+      "outcome": "skipped",
+      "keywords": [
+        "test_check_redis_cache",
+        "asyncio",
+        "TestCheckUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0009753000922501087,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 186, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.0002367999404668808,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_requires_auth",
+      "lineno": 203,
+      "outcome": "passed",
+      "keywords": [
+        "test_download_requires_auth",
+        "asyncio",
+        "TestDownloadUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0003681001253426075,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0007691001519560814,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00021480023860931396,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_android_returns_url",
+      "lineno": 207,
+      "outcome": "skipped",
+      "keywords": [
+        "test_download_android_returns_url",
+        "asyncio",
+        "TestDownloadUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007423004135489464,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 208, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022489996626973152,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_url_contains_token",
+      "lineno": 221,
+      "outcome": "skipped",
+      "keywords": [
+        "test_download_url_contains_token",
+        "asyncio",
+        "TestDownloadUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0008952002972364426,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 222, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00022339960560202599,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update.py::TestDownloadUpdate::test_download_invalid_client_type",
+      "lineno": 231,
+      "outcome": "skipped",
+      "keywords": [
+        "test_download_invalid_client_type",
+        "asyncio",
+        "TestDownloadUpdate",
+        "test_update.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007402999326586723,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update.py', 232, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.0002255002036690712,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_requires_admin_token",
+      "lineno": 67,
+      "outcome": "passed",
+      "keywords": [
+        "test_upload_requires_admin_token",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0004942999221384525,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0013680001720786095,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00020270003005862236,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalid_client_type",
+      "lineno": 76,
+      "outcome": "passed",
+      "keywords": [
+        "test_upload_invalid_client_type",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0006158002652227879,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03102850029245019,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00028899963945150375,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalid_version_format",
+      "lineno": 86,
+      "outcome": "passed",
+      "keywords": [
+        "test_upload_invalid_version_format",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007274998351931572,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.030851199757307768,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0002707000821828842,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalid_file_extension",
+      "lineno": 96,
+      "outcome": "passed",
+      "keywords": [
+        "test_upload_invalid_file_extension",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007289000786840916,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.029331800062209368,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00029900018125772476,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_empty_file",
+      "lineno": 106,
+      "outcome": "passed",
+      "keywords": [
+        "test_upload_empty_file",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000709600280970335,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.03042070008814335,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.00027189962565898895,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_android_success",
+      "lineno": 118,
+      "outcome": "skipped",
+      "keywords": [
+        "test_upload_android_success",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.000719000119715929,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.00023330003023147583,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update_admin.py', 124, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00021159974858164787,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_pc_success",
+      "lineno": 141,
+      "outcome": "skipped",
+      "keywords": [
+        "test_upload_pc_success",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0006217001937329769,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.00020699994638562202,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update_admin.py', 147, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00019950000569224358,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_force_update",
+      "lineno": 158,
+      "outcome": "skipped",
+      "keywords": [
+        "test_upload_force_update",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007623997516930103,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.00025949999690055847,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update_admin.py', 164, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00020779995247721672,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_idempotent_same_version",
+      "lineno": 175,
+      "outcome": "skipped",
+      "keywords": [
+        "test_upload_idempotent_same_version",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.0007886998355388641,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.00023610005155205727,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update_admin.py', 181, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.00021280022338032722,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_update_admin.py::TestUploadVersion::test_upload_invalidates_redis_cache",
+      "lineno": 201,
+      "outcome": "skipped",
+      "keywords": [
+        "test_upload_invalidates_redis_cache",
+        "asyncio",
+        "TestUploadVersion",
+        "test_update_admin.py",
+        "tests",
+        "HiveGreatSage-Verify",
+        ""
+      ],
+      "setup": {
+        "duration": 0.00069019990041852,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.00020399969071149826,
+        "outcome": "skipped",
+        "longrepr": "('E:\\\\Hive-GreatSage\\\\\u8702\u5de2\u00b7\u5927\u5723\uff08Hive-GreatSage\uff09\u9879\u76ee\\\\HiveGreatSage\\\\HiveGreatSage-Verify\\\\tests\\\\test_update_admin.py', 207, 'Skipped: hive_game_001 \u4e0d\u53ef\u8bbf\u95ee\uff08hive_user \u8ba4\u8bc1\u5931\u8d25\uff09\u3002\u8bf7\u4ee5 postgres \u8d85\u7ea7\u7528\u6237\u8fd0\u884c scripts/setup_game_db.sql \u4fee\u590d\u6743\u9650\uff0c\u7136\u540e\u91cd\u65b0\u6d4b\u8bd5\u3002')"
+      },
+      "teardown": {
+        "duration": 0.0037647001445293427,
+        "outcome": "passed"
+      }
+    }
+  ]
+}

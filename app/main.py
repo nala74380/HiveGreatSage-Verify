@@ -3,7 +3,7 @@ r"""
 文件名称: main.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-16
-版本: v1.0.0
+版本: v1.0.1
 功能说明:
     FastAPI 应用入口。负责：
       1. 应用生命周期管理（lifespan：启动检查 + 关闭清理）
@@ -12,13 +12,17 @@ r"""
       4. 日志初始化（loguru）
       5. Sentry 集成（生产环境）
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
-改进历史: 无
+
+改进历史:
+    v1.0.1 (2026-04-25) - 注册 update_admin 路由（POST /admin/api/updates/，C06）
+    v1.0.0 - 初始版本
 调试信息:
     启动命令（开发）：uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
     访问 API 文档：http://localhost:8000/docs
     若 SENTRY_DSN 为空则 Sentry 不启动（正常现象）。
 """
 
+import logging
 import sys
 from contextlib import asynccontextmanager
 
@@ -32,10 +36,7 @@ from app.database import dispose_all_engines
 
 # ── 日志初始化（loguru）──────────────────────────────────────
 def _setup_logging() -> None:
-    """配置 loguru：控制台 + 文件轮转（生产环境输出 JSON）。"""
-    logger.remove()  # 移除默认 handler
-
-    # 控制台输出
+    logger.remove()
     logger.add(
         sys.stderr,
         level=settings.LOG_LEVEL,
@@ -44,23 +45,35 @@ def _setup_logging() -> None:
                "<cyan>{name}</cyan>:<cyan>{line}</cyan> — <level>{message}</level>",
         colorize=True,
     )
-
-    # 文件输出（按天轮转，保留 30 天）
     if settings.LOG_FILE:
         import os
         os.makedirs(os.path.dirname(settings.LOG_FILE), exist_ok=True)
         logger.add(
             settings.LOG_FILE,
             level=settings.LOG_LEVEL,
-            rotation="00:00",       # 每天午夜轮转
+            rotation="00:00",
             retention="30 days",
             compression="zip",
-            serialize=settings.ENVIRONMENT == "production",  # 生产环境输出 JSON
+            serialize=settings.ENVIRONMENT == "production",
             encoding="utf-8",
         )
 
+    # 屏蔽 uvicorn 无效 HTTP 请求警告（来自浏览器 HTTPS 探测、Windows 网络健康检查等，不影响功能）
+    class _InvalidRequestFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return "Invalid HTTP request received" not in record.getMessage()
 
-# ── Sentry 初始化（D6 决策，DSN 为空则跳过）──────────────────
+    for _name in ("uvicorn.error", "uvicorn", "uvicorn.access"):
+        _logger = logging.getLogger(_name)
+        _logger.addFilter(_InvalidRequestFilter())
+
+    # 屏蔽 SQLAlchemy SQL 语句级别输出（默认 INFO 会把所有 SQL 刷屏幕）
+    _sa_log_level = getattr(logging, getattr(settings, 'SQLALCHEMY_LOG_LEVEL', 'WARNING'), logging.WARNING)
+    for _sa_name in ("sqlalchemy", "sqlalchemy.engine", "sqlalchemy.engine.Engine", "sqlalchemy.pool", "sqlalchemy.orm"):
+        logging.getLogger(_sa_name).setLevel(_sa_log_level)
+
+
+# ── Sentry 初始化 ─────────────────────────────────────────────
 def _setup_sentry() -> None:
     if not settings.SENTRY_DSN:
         logger.info("Sentry DSN 未配置，跳过初始化")
@@ -74,7 +87,7 @@ def _setup_sentry() -> None:
             dsn=settings.SENTRY_DSN,
             integrations=[FastApiIntegration(), SqlalchemyIntegration()],
             environment=settings.ENVIRONMENT,
-            traces_sample_rate=0.1,  # 采样 10% 的事务用于性能监控
+            traces_sample_rate=0.1,
         )
         logger.info("Sentry 已初始化")
     except ImportError:
@@ -101,8 +114,6 @@ def _production_safety_check() -> None:
 # ── 应用生命周期 ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动和关闭的钩子函数。"""
-    # ── 启动 ──────────────────────────────────────────────
     _setup_logging()
     _setup_sentry()
     _production_safety_check()
@@ -114,9 +125,8 @@ async def lifespan(app: FastAPI):
         f"RT有效期={settings.REFRESH_TOKEN_EXPIRE_DAYS}天"
     )
 
-    yield  # 应用运行中
+    yield
 
-    # ── 关闭 ──────────────────────────────────────────────
     logger.info("关闭数据库连接池...")
     await dispose_all_engines()
     logger.info("HiveGreatSage-Verify 已关闭")
@@ -127,7 +137,7 @@ app = FastAPI(
     title="HiveGreatSage-Verify",
     description="蜂巢·大圣平台 — 网络验证系统（中枢）",
     version="0.1.0",
-    docs_url="/docs" if settings.DEBUG else None,    # 生产环境关闭 Swagger UI
+    docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
 )
@@ -142,15 +152,34 @@ app.add_middleware(
 )
 
 # ── 路由注册 ──────────────────────────────────────────────────
-from app.routers import auth, users, agents, device, params, update, admin  # noqa: E402
+from app.routers import (  # noqa: E402
+    admin,
+    agents,
+    auth,
+    balance,
+    device,
+    device_admin,
+    params,
+    projects,
+    stats,
+    update,
+    update_admin,
+    users,
+)
 
-app.include_router(auth.router,   prefix="/api/auth",   tags=["认证"])
-app.include_router(users.router,  prefix="/api/users",  tags=["用户管理"])
-app.include_router(agents.router, prefix="/api/agents", tags=["代理管理"])
-app.include_router(device.router, prefix="/api/device", tags=["设备数据"])
-app.include_router(params.router, prefix="/api/params", tags=["脚本参数"])
-app.include_router(update.router, prefix="/api/update", tags=["热更新"])
-app.include_router(admin.router,  prefix="/admin/api",  tags=["管理后台"])
+app.include_router(auth.router,         prefix="/api/auth",          tags=["认证"])
+app.include_router(users.router,        prefix="/api/users",         tags=["用户管理"])
+app.include_router(agents.router,       prefix="/api/agents",        tags=["代理管理"])
+app.include_router(device.router,       prefix="/api/device",        tags=["设备数据"])
+app.include_router(params.router,       prefix="/api/params",        tags=["脚本参数"])
+app.include_router(update.router,       prefix="/api/update",        tags=["热更新"])
+app.include_router(admin.router,        prefix="/admin/api",         tags=["管理后台"])
+app.include_router(projects.router,     prefix="/admin/api",         tags=["项目管理"])
+app.include_router(update_admin.router, prefix="/admin/api/updates", tags=["热更新管理"])
+app.include_router(device_admin.router, prefix="/admin/api/devices", tags=["设备监控"])
+app.include_router(stats.router,        prefix="/api/stats",         tags=["统计数据"])
+app.include_router(balance.router,      prefix="/admin/api",         tags=["点数管理"])
+app.include_router(balance.router,      prefix="/api/agents",        tags=["代理余额"])
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

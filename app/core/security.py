@@ -3,7 +3,7 @@ r"""
 文件名称: security.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-16
-版本: v1.0.0
+版本: V1.0.2
 功能说明:
     安全模块，提供两类功能：
       1. 密码哈希：使用 bcrypt，verify_password / hash_password
@@ -11,8 +11,12 @@ r"""
          - Access Token（15分钟，含 sub/level/project/jti）
          - Refresh Token（不透明字符串，存 Redis，7天）
          - 校验 AT：decode_access_token
+         - Admin Token（8小时，type=admin）：create_admin_token / decode_admin_token
+         - Agent Token（8小时，type=agent）：create_agent_token / decode_agent_token
     所有有效期从 config.settings 读取，不硬编码。
-改进历史: 无
+改进历史:
+    V1.0.2 - 新增 Admin/Agent Token 签发/校验函数
+    V1.0.0 - 初始版本
 调试信息:
     JWT 解码失败（JWTError）通常是 SECRET_KEY 不一致或 Token 格式错误。
     bcrypt 版本兼容性：passlib[bcrypt] 与 bcrypt>=4.0 配合使用。
@@ -125,3 +129,61 @@ def get_access_token_remaining_seconds(jti_exp_timestamp: int) -> int:
     now = datetime.now(timezone.utc).timestamp()
     remaining = int(jti_exp_timestamp - now)
     return max(remaining, 0)
+
+
+# ── Admin Token ─────────────────────────────────────────────────────────────
+
+def create_admin_token(admin_id: int) -> str:
+    """
+    签发管理员 Token（type=admin，有效期 8 小时）。
+    与用户 Access Token 区分：不含 project 字段，不放入 Redis 黑名单。
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(hours=settings.ADMIN_TOKEN_EXPIRE_HOURS)
+    payload: dict[str, Any] = {
+        "sub": str(admin_id),
+        "type": "admin",
+        "iat": now,
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_admin_token(token: str) -> dict[str, Any]:
+    """
+    解码并验证 Admin Token。
+    失败时抛出 JWTError（由调用方转换为 HTTP 401）。
+    """
+    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    if payload.get("type") != "admin":
+        raise JWTError("Invalid token type: expected admin")
+    return payload
+
+
+# ── Agent Token ─────────────────────────────────────────────────────────────
+
+def create_agent_token(agent_id: int) -> str:
+    """
+    签发代理 Token（type=agent，有效期 8 小时）。
+    代理登录后用于创建用户、查看责任范围内的用户列表。
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(hours=settings.AGENT_TOKEN_EXPIRE_HOURS)
+    payload: dict[str, Any] = {
+        "sub": str(agent_id),
+        "type": "agent",
+        "iat": now,
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_agent_token(token: str) -> dict[str, Any]:
+    """
+    解码并验证 Agent Token。
+    失败时抛出 JWTError（由调用方转换为 HTTP 401）。
+    """
+    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    if payload.get("type") != "agent":
+        raise JWTError("Invalid token type: expected agent")
+    return payload
