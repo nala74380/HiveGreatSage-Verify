@@ -1,6 +1,16 @@
 /**
  * 文件位置: src/router/index.js
- * 功能说明: Vue Router 实例 + 全局路由守卫
+ * 名称: Vue Router 主入口
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.1.0
+ * 功能说明:
+ *   Vue Router 实例 + 全局路由守卫。
+ *   支持 Admin / Agent 两类后台身份。
+ *
+ * 改进内容:
+ *   V1.1.0 - 新增代理侧项目目录 / 我的余额路由，并增加 requiresAgent 守卫
+ *   V1.0.0 - 初始路由表
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -20,7 +30,7 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/dashboard' },
 
-        // ── 所有角色共用 ────────────────────────────────────
+        // ── 所有登录角色共用 ─────────────────────────────────
         {
           path: 'dashboard',
           name: 'Dashboard',
@@ -31,7 +41,7 @@ const router = createRouter({
           path: 'profile',
           name: 'AgentProfile',
           component: () => import('@/views/shared/AgentProfile.vue'),
-          meta: { requiresAuth: true, title: '个人主页' },
+          meta: { requiresAgent: true, title: '个人主页' },
         },
         {
           path: 'users',
@@ -46,16 +56,32 @@ const router = createRouter({
           meta: { requiresAuth: true, title: '用户详情' },
         },
         {
-          path: 'agents',
-          name: 'AgentList',
-          component: () => import('@/views/shared/AgentList.vue'),
-          meta: { requiresAuth: true, title: '代理管理' },
-        },
-        {
           path: 'devices',
           name: 'DeviceList',
           component: () => import('@/views/shared/DeviceList.vue'),
           meta: { requiresAuth: true, title: '设备监控' },
+        },
+
+        // ── Agent 专属 ──────────────────────────────────────
+        {
+          path: 'catalog',
+          name: 'AgentCatalog',
+          component: () => import('@/views/agent/AgentCatalog.vue'),
+          meta: { requiresAgent: true, title: '项目目录' },
+        },
+        {
+          path: 'balance',
+          name: 'AgentBalance',
+          component: () => import('@/views/agent/AgentBalance.vue'),
+          meta: { requiresAgent: true, title: '我的余额' },
+        },
+
+        // ── Admin 兼容共用页 ─────────────────────────────────
+        {
+          path: 'agents',
+          name: 'AgentList',
+          component: () => import('@/views/shared/AgentList.vue'),
+          meta: { requiresAdmin: true, title: '代理管理' },
         },
         {
           path: 'login-logs',
@@ -98,20 +124,36 @@ const router = createRouter({
       ],
     },
 
-    { path: '/login', component: AuthLayout, children: [{ path: '', name: 'Login', component: LoginView }] },
+    {
+      path: '/login',
+      component: AuthLayout,
+      children: [
+        { path: '', name: 'Login', component: LoginView },
+      ],
+    },
     { path: '/403', name: 'Forbidden', component: Forbidden },
     { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound },
   ],
 })
 
-router.beforeEach((to, from) => {
+router.beforeEach((to) => {
   const auth = useAuthStore()
-  if ((to.meta.requiresAuth || to.meta.requiresAdmin) && !auth.isLoggedIn)
+
+  if ((to.meta.requiresAuth || to.meta.requiresAdmin || to.meta.requiresAgent) && !auth.isLoggedIn) {
     return { name: 'Login', query: { redirect: to.fullPath } }
-  if (to.name === 'Login' && auth.isLoggedIn)
+  }
+
+  if (to.name === 'Login' && auth.isLoggedIn) {
     return auth.isAgent ? { name: 'AgentProfile' } : { name: 'Dashboard' }
-  if (to.meta.requiresAdmin && !auth.isAdmin)
+  }
+
+  if (to.meta.requiresAdmin && !auth.isAdmin) {
     return { name: 'Forbidden' }
+  }
+
+  if (to.meta.requiresAgent && !auth.isAgent) {
+    return { name: 'Forbidden' }
+  }
 })
 
 export default router

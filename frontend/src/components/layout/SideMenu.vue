@@ -30,12 +30,43 @@
 </template>
 
 <script setup>
+/**
+ * 文件位置: src/components/layout/SideMenu.vue
+ * 名称: 左侧导航菜单
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.1.0
+ * 功能及相关说明:
+ *   根据当前登录角色渲染侧边栏菜单。
+ *   Admin 显示平台管理菜单。
+ *   Agent 显示代理工作台菜单，包括项目目录与我的余额。
+ *
+ * 改进内容:
+ *   V1.1.0 - 新增代理侧「项目目录」「我的余额」入口，补齐代理端价格/余额能力链路
+ *   V1.0.0 - 初始侧边栏菜单
+ *
+ * 调试信息:
+ *   若菜单不显示，先检查 Pinia auth.role 是否为 admin / agent。
+ */
+
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore }  from '@/stores/app'
 import {
-  Odometer, User, Share, Monitor, Grid, Setting, Document, Upload, Avatar, QuestionFilled, Coin,
+  Odometer,
+  User,
+  Share,
+  Monitor,
+  Grid,
+  Setting,
+  Document,
+  Upload,
+  Avatar,
+  QuestionFilled,
+  Coin,
+  Tickets,
+  Wallet,
 } from '@element-plus/icons-vue'
 
 const route    = useRoute()
@@ -44,38 +75,36 @@ const appStore = useAppStore()
 
 const currentPath = computed(() => '/' + route.path.split('/')[1])
 
-/**
- * 菜单项：Admin 额外看到「游戏项目」。
- * 代理管理目前仅 Admin 可见（Phase 1：代理只能管理员创建）。
- */
 const menuItems = computed(() => {
-  const base = [
-    { label: '总览',     path: '/dashboard',  icon: Odometer },
-    { label: '用户管理', path: '/users',      icon: User },
-    { label: '设备监控', path: '/devices',    icon: Monitor },
-  ]
-
-  // Agent 专属：个人主页
+  // ── Agent 专属菜单 ───────────────────────────────────────
   if (auth.isAgent) {
-    base.unshift({ label: '个人主页', path: '/profile', icon: Avatar })
+    return [
+      { label: '个人主页', path: '/profile', icon: Avatar },
+      { label: '总览',     path: '/dashboard', icon: Odometer },
+      { label: '用户管理', path: '/users', icon: User },
+      { label: '设备监控', path: '/devices', icon: Monitor },
+      { label: '项目目录', path: '/catalog', icon: Tickets },
+      { label: '我的余额', path: '/balance', icon: Wallet },
+    ]
   }
 
+  // ── Admin 专属菜单 ───────────────────────────────────────
   if (auth.isAdmin) {
-    // Admin 专属菜单项
-    base.splice(2, 0,
-      { label: '代理管理', path: '/agents',      icon: Share },
-      { label: '项目管理', path: '/projects',    icon: Grid },
+    return [
+      { label: '总览',     path: '/dashboard',  icon: Odometer },
+      { label: '用户管理', path: '/users',      icon: User },
+      { label: '代理管理', path: '/agents',     icon: Share },
+      { label: '项目管理', path: '/projects',   icon: Grid },
       { label: '项目定价', path: '/pricing',    icon: Coin },
-      { label: '热更新',   path: '/updates',     icon: Upload },
-    )
-    base.push(
+      { label: '热更新',   path: '/updates',    icon: Upload },
+      { label: '设备监控', path: '/devices',    icon: Monitor },
       { label: '登录日志', path: '/login-logs', icon: Document },
       { label: '系统设置', path: '/settings',   icon: Setting },
       { label: '使用指南', path: '/guide',      icon: QuestionFilled },
-    )
+    ]
   }
 
-  return base
+  return []
 })
 </script>
 

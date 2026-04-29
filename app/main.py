@@ -3,7 +3,7 @@ r"""
 文件名称: main.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-16
-版本: v1.0.2
+版本: v1.0.3
 功能说明:
     FastAPI 应用入口。负责：
       1. 应用生命周期管理（lifespan：启动检查 + 关闭清理）
@@ -14,6 +14,7 @@ r"""
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
 
 改进历史:
+    v1.0.3 (2026-04-29) - 调整 balance_agent 注册顺序，避免 /api/agents/catalog 被 /api/agents/{agent_id} 抢占
     v1.0.2 (2026-04-29) - 拆分 balance_admin / balance_agent 路由，移除 balance.router 双前缀挂载
     v1.0.1 (2026-04-25) - 注册 update_admin 路由（POST /admin/api/updates/，C06）
     v1.0.0 - 初始版本
@@ -46,8 +47,10 @@ def _setup_logging() -> None:
                "<cyan>{name}</cyan>:<cyan>{line}</cyan> — <level>{message}</level>",
         colorize=True,
     )
+
     if settings.LOG_FILE:
         import os
+
         os.makedirs(os.path.dirname(settings.LOG_FILE), exist_ok=True)
         logger.add(
             settings.LOG_FILE,
@@ -70,7 +73,13 @@ def _setup_logging() -> None:
 
     # 屏蔽 SQLAlchemy SQL 语句级别输出（默认 INFO 会把所有 SQL 刷屏幕）
     _sa_log_level = getattr(logging, getattr(settings, "SQLALCHEMY_LOG_LEVEL", "WARNING"), logging.WARNING)
-    for _sa_name in ("sqlalchemy", "sqlalchemy.engine", "sqlalchemy.engine.Engine", "sqlalchemy.pool", "sqlalchemy.orm"):
+    for _sa_name in (
+        "sqlalchemy",
+        "sqlalchemy.engine",
+        "sqlalchemy.engine.Engine",
+        "sqlalchemy.pool",
+        "sqlalchemy.orm",
+    ):
         logging.getLogger(_sa_name).setLevel(_sa_log_level)
 
 
@@ -79,6 +88,7 @@ def _setup_sentry() -> None:
     if not settings.SENTRY_DSN:
         logger.info("Sentry DSN 未配置，跳过初始化")
         return
+
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -99,13 +109,18 @@ def _setup_sentry() -> None:
 def _production_safety_check() -> None:
     if settings.ENVIRONMENT != "production":
         return
+
     errors = []
+
     if settings.DEBUG:
         errors.append("生产环境 DEBUG 必须为 False")
+
     if settings.SECRET_KEY == "change-this-to-a-random-32-byte-string-in-production":
         errors.append("生产环境 SECRET_KEY 必须更换为随机强密钥")
+
     if len(settings.SECRET_KEY) < 32:
         errors.append("SECRET_KEY 长度不足 32 字节，存在安全风险")
+
     if errors:
         for err in errors:
             logger.critical(f"[安全检查失败] {err}")
@@ -143,6 +158,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # ── CORS 中间件 ───────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -151,6 +167,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ── 路由注册 ──────────────────────────────────────────────────
 from app.routers import (  # noqa: E402
@@ -169,19 +186,28 @@ from app.routers import (  # noqa: E402
     users,
 )
 
-app.include_router(auth.router,          prefix="/api/auth",          tags=["认证"])
-app.include_router(users.router,         prefix="/api/users",         tags=["用户管理"])
-app.include_router(agents.router,        prefix="/api/agents",        tags=["代理管理"])
-app.include_router(device.router,        prefix="/api/device",        tags=["设备数据"])
-app.include_router(params.router,        prefix="/api/params",        tags=["脚本参数"])
-app.include_router(update.router,        prefix="/api/update",        tags=["热更新"])
-app.include_router(admin.router,         prefix="/admin/api",         tags=["管理后台"])
-app.include_router(projects.router,      prefix="/admin/api",         tags=["项目管理"])
-app.include_router(update_admin.router,  prefix="/admin/api/updates", tags=["热更新管理"])
-app.include_router(device_admin.router,  prefix="/admin/api/devices", tags=["设备监控"])
-app.include_router(stats.router,         prefix="/api/stats",         tags=["统计数据"])
-app.include_router(balance_admin.router, prefix="/admin/api",         tags=["点数管理"])
-app.include_router(balance_agent.router, prefix="/api/agents",        tags=["代理余额"])
+app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
+app.include_router(users.router, prefix="/api/users", tags=["用户管理"])
+
+# 注意：
+# balance_agent 必须在 agents.router 之前注册。
+# 原因：
+#   agents.router 内可能存在 /{agent_id} 动态路由。
+#   若 agents.router 先注册，则 /api/agents/catalog 可能被误匹配为 /api/agents/{agent_id}。
+#   因此代理自查类静态路径必须先注册。
+app.include_router(balance_agent.router, prefix="/api/agents", tags=["代理余额"])
+
+app.include_router(agents.router, prefix="/api/agents", tags=["代理管理"])
+app.include_router(device.router, prefix="/api/device", tags=["设备数据"])
+app.include_router(params.router, prefix="/api/params", tags=["脚本参数"])
+app.include_router(update.router, prefix="/api/update", tags=["热更新"])
+
+app.include_router(admin.router, prefix="/admin/api", tags=["管理后台"])
+app.include_router(projects.router, prefix="/admin/api", tags=["项目管理"])
+app.include_router(update_admin.router, prefix="/admin/api/updates", tags=["热更新管理"])
+app.include_router(device_admin.router, prefix="/admin/api/devices", tags=["设备监控"])
+app.include_router(stats.router, prefix="/api/stats", tags=["统计数据"])
+app.include_router(balance_admin.router, prefix="/admin/api", tags=["点数管理"])
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

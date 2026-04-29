@@ -16,9 +16,12 @@
               <el-tag type="warning" effect="light" size="small">Lv.{{ profile.level }} 代理</el-tag>
               <el-tag
                 :type="profile.status === 'active' ? 'success' : 'danger'"
-                effect="light" size="small"
+                effect="light"
+                size="small"
                 style="margin-left:6px"
-              >{{ profile.status === 'active' ? '正常' : '已停用' }}</el-tag>
+              >
+                {{ profile.status === 'active' ? '正常' : '已停用' }}
+              </el-tag>
             </div>
           </div>
         </div>
@@ -88,6 +91,37 @@
         </el-col>
       </el-row>
 
+      <!-- 余额概览 -->
+      <el-card shadow="never" class="inner-card">
+        <template #header>
+          <div class="card-header-row">
+            <span class="card-title">点数余额</span>
+            <router-link to="/balance" class="view-link">查看流水 →</router-link>
+          </div>
+        </template>
+
+        <el-row :gutter="12">
+          <el-col :span="8">
+            <div class="mini-balance-card">
+              <div class="mini-label">充值点数</div>
+              <div class="mini-value">{{ fmt(balance.recharge_balance) }}</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="mini-balance-card">
+              <div class="mini-label">授信点数</div>
+              <div class="mini-value">{{ fmt(balance.credit_balance) }}</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="mini-balance-card">
+              <div class="mini-label">冻结授信</div>
+              <div class="mini-value frozen">{{ fmt(balance.frozen_credit) }}</div>
+            </div>
+          </el-col>
+        </el-row>
+      </el-card>
+
       <!-- 已授权项目 -->
       <el-card shadow="never" class="inner-card">
         <template #header>
@@ -96,7 +130,7 @@
               已授权项目
               <el-badge :value="profile.authorized_projects.length" type="primary" style="margin-left:6px" />
             </span>
-            <el-button size="small" type="primary" plain @click="openCatalogDialog">申请更多项目</el-button>
+            <el-button size="small" type="primary" plain @click="$router.push('/catalog')">查看项目目录</el-button>
           </div>
         </template>
 
@@ -111,7 +145,8 @@
             <template #default="{ row }">
               <el-tag
                 :type="row.project_type === 'game' ? 'primary' : 'info'"
-                effect="plain" size="small"
+                effect="plain"
+                size="small"
               >
                 {{ row.project_type === 'game' ? '🎮 游戏' : '🔑 验证' }}
               </el-tag>
@@ -129,7 +164,9 @@
                 {{ formatDate(row.valid_until) }}
                 <el-tag
                   :type="row.is_expired ? 'danger' : expiryTagType(row.valid_until)"
-                  size="small" effect="light" style="margin-left:4px"
+                  size="small"
+                  effect="light"
+                  style="margin-left:4px"
                 >
                   {{ row.is_expired ? '已过期' : expiryLabel(row.valid_until) }}
                 </el-tag>
@@ -153,167 +190,244 @@
           <el-button type="primary" :icon="User" @click="$router.push('/users')">管理我的用户</el-button>
           <el-button type="success" :icon="Plus" @click="$router.push('/users')">新建用户</el-button>
           <el-button :icon="Monitor" @click="$router.push('/devices')">设备监控</el-button>
+          <el-button :icon="Tickets" @click="$router.push('/catalog')">项目目录</el-button>
+          <el-button :icon="Wallet" @click="$router.push('/balance')">我的余额</el-button>
         </div>
       </el-card>
     </template>
   </div>
-
-  <!-- 项目目录 + 申请授权 弹窗 -->
-  <el-dialog v-model="catalogDialog.visible" title="项目目录与申请授权"
-    width="680px" destroy-on-close>
-    <el-table v-loading="catalogDialog.loading" :data="catalogDialog.projects" stripe size="small">
-      <el-table-column label="项目名称" min-width="140" prop="display_name" />
-      <el-table-column label="类型" width="90">
-        <template #default="{ row }">
-          <el-tag :type="row.project_type === 'game' ? 'primary' : 'info'" effect="plain" size="small">
-            {{ row.project_type === 'game' ? '游戏' : '验证' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="各级别单价" min-width="220">
-        <template #default="{ row }">
-          <div class="price-grid">
-            <span v-for="(pts, level) in row.prices" :key="level" class="price-item">
-              <LevelTag :level="level" />
-              <span class="price-pts">{{ pts }} 点</span>
-            </span>
-            <span v-if="!Object.keys(row.prices||{}).length" class="text-muted">暂未定价</span>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="授权状态" width="100">
-        <template #default="{ row }">
-          <el-tag v-if="isAuthorized(row.id)" type="success" effect="light" size="small">已授权</el-tag>
-          <el-tag v-else type="info" effect="plain" size="small">未授权</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="100" fixed="right">
-        <template #default="{ row }">
-          <el-button v-if="!isAuthorized(row.id)"
-            size="small" type="primary"
-            :loading="catalogDialog.applyingId === row.id"
-            @click="applyAuth(row)">
-            申请授权
-          </el-button>
-          <span v-else class="text-muted" style="font-size:12px">已拥有</span>
-        </template>
-      </el-table-column>
-    </el-table>
-    <template #footer>
-      <div class="catalog-footer">
-        <span class="text-muted" style="font-size:12px">
-          申请后需管理员审核授权，审核完成后项目将出现在已授权列表。
-        </span>
-        <el-button @click="catalogDialog.visible = false">关闭</el-button>
-      </div>
-    </template>
-  </el-dialog>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { User, Plus, Monitor } from '@element-plus/icons-vue'
+/**
+ * 文件位置: src/views/shared/AgentProfile.vue
+ * 名称: 代理个人主页
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.1.0
+ * 功能及相关说明:
+ *   代理登录后的个人主页。
+ *   展示代理基本信息、用户统计、余额概览、已授权项目、快捷操作。
+ *
+ * 改进内容:
+ *   V1.1.0 - 新增余额概览，并把项目目录/我的余额接入快捷操作
+ *   V1.0.0 - 初始代理个人主页
+ *
+ * 调试信息:
+ *   Network 应出现：
+ *     GET /api/agents/me
+ *     GET /api/agents/my/balance
+ */
+
+import { ref, onMounted } from 'vue'
+import { User, Plus, Monitor, Tickets, Wallet } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
-import { balanceApi } from '@/api/balance'
+import { agentBalanceApi } from '@/api/balance'
 import { formatDatetime, formatDate, expiryTagType, expiryLabel } from '@/utils/format'
-import LevelTag from '@/components/common/LevelTag.vue'
 
 const loading = ref(false)
 const profile = ref(null)
 
+const balance = ref({
+  recharge_balance: 0,
+  credit_balance: 0,
+  frozen_credit: 0,
+})
+
+const fmt = (val) => {
+  const n = Number(val || 0)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2)
+}
+
+const fetchProfile = async () => {
+  const res = await agentApi.me()
+  profile.value = res.data
+}
+
+const fetchBalance = async () => {
+  const res = await agentBalanceApi.myBalance()
+  balance.value = {
+    recharge_balance: res.data.recharge_balance ?? 0,
+    credit_balance: res.data.credit_balance ?? 0,
+    frozen_credit: res.data.frozen_credit ?? 0,
+  }
+}
+
 onMounted(async () => {
   loading.value = true
   try {
-    const res = await agentApi.me()
-    profile.value = res.data
+    await Promise.all([
+      fetchProfile(),
+      fetchBalance(),
+    ])
   } catch {
-    ElMessage.error('获取个人信息失败')
+    ElMessage.error('获取代理个人信息失败')
   } finally {
     loading.value = false
   }
 })
-
-// ── 项目目录弹窗 ─────────────────────────────────────
-const catalogDialog = reactive({
-  visible: false,
-  loading: false,
-  projects: [],
-  applyingId: null,
-})
-
-const isAuthorized = (projectId) => {
-  return profile.value?.authorized_projects?.some(p => p.id === projectId || p.project_id === projectId)
-}
-
-const openCatalogDialog = async () => {
-  catalogDialog.visible = true
-  catalogDialog.loading = true
-  try {
-    const res = await balanceApi.catalog()
-    catalogDialog.projects = res.data
-  } catch {
-    ElMessage.error('加载项目目录失败')
-  } finally {
-    catalogDialog.loading = false
-  }
-}
-
-const applyAuth = async (row) => {
-  catalogDialog.applyingId = row.id
-  try {
-    // 发送申请通知给管理员（目前以通知弹框模拟， Phase 2 引入审批流程）
-    // 当前展示: 弹出提示说明已提交申请
-    ElMessage.success(`已提交「${row.display_name}」的授权申请，请联系管理员开通。`)
-  } finally {
-    catalogDialog.applyingId = null
-  }
-}
 </script>
 
 <style scoped>
-.page { display: flex; flex-direction: column; gap: 16px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; }
-.page-header h2 { margin: 0; font-size: 18px; color: #1e293b; }
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
-.info-card, .inner-card { border-radius: 10px; }
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.info-card,
+.inner-card {
+  border-radius: 10px;
+}
 
 /* 代理头部 */
-.agent-header { display: flex; align-items: center; gap: 16px; }
-.agent-avatar {
-  width: 52px; height: 52px; border-radius: 50%;
-  background: linear-gradient(135deg, #f59e0b, #ef4444);
-  color: #fff; font-size: 22px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
-.agent-meta { flex: 1; }
-.agent-name { font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
-.agent-tags { display: flex; align-items: center; }
+
+.agent-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.agent-meta {
+  flex: 1;
+}
+
+.agent-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.agent-tags {
+  display: flex;
+  align-items: center;
+}
 
 /* 统计卡片 */
 .stat-card {
-  background: #fff; border-radius: 10px; padding: 16px 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.07); border-left: 4px solid transparent;
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07);
+  border-left: 4px solid transparent;
 }
-.stat-card.total     { border-color: #6366f1; }
-.stat-card.active    { border-color: #10b981; }
-.stat-card.suspended { border-color: #94a3b8; }
-.stat-num { font-size: 28px; font-weight: 700; color: #1e293b; line-height: 1; }
-.stat-lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
 
-.mono        { font-family: 'Cascadia Code', monospace; font-size: 12px; }
-.text-muted  { color: #94a3b8; font-size: 12px; }
-.text-success{ color: #10b981; }
-.text-danger { color: #ef4444; font-weight: 600; }
+.stat-card.total {
+  border-color: #6366f1;
+}
 
-.card-title      { font-size: 14px; font-weight: 600; color: #1e293b; }
-.card-header-row { display: flex; align-items: center; justify-content: space-between; }
+.stat-card.active {
+  border-color: #10b981;
+}
 
-.quick-actions { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0; }
+.stat-card.suspended {
+  border-color: #94a3b8;
+}
 
-/* 项目目录弹窗 */
-.price-grid  { display: flex; flex-wrap: wrap; gap: 6px; }
-.price-item  { display: flex; align-items: center; gap: 3px; }
-.price-pts   { font-size: 11px; color: #6366f1; font-weight: 600; }
-.catalog-footer { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.stat-num {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1;
+}
+
+.stat-lbl {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.mini-balance-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.mini-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.mini-value {
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.mini-value.frozen {
+  color: #f59e0b;
+}
+
+.mono {
+  font-family: 'Cascadia Code', monospace;
+  font-size: 12px;
+}
+
+.text-muted {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.text-success {
+  color: #10b981;
+}
+
+.text-danger {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.view-link {
+  color: #2563eb;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
 </style>
