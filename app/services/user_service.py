@@ -2,34 +2,25 @@ r"""
 文件位置: app/services/user_service.py
 文件名称: user_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-22
-版本: V1.0.0
+日期/时间: 2026-04-29
+版本: V1.1.0
 功能说明:
-    用户管理服务层，包含全部业务逻辑：
-      - create_user()           创建用户（管理员或代理调用）
-      - list_users()            查询用户列表（按调用方权限过滤）
-      - get_user()              查询用户详情（含授权列表）
-      - update_user()           更新用户状态/级别/到期时间
-      - grant_authorization()   为用户授予游戏授权
-      - revoke_authorization()  撤销游戏授权
+    用户管理服务层。
 
-    权限规则：
-      - 管理员：可创建所有级别用户（含 tester），可查看所有用户
-      - 代理：不能创建 tester 级别，只能查看自己直接创建的用户
-      - tester 级别由数据库 CHECK 约束 + 应用层双重保护
+本版增强:
+    - 用户列表返回创建者信息
+    - 用户列表/详情返回项目授权明细
+    - 授权明细按项目分开显示授权设备、已激活设备、未激活设备、到期时间
+    - 支持修改/重置密码
+    - 代理授权项目时触发点数扣除
 
-    TODO(P1): 代理权限范围扩展为递归子树查询（WITH RECURSIVE）
-
-关联文档:
-    [[01-网络验证系统/架构设计]] 4. 功能模块清单
-    [[01-网络验证系统/数据库设计]] 2.3 用户表
-
-改进历史:
-    V1.0.0 - 初始版本
-调试信息:
-    已知问题: 无
+安全边界:
+    - 不查询旧密码明文。
+    - 管理员自动生成密码时，只在响应中一次性返回新密码。
 """
 
+import secrets
+import string
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -37,15 +28,30 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.models.main.models import Admin, Agent, AgentProjectAuth, Authorization, DeviceBinding, GameProject, User
+from app.models.main.models import (
+    Admin,
+    Agent,
+    AgentProjectAuth,
+    Authorization,
+    DeviceBinding,
+    GameProject,
+    LoginLog,
+    User,
+)
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationInfo,
     AuthorizationResponse,
     UserCreateRequest,
     UserListResponse,
+    UserPasswordUpdateRequest,
+    UserPasswordUpdateResponse,
     UserResponse,
     UserUpdateRequest,
+)
+from app.services.balance_service import (
+    LEVEL_NAMES,
+    consume_agent_authorization_points,
 )
 
 
@@ -62,10 +68,11 @@ async def create_user(
     """
     创建用户。
 
-    约束：
-      1. tester 级别只有管理员能创建（应用层 + 数据库层双重保护）
-      2. 代理创建时检查 max_users 配额（0 表示无限制，跳过检查）
-      3. 用户名全局唯一
+    规则:
+      - tester 只有管理员能创建。
+      - 代理不能创建永久有效用户。
+      - 代理不能创建 max_devices=0 的无限制用户。
+      - 代理创建用户仍不直接扣点；真正扣点发生在项目授权时。
     """
     if body.user_level == "tester" and admin is None:
         raise HTTPException(
@@ -73,18 +80,32 @@ async def create_user(
             detail="tester 级别用户只有管理员能创建",
         )
 
-    if agent is not None and agent.max_users != 0:
-        count_result = await db.execute(
-            select(func.count(User.id)).where(
-                User.created_by_agent_id == agent.id
-            )
-        )
-        current_count = count_result.scalar_one()
-        if current_count >= agent.max_users:
+    if agent is not None:
+        if body.expired_at is None:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"已达到代理用户配额上限（{agent.max_users} 人）",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="代理创建用户必须设置到期时间",
             )
+
+        if body.max_devices == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="代理创建用户不允许设置无限设备",
+            )
+
+        if agent.max_users != 0:
+            count_result = await db.execute(
+                select(func.count(User.id)).where(
+                    User.created_by_agent_id == agent.id,
+                    User.is_deleted == False,  # noqa: E712
+                )
+            )
+            current_count = count_result.scalar_one()
+            if current_count >= agent.max_users:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"已达到代理用户配额上限（{agent.max_users} 人）",
+                )
 
     await _assert_username_unique(body.username, db)
 
@@ -99,9 +120,13 @@ async def create_user(
         status="active",
     )
     db.add(user)
-    await db.flush()    # 获取 user.id，但还未 commit（get_main_db 依赖会在请求结束时统一 commit）
+    await db.flush()
 
-    return _user_to_response(user, authorizations=[])
+    return _user_to_response(
+        user,
+        authorizations=[],
+        creator_agent_username=agent.username if agent else None,
+    )
 
 
 async def list_users(
@@ -114,26 +139,19 @@ async def list_users(
     level_filter: str | None,
     project_id_filter: int | None = None,
 ) -> UserListResponse:
-    """
-    查询用户列表（分页）。
-    管理员可见全部用户；代理只能看自己直接创建的用户。
-    Phase 2 将扩展代理权限为递归子树查询。
-    """
-    query = select(User)
-
-    # 默认排除已删除用户（is_deleted=True）
-    # 已删除 ≠ 已停用：停用用户仍在列表中显示（有停用徽章），删除的则完全从列表消失
-    query = query.where(User.is_deleted == False)  # noqa: E712
+    """查询用户列表。"""
+    query = select(User).where(User.is_deleted == False)  # noqa: E712
 
     if agent is not None:
         query = query.where(User.created_by_agent_id == agent.id)
 
     if status_filter:
         query = query.where(User.status == status_filter)
+
     if level_filter:
         query = query.where(User.user_level == level_filter)
+
     if project_id_filter:
-        # 只返回有该项目有效授权的用户
         query = query.where(
             User.id.in_(
                 select(Authorization.user_id).where(
@@ -143,13 +161,10 @@ async def list_users(
             )
         )
 
-    # 计算总数
-    count_result = await db.execute(
-        select(func.count()).select_from(query.subquery())
-    )
-    total = count_result.scalar_one()
+    total = (
+        await db.execute(select(func.count()).select_from(query.subquery()))
+    ).scalar_one()
 
-    # 分页查询
     offset = (page - 1) * page_size
     result = await db.execute(
         query.order_by(User.id.desc()).offset(offset).limit(page_size)
@@ -161,7 +176,10 @@ async def list_users(
 
     user_ids = [u.id for u in users]
 
-    # 授权总数（含 suspended）
+    creator_agent_map = await _load_creator_agent_map(users, db)
+    device_count_map = await _load_user_device_count_map(user_ids, db)
+    auth_details_map = await _load_authorization_details_map(users, only_active=True, db=db)
+
     auth_total_result = await db.execute(
         select(Authorization.user_id, func.count(Authorization.id).label("cnt"))
         .where(Authorization.user_id.in_(user_ids))
@@ -169,48 +187,30 @@ async def list_users(
     )
     auth_total_map = {row.user_id: row.cnt for row in auth_total_result.all()}
 
-    # 有效授权数（status = active）
     active_auth_result = await db.execute(
         select(Authorization.user_id, func.count(Authorization.id).label("cnt"))
-        .where(Authorization.user_id.in_(user_ids), Authorization.status == "active")
-        .group_by(Authorization.user_id)
-    )
-    auth_active_map = {row.user_id: row.cnt for row in active_auth_result.all()}
-
-    # 设备绑定计数
-    device_counts_result = await db.execute(
-        select(DeviceBinding.user_id, func.count(DeviceBinding.id).label("cnt"))
-        .where(
-            DeviceBinding.user_id.in_(user_ids),
-            DeviceBinding.status == "active",   # 模型一律用 active
-        )
-        .group_by(DeviceBinding.user_id)
-    )
-    device_map = {row.user_id: row.cnt for row in device_counts_result.all()}
-
-    # 有效授权项目名称（一次查询）
-    active_proj_result = await db.execute(
-        select(Authorization.user_id, GameProject.display_name)
-        .join(GameProject, Authorization.game_project_id == GameProject.id)
         .where(
             Authorization.user_id.in_(user_ids),
             Authorization.status == "active",
         )
-        .order_by(GameProject.display_name)
+        .group_by(Authorization.user_id)
     )
-    proj_names_map: dict[int, list[str]] = {}
-    for uid, name in active_proj_result.all():
-        proj_names_map.setdefault(uid, []).append(name)
+    active_auth_map = {row.user_id: row.cnt for row in active_auth_result.all()}
 
     return UserListResponse(
         users=[
             _user_to_response(
                 u,
-                authorizations=[],
+                authorizations=auth_details_map.get(u.id, []),
                 authorization_count=auth_total_map.get(u.id, 0),
-                active_authorization_count=auth_active_map.get(u.id, 0),
-                active_project_names=proj_names_map.get(u.id, []),
-                device_binding_count=device_map.get(u.id, 0),
+                active_authorization_count=active_auth_map.get(u.id, 0),
+                active_project_names=[
+                    item.game_project_name
+                    for item in auth_details_map.get(u.id, [])
+                    if item.status == "active"
+                ],
+                device_binding_count=device_count_map.get(u.id, 0),
+                creator_agent_username=creator_agent_map.get(u.created_by_agent_id),
             )
             for u in users
         ],
@@ -221,35 +221,32 @@ async def list_users(
 
 
 async def get_user(user_id: int, db: AsyncSession) -> UserResponse:
-    """
-    查询用户详情，包含当前所有授权记录。
-    使用单次联表查询加载授权 + 游戏项目信息，避免 N+1。
-    """
+    """查询用户详情，包含所有授权记录。"""
     user = await _get_user_or_404(user_id, db)
 
-    # 联表查询：一次性加载该用户所有授权及对应游戏项目信息
-    auth_result = await db.execute(
-        select(Authorization, GameProject)
-        .join(GameProject, Authorization.game_project_id == GameProject.id)
-        .where(Authorization.user_id == user_id)
-        .order_by(Authorization.id)
-    )
-    rows = auth_result.all()
-
-    authorizations = [
-        AuthorizationInfo(
-            id=auth.id,
-            game_project_id=auth.game_project_id,
-            game_project_code=project.code_name,
-            game_project_name=project.display_name,
-            valid_from=auth.valid_from,
-            valid_until=auth.valid_until,
-            status=auth.status,
+    creator_agent_username = None
+    if user.created_by_agent_id:
+        result = await db.execute(
+            select(Agent.username).where(Agent.id == user.created_by_agent_id)
         )
-        for auth, project in rows
-    ]
+        creator_agent_username = result.scalar_one_or_none()
 
-    return _user_to_response(user, authorizations=authorizations)
+    device_count_map = await _load_user_device_count_map([user.id], db)
+    auth_details_map = await _load_authorization_details_map([user], only_active=False, db=db)
+
+    authorizations = auth_details_map.get(user.id, [])
+
+    return _user_to_response(
+        user,
+        authorizations=authorizations,
+        authorization_count=len(authorizations),
+        active_authorization_count=len([a for a in authorizations if a.status == "active"]),
+        active_project_names=[
+            a.game_project_name for a in authorizations if a.status == "active"
+        ],
+        device_binding_count=device_count_map.get(user.id, 0),
+        creator_agent_username=creator_agent_username,
+    )
 
 
 async def update_user(
@@ -257,25 +254,76 @@ async def update_user(
     body: UserUpdateRequest,
     db: AsyncSession,
 ) -> UserResponse:
-    """
-    更新用户属性：状态、级别、到期时间。
-    只更新请求体中非 None 的字段。
-    """
+    """更新用户属性。"""
     user = await _get_user_or_404(user_id, db)
 
     if body.status is not None:
         user.status = body.status
+
     if body.user_level is not None:
         user.user_level = body.user_level
+
     if body.max_devices is not None:
         user.max_devices = body.max_devices
+
     if "expired_at" in body.model_fields_set:
-        # 明确传入 expired_at（含 None，用于设置永久有效）
         user.expired_at = body.expired_at
 
     await db.flush()
-    await db.refresh(user)  # 重新加载 updated_at 等 onupdate 字段，防止 MissingGreenlet
-    return _user_to_response(user, authorizations=[])
+    await db.refresh(user)
+
+    return await get_user(user_id=user_id, db=db)
+
+
+async def update_user_password(
+    user_id: int,
+    body: UserPasswordUpdateRequest,
+    db: AsyncSession,
+    admin: Admin | None,
+    agent: Agent | None,
+) -> UserPasswordUpdateResponse:
+    """
+    修改/重置用户密码。
+
+    - 管理员可 auto_generate，并一次性返回 generated_password。
+    - 代理不能 auto_generate 获取明文，只能提交 new_password。
+    - 系统只保存 password_hash。
+    """
+    user = await _get_user_or_404(user_id, db)
+
+    if agent is not None and user.created_by_agent_id != agent.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="代理只能修改自己创建用户的密码",
+        )
+
+    generated_password: str | None = None
+
+    if body.auto_generate:
+        if admin is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="只有管理员可以自动生成并一次性查看新密码",
+            )
+        generated_password = _generate_password()
+        new_password = generated_password
+    else:
+        if not body.new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="请输入新密码",
+            )
+        new_password = body.new_password
+
+    user.password_hash = hash_password(new_password)
+    await db.flush()
+
+    return UserPasswordUpdateResponse(
+        user_id=user.id,
+        username=user.username,
+        message="密码已更新",
+        generated_password=generated_password,
+    )
 
 
 async def grant_authorization(
@@ -286,19 +334,36 @@ async def grant_authorization(
     agent: Agent | None = None,
 ) -> AuthorizationResponse:
     """
-    为用户授予指定项目的访问权限。
+    为用户授予指定项目权限。
 
-    权限规则：
-      - 管理员：可授权任意项目
-      - 代理：只能授权自己已有效项目授权的项目
-
-    如已有授权记录（含已 suspended），则恢复并更新到期时间。
+    代理授权规则:
+      - 只能授权自己已有权限的项目。
+      - 必须设置 valid_until。
+      - 用户 max_devices 不能为 0。
+      - 授权成功前必须完成扣点。
     """
     user = await _get_user_or_404(user_id, db)
     project = await _get_project_or_404(body.game_project_id, db)
 
-    # 代理权限检查：只能授权自己已有的项目
     if agent is not None:
+        if user.created_by_agent_id != agent.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="代理只能给自己创建的用户授权项目",
+            )
+
+        if body.valid_until is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="代理授权项目必须设置到期时间，不能永久有效",
+            )
+
+        if user.max_devices == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="代理授权用户的设备数不能为无限制",
+            )
+
         auth_check = await db.execute(
             select(AgentProjectAuth).where(
                 AgentProjectAuth.agent_id == agent.id,
@@ -312,7 +377,6 @@ async def grant_authorization(
                 detail=f"代理没有项目「{project.display_name}」的授权权限",
             )
 
-    # 检查是否已有授权记录
     existing_result = await db.execute(
         select(Authorization).where(
             Authorization.user_id == user_id,
@@ -320,6 +384,29 @@ async def grant_authorization(
         )
     )
     existing = existing_result.scalar_one_or_none()
+
+    consumed_points = 0.0
+
+    if agent is not None:
+        now = datetime.now(timezone.utc)
+
+        if existing and existing.status == "active" and existing.valid_until:
+            base_from = max(_ensure_aware(existing.valid_until), now)
+        else:
+            base_from = now
+
+        # 新到期时间不晚于原到期时间，不额外扣点。
+        if body.valid_until and _ensure_aware(body.valid_until) > base_from:
+            consumed_points = await consume_agent_authorization_points(
+                agent_id=agent.id,
+                user_id=user.id,
+                project_id=project.id,
+                user_level=user.user_level,
+                device_count=user.max_devices,
+                start_at=base_from,
+                valid_until=body.valid_until,
+                db=db,
+            )
 
     if existing:
         existing.status = "active"
@@ -345,6 +432,7 @@ async def grant_authorization(
         valid_from=auth.valid_from,
         valid_until=auth.valid_until,
         status=auth.status,
+        consumed_points=consumed_points,
     )
 
 
@@ -353,10 +441,7 @@ async def revoke_authorization(
     auth_id: int,
     db: AsyncSession,
 ) -> None:
-    """
-    撤销用户的游戏授权。
-    状态改为 suspended，不物理删除（保留历史记录）。
-    """
+    """撤销授权，不退款。"""
     result = await db.execute(
         select(Authorization).where(
             Authorization.id == auth_id,
@@ -364,27 +449,33 @@ async def revoke_authorization(
         )
     )
     auth = result.scalar_one_or_none()
+
     if not auth:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="授权记录不存在",
         )
+
     auth.status = "suspended"
     await db.flush()
 
 
 # ─────────────────────────────────────────────────────────────
-# 内部辅助函数
+# 内部辅助
 # ─────────────────────────────────────────────────────────────
 
 async def _get_user_or_404(user_id: int, db: AsyncSession) -> User:
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.is_deleted == False)  # noqa: E712
+    )
     user = result.scalar_one_or_none()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"用户 ID={user_id} 不存在",
         )
+
     return user
 
 
@@ -392,15 +483,17 @@ async def _get_project_or_404(project_id: int, db: AsyncSession) -> GameProject:
     result = await db.execute(
         select(GameProject).where(
             GameProject.id == project_id,
-            GameProject.is_active == True,
+            GameProject.is_active == True,  # noqa: E712
         )
     )
     project = result.scalar_one_or_none()
+
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"游戏项目 ID={project_id} 不存在或已下线",
+            detail=f"项目 ID={project_id} 不存在或已下线",
         )
+
     return project
 
 
@@ -420,8 +513,18 @@ def _user_to_response(
     active_authorization_count: int = 0,
     active_project_names: list[str] | None = None,
     device_binding_count: int = 0,
+    creator_agent_username: str | None = None,
 ) -> UserResponse:
-    """将 User ORM 对象转换为 UserResponse Pydantic 模型。"""
+    if user.created_by_agent_id:
+        created_by_type = "agent"
+        created_by_display = creator_agent_username or f"代理ID={user.created_by_agent_id}"
+    elif user.created_by_admin:
+        created_by_type = "admin"
+        created_by_display = "管理员"
+    else:
+        created_by_type = "unknown"
+        created_by_display = "未知"
+
     return UserResponse(
         id=user.id,
         username=user.username,
@@ -433,9 +536,136 @@ def _user_to_response(
         expired_at=user.expired_at,
         created_by_admin=user.created_by_admin,
         created_by_agent_id=user.created_by_agent_id,
+        created_by_type=created_by_type,
+        created_by_display=created_by_display,
+        created_by_agent_username=creator_agent_username,
         authorizations=authorizations,
         authorization_count=authorization_count,
         active_authorization_count=active_authorization_count,
         active_project_names=active_project_names or [],
         device_binding_count=device_binding_count,
     )
+
+
+async def _load_creator_agent_map(users: list[User], db: AsyncSession) -> dict[int, str]:
+    agent_ids = sorted({u.created_by_agent_id for u in users if u.created_by_agent_id})
+    if not agent_ids:
+        return {}
+
+    result = await db.execute(
+        select(Agent.id, Agent.username).where(Agent.id.in_(agent_ids))
+    )
+    return {row.id: row.username for row in result.all()}
+
+
+async def _load_user_device_count_map(user_ids: list[int], db: AsyncSession) -> dict[int, int]:
+    result = await db.execute(
+        select(DeviceBinding.user_id, func.count(DeviceBinding.id).label("cnt"))
+        .where(
+            DeviceBinding.user_id.in_(user_ids),
+            DeviceBinding.status == "active",
+        )
+        .group_by(DeviceBinding.user_id)
+    )
+    return {row.user_id: row.cnt for row in result.all()}
+
+
+async def _load_project_activation_count_map(
+    user_ids: list[int],
+    db: AsyncSession,
+) -> dict[tuple[int, int], int]:
+    """
+    统计每个用户在每个项目成功登录激活过的去重设备数。
+
+    注意:
+        当前 device_binding 表没有 project_id 字段，因此这里使用 LoginLog:
+        user_id + game_project_id + distinct device_fingerprint + success=true
+    """
+    result = await db.execute(
+        select(
+            LoginLog.user_id,
+            LoginLog.game_project_id,
+            func.count(func.distinct(LoginLog.device_fingerprint)).label("cnt"),
+        )
+        .where(
+            LoginLog.user_id.in_(user_ids),
+            LoginLog.success == True,  # noqa: E712
+            LoginLog.device_fingerprint.is_not(None),
+            LoginLog.game_project_id.is_not(None),
+        )
+        .group_by(LoginLog.user_id, LoginLog.game_project_id)
+    )
+
+    return {
+        (row.user_id, row.game_project_id): row.cnt
+        for row in result.all()
+    }
+
+
+async def _load_authorization_details_map(
+    users: list[User],
+    only_active: bool,
+    db: AsyncSession,
+) -> dict[int, list[AuthorizationInfo]]:
+    if not users:
+        return {}
+
+    user_map = {u.id: u for u in users}
+    user_ids = list(user_map.keys())
+
+    query = (
+        select(Authorization, GameProject)
+        .join(GameProject, Authorization.game_project_id == GameProject.id)
+        .where(Authorization.user_id.in_(user_ids))
+        .order_by(Authorization.user_id, GameProject.display_name)
+    )
+
+    if only_active:
+        query = query.where(Authorization.status == "active")
+
+    activation_map = await _load_project_activation_count_map(user_ids, db)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    data: dict[int, list[AuthorizationInfo]] = {}
+
+    for auth, project in rows:
+        user = user_map[auth.user_id]
+        authorized_devices = user.max_devices
+        activated_devices = activation_map.get((auth.user_id, auth.game_project_id), 0)
+
+        if authorized_devices == 0:
+            inactive_devices = None
+        else:
+            inactive_devices = max(authorized_devices - activated_devices, 0)
+
+        item = AuthorizationInfo(
+            id=auth.id,
+            game_project_id=auth.game_project_id,
+            game_project_code=project.code_name,
+            game_project_name=project.display_name,
+            project_type=project.project_type,
+            user_level=user.user_level,
+            user_level_name=LEVEL_NAMES.get(user.user_level, user.user_level),
+            authorized_devices=authorized_devices,
+            activated_devices=activated_devices,
+            inactive_devices=inactive_devices,
+            valid_from=auth.valid_from,
+            valid_until=auth.valid_until,
+            status=auth.status,
+        )
+        data.setdefault(auth.user_id, []).append(item)
+
+    return data
+
+
+def _ensure_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _generate_password(length: int = 12) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
