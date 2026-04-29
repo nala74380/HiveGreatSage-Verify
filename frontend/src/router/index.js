@@ -3,12 +3,14 @@
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.4.0
+ * 版本: V1.5.0
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
  *
- * 本版新增:
- *   - 管理员代理等级管理页面
+ * 当前业务口径:
+ *   - 代理等级不再单独开设独立页面入口。
+ *   - 代理等级策略后续融合到代理管理页内展示或弹窗设置。
+ *   - 用户数量仅作统计展示。
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -89,12 +91,6 @@ const router = createRouter({
 
         // Admin
         {
-          path: 'agent-level-policies',
-          name: 'AgentLevelPolicies',
-          component: () => import('@/views/admin/AgentLevelPolicies.vue'),
-          meta: { requiresAdmin: true, title: '代理等级' },
-        },
-        {
           path: 'projects',
           name: 'GameProjectList',
           component: () => import('@/views/admin/GameProjectList.vue'),
@@ -153,7 +149,7 @@ const router = createRouter({
       ],
     },
     { path: '/403', name: 'Forbidden', component: Forbidden },
-    { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound },
+    { path: '/:pathMatch(.*)*', name: 'NotFound' , component: NotFound },
   ],
 })
 
@@ -175,6 +171,8 @@ router.beforeEach((to) => {
   if (to.meta.requiresAgent && !auth.isAgent) {
     return { name: 'Forbidden' }
   }
+
+  return true
 })
 
 export default router

@@ -816,7 +816,7 @@
 
                 <div class="creator-desc">
                   ID={{ creatorDialog.agent.id }} ·
-                  最大用户={{ creatorDialog.agent.max_users === 0 ? '不限' : creatorDialog.agent.max_users }} ·
+                  用户总数={{ creatorDialog.agent.users_total ?? 0 }} ·
                   已创建用户={{ creatorDialog.agent.users_total }}
                 </div>
 

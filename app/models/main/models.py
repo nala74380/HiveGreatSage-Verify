@@ -3,13 +3,13 @@ r"""
 文件名称: models.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-29
-版本: v1.0.5
+版本: v1.0.7
 功能说明:
     hive_platform 主库的全部 ORM 模型。
 
 核心表:
       - Admin（管理员）
-      - Agent（多级代理，自引用外键）
+      - Agent（多级代理，自引用外键；用户数量仅作统计展示）
       - User（账号主体）
       - Authorization（用户 × 项目授权）
       - AuthorizationCharge（授权扣点快照）
@@ -23,20 +23,26 @@ r"""
       - BalanceTransaction（点数流水）
 
 重要模型调整:
-    v1.0.5:
-      - 新增 AuthorizationCharge 授权扣点快照表
-      - BalanceTransaction 新增 related_charge_id
-      - 支持删除用户按剩余未使用时间自动返点
+    v1.0.7:
+      - 移除旧账号数量限制口径。
+      - 用户数量只作为统计展示。
+      - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
 
     v1.0.6:
-      - DeviceBinding 新增 game_project_id
-      - 设备绑定口径由 user_id + device_fingerprint 调整为 user_id + game_project_id + device_fingerprint
+      - DeviceBinding 新增 game_project_id。
+      - 设备绑定口径由 user_id + device_fingerprint 调整为
+        user_id + game_project_id + device_fingerprint。
+
+    v1.0.5:
+      - 新增 AuthorizationCharge 授权扣点快照表。
+      - BalanceTransaction 新增 related_charge_id。
+      - 支持删除用户按剩余未使用时间自动返点。
 
     v1.0.4:
-      - Authorization 新增 user_level
-      - Authorization 新增 authorized_devices
-      - 项目内用户等级、授权设备数、授权到期时间统一归属 Authorization
-      - User.user_level / User.max_devices / User.expired_at 暂保留兼容，不再作为新业务主口径
+      - Authorization 新增 user_level。
+      - Authorization 新增 authorized_devices。
+      - 项目内用户等级、授权设备数、授权到期时间统一归属 Authorization。
+      - User.user_level / User.max_devices / User.expired_at 暂保留兼容，不再作为新业务主口径。
 
 调试信息:
     关系加载策略统一使用 lazy="select"。
@@ -67,19 +73,27 @@ from app.database import Base
 
 
 # ── 管理员表 ──────────────────────────────────────────────────
+
 class Admin(Base):
     __tablename__ = "admin"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+
+    username: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=False,
+    )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         server_default="active",
         comment="管理员状态: active / suspended",
     )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -101,6 +115,7 @@ class Admin(Base):
 
 
 # ── 代理表 ────────────────────────────────────────────────────
+
 class Agent(Base):
     __tablename__ = "agent"
     __table_args__ = (
@@ -112,7 +127,12 @@ class Agent(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+
+    username: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=False,
+    )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
     parent_agent_id: Mapped[int | None] = mapped_column(
@@ -120,7 +140,14 @@ class Agent(Base):
         ForeignKey("agent.id", ondelete="RESTRICT"),
         nullable=True,
     )
-    level: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+
+    # 代理组织层级 / 代理树深度，不是业务等级。
+    # 代理业务等级使用 AgentBusinessProfile.tier_level。
+    level: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=1,
+    )
 
     created_by_admin_id: Mapped[int | None] = mapped_column(
         Integer,
@@ -128,13 +155,17 @@ class Agent(Base):
         nullable=True,
     )
 
-    max_users: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    commission_rate: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    commission_rate: Mapped[float | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
+
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         server_default="active",
     )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -161,7 +192,10 @@ class Agent(Base):
         back_populates="agents_created",
         foreign_keys=[created_by_admin_id],
     )
-    users: Mapped[list["User"]] = relationship("User", back_populates="created_by_agent")
+    users: Mapped[list["User"]] = relationship(
+        "User",
+        back_populates="created_by_agent",
+    )
     project_auths: Mapped[list["AgentProjectAuth"]] = relationship(
         "AgentProjectAuth",
         back_populates="agent",
@@ -183,6 +217,7 @@ class Agent(Base):
 
 
 # ── 用户表 ────────────────────────────────────────────────────
+
 class User(Base):
     __tablename__ = "user"
     __table_args__ = (
@@ -197,7 +232,12 @@ class User(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+
+    username: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=False,
+    )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # 兼容旧字段：
@@ -276,6 +316,7 @@ class User(Base):
 
 
 # ── 项目注册表 ─────────────────────────────────────────────────
+
 class GameProject(Base):
     __tablename__ = "game_project"
     __table_args__ = (
@@ -286,13 +327,18 @@ class GameProject(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
     project_uuid: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         unique=True,
         nullable=False,
         default=uuid.uuid4,
     )
-    code_name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    code_name: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=False,
+    )
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     project_type: Mapped[str] = mapped_column(
         String(20),
@@ -300,8 +346,13 @@ class GameProject(Base):
         server_default="game",
         comment="game=游戏项目 / verification=普通验证项目",
     )
-    db_name: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    db_name: Mapped[str | None] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=True,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true")
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -340,6 +391,7 @@ class GameProject(Base):
 
 
 # ── 代理项目授权表 ─────────────────────────────────────────────
+
 class AgentProjectAuth(Base):
     __tablename__ = "agent_project_auth"
     __table_args__ = (
@@ -359,7 +411,6 @@ class AgentProjectAuth(Base):
         ForeignKey("agent.id", ondelete="CASCADE"),
         nullable=False,
     )
-
     project_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("game_project.id", ondelete="CASCADE"),
@@ -370,19 +421,17 @@ class AgentProjectAuth(Base):
         DateTime(timezone=True),
         nullable=True,
     )
-
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         server_default="active",
     )
-
     granted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
     )
 
-    # 新增：项目授权来源
+    # 项目授权来源:
     # admin_manual      = 管理员手动开通
     # request_approved = 管理员批准代理申请
     # auto_approved    = 系统自动开通
@@ -393,31 +442,28 @@ class AgentProjectAuth(Base):
         comment="admin_manual/request_approved/auto_approved",
     )
 
-    # 新增：关联代理项目开通申请
     request_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("agent_project_auth_request.id", ondelete="SET NULL"),
         nullable=True,
         comment="关联代理项目开通申请 ID",
     )
-
-    # 新增：批准该项目授权的管理员
     granted_by_admin_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("admin.id", ondelete="SET NULL"),
         nullable=True,
         comment="批准开通该项目的管理员 ID",
     )
-
-    # 新增：授权原因 / 审核备注 / 自动开通原因
     granted_reason: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="项目授权原因 / 审核备注 / 自动开通原因",
     )
 
-    agent: Mapped["Agent"] = relationship("Agent", back_populates="project_auths")
-
+    agent: Mapped["Agent"] = relationship(
+        "Agent",
+        back_populates="project_auths",
+    )
     project: Mapped["GameProject"] = relationship(
         "GameProject",
         back_populates="agent_project_auths",
@@ -429,7 +475,9 @@ class AgentProjectAuth(Base):
             f"project={self.project_id} source={self.source}>"
         )
 
+
 # ── 授权表：用户 × 项目 ───────────────────────────────────────
+
 class Authorization(Base):
     __tablename__ = "authorization"
     __table_args__ = (
@@ -445,6 +493,7 @@ class Authorization(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
     user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("user.id", ondelete="CASCADE"),
@@ -483,7 +532,10 @@ class Authorization(Base):
         server_default="active",
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="authorizations")
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="authorizations",
+    )
     game_project: Mapped["GameProject"] = relationship(
         "GameProject",
         back_populates="authorizations",
@@ -502,6 +554,7 @@ class Authorization(Base):
 
 
 # ── 授权扣点快照表 ───────────────────────────────────────────
+
 class AuthorizationCharge(Base):
     __tablename__ = "authorization_charge"
     __table_args__ = (
@@ -657,6 +710,7 @@ class AuthorizationCharge(Base):
 
 
 # ── 设备绑定表 ────────────────────────────────────────────────
+
 class DeviceBinding(Base):
     __tablename__ = "device_binding"
     __table_args__ = (
@@ -672,6 +726,7 @@ class DeviceBinding(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
     user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("user.id", ondelete="CASCADE"),
@@ -683,7 +738,9 @@ class DeviceBinding(Base):
         nullable=True,
         comment="绑定所属项目；迁移期允许为空，新登录绑定必须写入",
     )
+
     device_fingerprint: Mapped[str] = mapped_column(String(256), nullable=False)
+
     bound_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -704,7 +761,10 @@ class DeviceBinding(Base):
         server_default="active",
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="device_bindings")
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="device_bindings",
+    )
     game_project: Mapped["GameProject | None"] = relationship(
         "GameProject",
         back_populates="device_bindings",
@@ -718,6 +778,7 @@ class DeviceBinding(Base):
 
 
 # ── 版本记录表 ────────────────────────────────────────────────
+
 class VersionRecord(Base):
     __tablename__ = "version_record"
     __table_args__ = (
@@ -736,6 +797,7 @@ class VersionRecord(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
     game_project_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("game_project.id", ondelete="CASCADE"),
@@ -771,6 +833,7 @@ class VersionRecord(Base):
 
 
 # ── 登录日志表 ────────────────────────────────────────────────
+
 class LoginLog(Base):
     __tablename__ = "login_log"
     __table_args__ = (
@@ -779,13 +842,19 @@ class LoginLog(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user.id"), nullable=True)
+
+    user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("user.id"),
+        nullable=True,
+    )
     device_fingerprint: Mapped[str | None] = mapped_column(String(256), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
     client_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     game_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     fail_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     login_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -796,6 +865,7 @@ class LoginLog(Base):
 
 
 # ── 项目定价表 ────────────────────────────────────────────────
+
 class ProjectPrice(Base):
     __tablename__ = "project_price"
     __table_args__ = (
@@ -803,6 +873,7 @@ class ProjectPrice(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
     project_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("game_project.id", ondelete="CASCADE"),
@@ -818,6 +889,7 @@ class ProjectPrice(Base):
         nullable=False,
         comment="授权一台设备消耗的点数",
     )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -838,16 +910,19 @@ class ProjectPrice(Base):
 
 
 # ── 代理余额表 ────────────────────────────────────────────────
+
 class AgentBalance(Base):
     __tablename__ = "agent_balance"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
     agent_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("agent.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
     )
+
     charged_points: Mapped[float] = mapped_column(
         Numeric(14, 4),
         nullable=False,
@@ -878,17 +953,25 @@ class AgentBalance(Base):
         onupdate=func.now(),
     )
 
-    agent: Mapped["Agent"] = relationship("Agent", back_populates="balance")
+    agent: Mapped["Agent"] = relationship(
+        "Agent",
+        back_populates="balance",
+    )
 
     @property
     def available_points(self) -> float:
-        return float(self.charged_points) + float(self.credit_points) - float(self.frozen_credit)
+        return (
+            float(self.charged_points)
+            + float(self.credit_points)
+            - float(self.frozen_credit)
+        )
 
     def __repr__(self) -> str:
         return f"<AgentBalance agent={self.agent_id} available={self.available_points:.4f}>"
 
 
 # ── 点数流水记录表 ────────────────────────────────────────────
+
 class BalanceTransaction(Base):
     __tablename__ = "balance_transaction"
     __table_args__ = (
@@ -897,6 +980,7 @@ class BalanceTransaction(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
     agent_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("agent.id", ondelete="CASCADE"),
@@ -912,19 +996,23 @@ class BalanceTransaction(Base):
         nullable=False,
         comment="charged=充值点数 credit=授信点数",
     )
+
     amount: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
     balance_before: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
     balance_after: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     operated_by_admin_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     related_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     related_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     related_charge_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("authorization_charge.id", ondelete="SET NULL"),
         nullable=True,
         comment="关联授权扣点快照 ID",
     )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

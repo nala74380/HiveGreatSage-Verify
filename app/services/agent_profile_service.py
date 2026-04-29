@@ -1,23 +1,25 @@
 r"""
 文件位置: app/services/agent_profile_service.py
 文件名称: agent_profile_service.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
+作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-04-29
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     管理员端代理业务等级、业务画像、密码重置服务。
 
 边界:
     - 不修改 Agent.level 的含义。
-    - Agent.level 继续表示组织层级。
+    - Agent.level 继续表示组织层级 / 代理树深度。
     - AgentBusinessProfile.tier_level 表示代理业务等级。
+    - AgentLevelPolicy 只表达授信、下级代理、自动开通和审核优先级。
+    - 用户数量只作为统计展示。
 """
 
 import secrets
 import string
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -246,7 +248,6 @@ def _policy_to_response(policy: AgentLevelPolicy) -> AgentLevelPolicyAdminRespon
         description=policy.description,
         default_credit_limit=_as_float(policy.default_credit_limit),
         max_credit_limit=_as_float(policy.max_credit_limit),
-        max_users_default=policy.max_users_default,
         can_create_sub_agents=policy.can_create_sub_agents,
         max_sub_agents=policy.max_sub_agents,
         can_auto_open_project=policy.can_auto_open_project,

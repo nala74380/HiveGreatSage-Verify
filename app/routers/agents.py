@@ -2,8 +2,8 @@ r"""
 文件位置: app/routers/agents.py
 文件名称: agents.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-22
-版本: V1.0.3
+日期/时间: 2026-04-29
+版本: V1.1.0
 功能说明:
     代理管理路由（薄层）。
 
@@ -23,7 +23,14 @@ r"""
       GET   /api/agents/{id}/subtree  查询代理子树（Admin Token）
       PATCH /api/agents/{id}          更新代理信息（Admin Token）
 
+当前业务口径:
+    - Agent.level 表示代理组织层级 / 代理树深度。
+    - AgentBusinessProfile.tier_level 表示代理业务等级。
+    - 用户数量只作为统计展示，不再作为代理配额硬约束。
+    - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
+
 改进历史:
+    V1.1.0 (2026-04-29) - 移除旧账号数量限制口径，保留用户数量统计。
     V1.0.3 (2026-04-26) - 新增 GET /api/agents/me 代理个人主页
     V1.0.2 (2026-04-25) - 修复路由顺序；恢复 my-projects 端点
     V1.0.1 (2026-04-25) - 新增 Phase 2 树形查询端点
@@ -86,13 +93,11 @@ async def get_my_profile(
     代理获取自己的详细个人信息（Agent Token）。
 
     返回：
-      - 基本信息（用户名、级别、状态、创建时间）
-      - 用户配额（已创建/上限）
+      - 基本信息（用户名、组织层级、状态、创建时间）
+      - 直属用户数统计（只统计，不再作为配额限制）
       - 已授权项目列表（含到期时间）
-      - 直属用户数统计（按状态分组）
       - 上级代理信息（若有）
     """
-    # 直属用户数
     users_total = (await db.execute(
         select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id)
     )).scalar_one()
@@ -111,14 +116,13 @@ async def get_my_profile(
         )
     )).scalar_one()
 
-    # 已授权项目
     proj_result = await db.execute(
         select(AgentProjectAuth, GameProject)
         .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
         .where(
             AgentProjectAuth.agent_id == current_agent.id,
             AgentProjectAuth.status == "active",
-            GameProject.is_active == True,
+            GameProject.is_active == True,  # noqa: E712
         )
         .order_by(GameProject.display_name)
     )
@@ -127,38 +131,41 @@ async def get_my_profile(
 
     authorized_projects = [
         {
-            "id":               project.id,
-            "display_name":     project.display_name,
-            "code_name":        project.code_name,
-            "project_type":     project.project_type,
-            "valid_until":      auth.valid_until.isoformat() if auth.valid_until else None,
-            "is_expired":       auth.valid_until is not None
-                                and auth.valid_until.replace(tzinfo=timezone.utc) <= now,
+            "id": project.id,
+            "display_name": project.display_name,
+            "code_name": project.code_name,
+            "project_type": project.project_type,
+            "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
+            "is_expired": (
+                auth.valid_until is not None
+                and auth.valid_until.replace(tzinfo=timezone.utc) <= now
+            ),
         }
         for auth, project in proj_rows
     ]
 
-    # 上级代理信息
     parent_info = None
     if current_agent.parent_agent_id:
         parent = await db.get(Agent, current_agent.parent_agent_id)
         if parent:
-            parent_info = {"id": parent.id, "username": parent.username, "level": parent.level}
+            parent_info = {
+                "id": parent.id,
+                "username": parent.username,
+                "level": parent.level,
+            }
 
     return {
-        "id":               current_agent.id,
-        "username":         current_agent.username,
-        "level":            current_agent.level,
-        "status":           current_agent.status,
-        "created_at":       current_agent.created_at.isoformat(),
-        "updated_at":       current_agent.updated_at.isoformat() if current_agent.updated_at else None,
-        "max_users":        current_agent.max_users,
-        "commission_rate":  float(current_agent.commission_rate) if current_agent.commission_rate else None,
-        "parent_agent":     parent_info,
-        "users_total":      users_total,
-        "users_active":     users_active,
-        "users_suspended":  users_suspended,
-        "users_quota_left": (current_agent.max_users - users_total) if current_agent.max_users else None,
+        "id": current_agent.id,
+        "username": current_agent.username,
+        "level": current_agent.level,
+        "status": current_agent.status,
+        "created_at": current_agent.created_at.isoformat(),
+        "updated_at": current_agent.updated_at.isoformat() if current_agent.updated_at else None,
+        "commission_rate": float(current_agent.commission_rate) if current_agent.commission_rate else None,
+        "parent_agent": parent_info,
+        "users_total": users_total,
+        "users_active": users_active,
+        "users_suspended": users_suspended,
         "authorized_projects": authorized_projects,
     }
 
@@ -182,7 +189,7 @@ async def get_my_authorized_projects(
         .where(
             AgentProjectAuth.agent_id == current_agent.id,
             AgentProjectAuth.status == "active",
-            GameProject.is_active == True,
+            GameProject.is_active == True,  # noqa: E712
         )
         .order_by(GameProject.display_name)
     )
@@ -191,10 +198,10 @@ async def get_my_authorized_projects(
     now = datetime.now(tz=timezone.utc)
     return [
         {
-            "id":              project.id,
-            "display_name":    project.display_name,
-            "code_name":       project.code_name,
-            "project_type":    project.project_type,
+            "id": project.id,
+            "display_name": project.display_name,
+            "code_name": project.code_name,
+            "project_type": project.project_type,
             "auth_valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
         }
         for auth, project in rows
@@ -307,5 +314,5 @@ async def update_agent_endpoint(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentResponse:
-    """更新代理状态、用户配额或佣金比例（需管理员身份）。"""
+    """更新代理状态或佣金比例（需管理员身份）。"""
     return await update_agent(agent_id=agent_id, body=body, db=db)

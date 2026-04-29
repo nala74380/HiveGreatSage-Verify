@@ -42,3 +42,5 @@
 2026-04-30 02:00:14.052 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
 2026-04-30 02:00:28.967 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
 2026-04-30 02:00:29.830 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
+2026-04-30 02:36:40.843 | INFO     | app.main:lifespan:146 - 关闭数据库连接池...
+2026-04-30 02:36:40.876 | INFO     | app.main:lifespan:148 - HiveGreatSage-Verify 已关闭

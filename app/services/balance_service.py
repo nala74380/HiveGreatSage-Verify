@@ -1,9 +1,9 @@
 r"""
 文件位置: app/services/balance_service.py
 名称: 代理余额与项目定价服务层
-作者: 蜂巢·大圣 (Hive-GreatSage)
+作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-04-29
-版本: V1.4.0
+版本: V1.4.1
 功能说明:
     项目定价管理、代理余额管理、授权扣点、删除用户返点、流水查询。
 
@@ -1212,7 +1212,6 @@ async def get_agents_with_balance_and_projects(
                 "username": a.username,
                 "level": a.level,
                 "status": a.status,
-                "max_users": a.max_users,
                 "users_count": user_count_map.get(a.id, 0),
                 "commission_rate": float(a.commission_rate) if a.commission_rate else None,
                 "created_at": a.created_at.isoformat(),

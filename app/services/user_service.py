@@ -1,9 +1,9 @@
 r"""
 文件位置: app/services/user_service.py
 文件名称: user_service.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
+作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-04-29
-版本: V1.3.0
+版本: V1.4.0
 功能说明:
     用户管理服务层。
 
@@ -13,6 +13,8 @@ r"""
     - 项目内等级、项目授权设备数、项目到期时间统一归属 Authorization。
     - 一个用户可以在 A 项目是普通，在 B 项目是 VIP。
     - 一个用户可以在不同项目拥有不同授权设备数和不同到期时间。
+    - 用户数量只作为统计展示，不再作为代理配额硬约束。
+    - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
 
 本版增强:
     - 用户列表返回创建者信息。
@@ -25,6 +27,7 @@ r"""
     - 删除用户时自动计算返点。
     - 新增创建者代理详情聚合能力。
     - 新增 Admin/Agent 共用用户软删除能力。
+    - 移除代理旧账号数量限制口径。
 
 安全边界:
     - 不查询旧密码明文。
@@ -88,28 +91,16 @@ async def create_user(
 
     新业务口径:
       - 创建用户只创建账号主体。
+      - 用户数量只作为统计展示。
       - 项目等级、设备数、到期时间在项目授权时设置。
       - User.user_level / User.max_devices / User.expired_at 仅保留兼容字段。
+      - 代理真正的商业约束发生在项目授权和扣点阶段。
     """
     if body.user_level == "tester" and admin is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="tester 级别用户只有管理员能创建",
         )
-
-    if agent is not None and agent.max_users != 0:
-        count_result = await db.execute(
-            select(func.count(User.id)).where(
-                User.created_by_agent_id == agent.id,
-                User.is_deleted == False,  # noqa: E712
-            )
-        )
-        current_count = count_result.scalar_one()
-        if current_count >= agent.max_users:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"已达到代理用户配额上限（{agent.max_users} 人）",
-            )
 
     await _assert_username_unique(body.username, db)
 
@@ -675,7 +666,6 @@ async def get_creator_agent_detail(
         "username": agent.username,
         "level": agent.level,
         "status": agent.status,
-        "max_users": agent.max_users,
         "commission_rate": float(agent.commission_rate) if agent.commission_rate is not None else None,
         "created_at": agent.created_at.isoformat() if agent.created_at else None,
         "authorized_projects": authorized_projects,
@@ -867,9 +857,10 @@ async def _load_project_activation_count_map(
     """
     统计每个用户在每个项目成功登录激活过的去重设备数。
 
-    注意:
-        当前 device_binding 表没有 project_id 字段，因此这里使用 LoginLog:
-        user_id + game_project_id + distinct device_fingerprint + success=true
+    说明:
+      - 该统计用于用户授权明细中的 activated_devices 展示。
+      - LoginLog 是登录激活证据来源。
+      - DeviceBinding 已进入用户 × 项目 × 设备维度，但这里仍以登录成功记录表达“已激活过”。
     """
     result = await db.execute(
         select(

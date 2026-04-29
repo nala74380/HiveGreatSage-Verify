@@ -13,7 +13,9 @@
           <div class="agent-meta">
             <div class="agent-name">{{ profile.username }}</div>
             <div class="agent-tags">
-              <el-tag type="warning" effect="light" size="small">Lv.{{ profile.level }} 代理</el-tag>
+              <el-tag type="warning" effect="light" size="small">
+                组织层级 Lv.{{ profile.level }}
+              </el-tag>
               <el-tag
                 :type="profile.status === 'active' ? 'success' : 'danger'"
                 effect="light"
@@ -28,7 +30,15 @@
 
         <el-divider />
 
-        <el-descriptions :column="3" size="small">
+        <el-alert
+          title="用户数量仅作为统计展示；代理实际业务能力由项目授权、项目准入、点数余额和授权扣点规则决定。"
+          type="info"
+          show-icon
+          :closable="false"
+          class="profile-tip"
+        />
+
+        <el-descriptions :column="3" size="small" class="basic-desc">
           <el-descriptions-item label="代理 ID">
             <span class="mono">{{ profile.id }}</span>
           </el-descriptions-item>
@@ -45,26 +55,13 @@
             <span v-if="profile.commission_rate !== null">{{ profile.commission_rate }}%</span>
             <span v-else class="text-muted">未设置</span>
           </el-descriptions-item>
-          <el-descriptions-item label="用户配额">
-            <span v-if="profile.max_users === 0" class="text-success">无限制</span>
-            <span v-else>
-              {{ profile.users_total }} / {{ profile.max_users }}
-              <el-progress
-                :percentage="Math.min(100, Math.round(profile.users_total / profile.max_users * 100))"
-                :stroke-width="6"
-                :color="profile.users_total / profile.max_users >= 0.9 ? '#f56c6c' : '#409eff'"
-                :show-text="false"
-                style="width:80px;display:inline-block;margin-left:8px;vertical-align:middle"
-              />
-            </span>
+          <el-descriptions-item label="组织层级">
+            <el-tag type="info" effect="plain" size="small">Lv.{{ profile.level }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="剩余配额">
-            <span v-if="profile.max_users === 0" class="text-success">不限</span>
-            <span v-else-if="profile.users_quota_left !== null">
-              <span :class="profile.users_quota_left <= 10 ? 'text-danger' : ''">
-                {{ profile.users_quota_left }} 个
-              </span>
-            </span>
+          <el-descriptions-item label="账号状态">
+            <el-tag :type="profile.status === 'active' ? 'success' : 'danger'" size="small" effect="light">
+              {{ profile.status === 'active' ? '正常' : '已停用' }}
+            </el-tag>
           </el-descriptions-item>
         </el-descriptions>
       </el-card>
@@ -109,7 +106,7 @@
           </el-col>
           <el-col :span="8">
             <div class="mini-balance-card">
-              <div class="mini-label">授信点数</div>
+              <div class="mini-label">可用授信</div>
               <div class="mini-value">{{ fmt(balance.credit_balance) }}</div>
             </div>
           </el-col>
@@ -204,14 +201,15 @@
  * 名称: 代理个人主页
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.1.0
+ * 版本: V1.2.0
  * 功能及相关说明:
  *   代理登录后的个人主页。
  *   展示代理基本信息、用户统计、余额概览、已授权项目、快捷操作。
  *
- * 改进内容:
- *   V1.1.0 - 新增余额概览，并把项目目录/我的余额接入快捷操作
- *   V1.0.0 - 初始代理个人主页
+ * 当前业务口径:
+ *   - 用户数量只作为统计展示。
+ *   - 用户数量仅作统计展示。
+ *   - 代理商业能力由项目授权、项目准入、点数余额和授权扣点规则决定。
  *
  * 调试信息:
  *   Network 应出现：
@@ -291,6 +289,15 @@ onMounted(async () => {
 .info-card,
 .inner-card {
   border-radius: 10px;
+}
+
+.profile-tip {
+  margin-bottom: 14px;
+  border-radius: 8px;
+}
+
+.basic-desc {
+  margin-top: 8px;
 }
 
 /* 代理头部 */

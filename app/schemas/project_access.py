@@ -10,7 +10,7 @@ r"""
 当前业务口径:
     - 项目准入使用 AgentBusinessProfile.tier_level。
     - Agent.level 只表示组织层级 / 代理树深度。
-    - 代理等级策略不再包含用户配额。
+    - 代理等级策略只表达授信、下级代理、自动开通和审核优先级。
 """
 
 from datetime import datetime

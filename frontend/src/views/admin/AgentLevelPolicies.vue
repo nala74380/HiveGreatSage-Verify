@@ -2,7 +2,7 @@
   <div class="page">
     <div class="page-header">
       <div>
-        <h2>代理等级管理</h2>
+        <h2>代理等级策略</h2>
         <p class="page-desc">
           配置 Lv.1 - Lv.4 代理业务等级的授信额度、自动开通能力、下级代理能力和审核优先级。
         </p>
@@ -11,7 +11,7 @@
     </div>
 
     <el-alert
-      title="说明：Agent.level 表示代理组织层级；本页面配置的是代理业务等级 tier_level。项目准入、自动开通、授信建议均以业务等级为准。"
+      title="说明：Agent.level 表示代理组织层级；本页面配置的是代理业务等级 tier_level。用户数量只作统计，不再作为代理配额限制。"
       type="info"
       show-icon
       :closable="false"
@@ -32,7 +32,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="名称" min-width="120">
+        <el-table-column label="名称" min-width="140">
           <template #default="{ row }">
             <div class="main-text">{{ row.level_name }}</div>
             <div v-if="row.description" class="sub-text">{{ row.description }}</div>
@@ -48,25 +48,29 @@
 
         <el-table-column label="下级代理" min-width="170">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.can_create_sub_agents ? 'success' : 'info'" effect="plain">
+            <el-tag
+              size="small"
+              :type="row.can_create_sub_agents ? 'success' : 'info'"
+              effect="plain"
+            >
               {{ row.can_create_sub_agents ? '允许创建' : '禁止创建' }}
             </el-tag>
-            <div class="rule-line">最大下级：{{ row.max_sub_agents === 0 ? '不限/未限制' : row.max_sub_agents }}</div>
+            <div class="rule-line">
+              最大下级：{{ row.max_sub_agents === 0 ? '不限/未限制' : row.max_sub_agents }}
+            </div>
           </template>
         </el-table-column>
 
         <el-table-column label="自动开通" min-width="180">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.can_auto_open_project ? 'success' : 'info'" effect="plain">
+            <el-tag
+              size="small"
+              :type="row.can_auto_open_project ? 'success' : 'info'"
+              effect="plain"
+            >
               {{ row.can_auto_open_project ? '允许自动开通' : '禁止自动开通' }}
             </el-tag>
             <div class="rule-line">自动开通上限：{{ row.auto_open_project_limit }}</div>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="默认用户配额" width="120">
-          <template #default="{ row }">
-            {{ row.max_users_default === 0 ? '不限/未限制' : row.max_users_default }}
           </template>
         </el-table-column>
 
@@ -155,15 +159,6 @@
           <span class="hint-text">0 表示暂不限制或未启用硬限制。</span>
         </el-form-item>
 
-        <el-form-item label="默认用户配额">
-          <el-input-number
-            v-model="editDialog.form.max_users_default"
-            :min="0"
-            :step="10"
-            controls-position="right"
-          />
-        </el-form-item>
-
         <el-divider content-position="left">项目自动开通能力</el-divider>
 
         <el-form-item label="允许自动开通项目">
@@ -193,7 +188,7 @@
         </el-form-item>
 
         <el-alert
-          title="最高授信额度不能低于默认授信额度。超出等级最高授信的单代理授信应走特批覆盖，不建议直接把等级上限无限调高。"
+          title="最高授信额度不能低于默认授信额度。用户数量只作统计，不再作为代理等级策略中的配额项。"
           type="warning"
           show-icon
           :closable="false"
@@ -212,12 +207,21 @@
 <script setup>
 /**
  * 文件位置: src/views/admin/AgentLevelPolicies.vue
- * 名称: 代理等级管理页面
- * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 名称: 代理等级策略页面
+ * 作者: 蜂巢·大圣 (HiveGreatSage)
  * 时间: 2026-04-29
- * 版本: V1.0.0
+ * 版本: V1.1.0
  * 功能说明:
  *   管理员配置代理业务等级策略。
+ *
+ * 当前业务口径:
+ *   - 等级策略只表达授信、下级代理、自动开通和审核优先级。
+ *   - 用户数量只作统计展示。
+ *   - 代理等级策略只表达授信、下级代理、自动开通、审核优先级等业务能力。
+ *
+ * 注意:
+ *   当前独立路由入口已从 router 中移除。
+ *   后续如需使用，可将本页面内容抽成弹窗组件嵌入代理管理页。
  */
 
 import { onMounted, reactive, ref } from 'vue'
@@ -255,7 +259,6 @@ const openEdit = (row) => {
     description: row.description || '',
     default_credit_limit: Number(row.default_credit_limit || 0),
     max_credit_limit: Number(row.max_credit_limit || 0),
-    max_users_default: Number(row.max_users_default || 0),
     can_create_sub_agents: !!row.can_create_sub_agents,
     max_sub_agents: Number(row.max_sub_agents || 0),
     can_auto_open_project: !!row.can_auto_open_project,
