@@ -9,6 +9,7 @@ r"""
       POST /api/device/heartbeat  — 安卓脚本心跳上报（D5 限流：同 Token ≤4次/分钟）
       GET  /api/device/list       — PC 中控拉取当前用户所有设备状态
       GET  /api/device/data       — PC 中控拉取单台设备运行数据详情
+      POST /api/device/imsi       — 安卓脚本上传当前项目设备 IMSI
 
     路由层职责：
       1. 鉴权（get_current_user + get_game_project_code）
@@ -21,6 +22,7 @@ r"""
     [[01-网络验证系统/Redis心跳落库策略]]
 
 改进历史:
+    V1.0.1 - IMSI 上传透传 game_project_code，按当前项目绑定记录写入
     V1.0.0 - 从存根重写为完整实现
 调试信息:
     已知问题: 无
@@ -118,6 +120,7 @@ async def list_devices(
 async def upload_device_imsi(
     body: ImsiUploadRequest,
     current_user: User = Depends(get_current_user),
+    game_project_code: str = Depends(get_game_project_code),
     main_db: AsyncSession = Depends(get_main_db),
 ) -> ImsiUploadResponse:
     """
@@ -129,6 +132,7 @@ async def upload_device_imsi(
     return await upload_imsi(
         body=body,
         current_user=current_user,
+        game_project_code=game_project_code,
         db=main_db,
     )
 

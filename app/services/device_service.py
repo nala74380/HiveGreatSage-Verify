@@ -24,6 +24,7 @@ r"""
     [[01-网络验证系统/架构设计]] 第七节 Redis 使用策略
 
 改进历史:
+    V1.0.1 - 设备绑定校验改为用户 × 项目 × 设备维度
     V1.0.0 - 初始版本
 调试信息:
     已知问题: 无
@@ -76,18 +77,24 @@ async def process_heartbeat(
 
     执行步骤：
       1. 通过 code_name 查找游戏项目，取得 game_id
-      2. 校验上报的设备已绑定到当前用户（防止伪造上报）
+      2. 校验上报的设备已绑定到当前用户 + 当前项目（防止跨项目伪造上报）
       3. 将心跳数据写入 Redis（TTL=120s，超时自动判定为离线）
       4. 立即返回 200，不等待落库
     """
     game_project = await _get_game_project(main_db, game_project_code)
-    await _assert_device_bound(main_db, current_user.id, body.device_fingerprint)
+    await _assert_device_bound(
+        db=main_db,
+        user_id=current_user.id,
+        game_project_id=game_project.id,
+        device_fingerprint=body.device_fingerprint,
+    )
 
-    # 同时更新 DeviceBinding.last_seen_at（让管理后台全局端点能用时间推断在线状态）
+    # 同时更新当前项目 DeviceBinding.last_seen_at（让管理后台全局端点能用时间推断在线状态）
     now_ts = datetime.now(timezone.utc)
     result = await main_db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == current_user.id,
+            DeviceBinding.game_project_id == game_project.id,
             DeviceBinding.device_fingerprint == body.device_fingerprint,
             DeviceBinding.status == "active",
         )
@@ -162,6 +169,7 @@ async def get_device_list(
     main_bindings = await _get_devices_from_main_db(
         main_db=main_db,
         user_id=current_user.id,
+        game_project_id=game_project.id,
         exclude_device_ids=online_device_ids,
     )
     devices.extend(main_bindings)
@@ -187,6 +195,12 @@ async def get_device_data(
     若两处都没有数据，返回 source="not_found"。
     """
     game_project = await _get_game_project(main_db, game_project_code)
+    await _assert_device_bound(
+        db=main_db,
+        user_id=current_user.id,
+        game_project_id=game_project.id,
+        device_fingerprint=device_fingerprint,
+    )
 
     # 先查 Redis
     cached = await get_heartbeat(
@@ -208,7 +222,11 @@ async def get_device_data(
         )
 
     # Redis 无数据，回落游戏库
-    db_record = await _get_device_runtime_from_db(game_project_code, device_fingerprint)
+    db_record = await _get_device_runtime_from_db(
+        game_project_code=game_project_code,
+        user_id=current_user.id,
+        device_fingerprint=device_fingerprint,
+    )
     if db_record:
         return DeviceDataResponse(
             device_id=db_record.device_id,
@@ -255,15 +273,17 @@ async def _get_game_project(db: AsyncSession, code_name: str) -> GameProject:
 async def _assert_device_bound(
     db: AsyncSession,
     user_id: int,
+    game_project_id: int,
     device_fingerprint: str,
 ) -> None:
     """
-    校验设备已绑定到当前用户。
-    防止用户伪造其他设备的心跳上报。
+    校验设备已绑定到当前用户和当前项目。
+    防止用户伪造其他设备或跨项目上报心跳。
     """
     result = await db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == user_id,
+            DeviceBinding.game_project_id == game_project_id,
             DeviceBinding.device_fingerprint == device_fingerprint,
             DeviceBinding.status == "active",
         )
@@ -271,7 +291,7 @@ async def _assert_device_bound(
     if not result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="设备未绑定到当前账号，拒绝上报",
+            detail="设备未绑定到当前项目，拒绝上报",
         )
 
 
@@ -313,14 +333,16 @@ async def _get_offline_devices_from_db(
 
 async def _get_device_runtime_from_db(
     game_project_code: str,
+    user_id: int,
     device_fingerprint: str,
 ) -> DeviceRuntime | None:
-    """从游戏库查询单台设备的历史运行数据。"""
+    """从游戏库查询当前用户单台设备的历史运行数据。"""
     try:
         _get_game_engine(game_project_code)
         async with _game_session_factories[game_project_code]() as session:
             result = await session.execute(
                 select(DeviceRuntime).where(
+                    DeviceRuntime.user_id == user_id,
                     DeviceRuntime.device_id == device_fingerprint,
                 )
             )
@@ -332,6 +354,7 @@ async def _get_device_runtime_from_db(
 async def _get_devices_from_main_db(
     main_db: AsyncSession,
     user_id: int,
+    game_project_id: int,
     exclude_device_ids: set[str],
 ) -> list[DeviceStatus]:
     """
@@ -346,6 +369,7 @@ async def _get_devices_from_main_db(
     result = await main_db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == user_id,
+            DeviceBinding.game_project_id == game_project_id,
             DeviceBinding.status == "active",
         )
     )
@@ -381,17 +405,20 @@ async def _get_devices_from_main_db(
 async def upload_imsi(
     body: ImsiUploadRequest,
     current_user: User,
+    game_project_code: str,
     db: AsyncSession,
 ) -> ImsiUploadResponse:
     """
     登录成功后上传设备 IMSI 码（T027，接入契约 §8）。
 
-    设备必须已绑定到当前用户，不允许为未绑定设备上传 IMSI。
+    设备必须已绑定到当前用户和当前项目，不允许为未绑定设备上传 IMSI。
     IMSI 不参与登录验证，仅作为辅助标识存储到 device_binding.imsi 字段。
     """
+    game_project = await _get_game_project(db, game_project_code)
     result = await db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == current_user.id,
+            DeviceBinding.game_project_id == game_project.id,
             DeviceBinding.device_fingerprint == body.device_fingerprint,
             DeviceBinding.status == "active",
         )
@@ -400,7 +427,7 @@ async def upload_imsi(
     if not binding:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="设备未绑定到当前账号，无法上传 IMSI",
+            detail="设备未绑定到当前项目，无法上传 IMSI",
         )
 
     binding.imsi = body.imsi

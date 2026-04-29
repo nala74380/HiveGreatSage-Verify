@@ -6,7 +6,7 @@ r"""
 版本: V1.0.0
 功能说明:
     认证服务层，包含全部认证业务逻辑：
-      - login_user()          登录（10步验证链，D1 设备绑定上限）
+      - login_user()          登录（10步验证链，项目维度设备绑定上限）
       - refresh_access_token() 刷新 AT（O(1) RT 反查，无 SCAN）
       - logout_user()          登出（AT 加黑名单 + 删除 RT）
 
@@ -15,11 +15,12 @@ r"""
          只接受数据对象，返回数据对象，由 router 层转换为 HTTP 响应。
       2. 登录日志写入使用独立 Session（_write_login_log），
          与主登录事务隔离，确保失败日志不被主事务回滚。
-      3. 设备绑定上限由 DEVICE_LIMIT_BY_LEVEL 常量控制（D1 决策）。
+      3. Android 设备绑定按 user_id + game_project_id + device_fingerprint 判断。
 
     关联文档: [[01-网络验证系统/架构设计]] [[01-网络验证系统/API鉴权方案]]
 
 改进历史:
+    V1.0.1 - 设备绑定改为用户 × 项目 × 设备维度，设备上限改用 Authorization.authorized_devices
     V1.0.0 - 初始版本，从 routers/auth.py 迁移全部业务逻辑
 
 调试信息:
@@ -68,16 +69,6 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.config import settings
-
-# ── D1 决策：设备绑定上限（按用户级别）───────────────────────
-# None 表示无限制（svip / tester 跳过数量检查）
-DEVICE_LIMIT_BY_LEVEL: dict[str, int | None] = {
-    "trial":  100,
-    "normal": 500,
-    "vip":    1000,
-    "svip":   None,
-    "tester": None,
-}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -183,12 +174,15 @@ async def login_user(
             )
 
         # Step 8：设备绑定检查
-        # PC 中控（client_type="pc"）登录不创建设备绑定，不占用激活名额
-        # 设备绑定只针对安卓脚本（client_type="android"）
+        # PC 中控（client_type="pc"）登录不创建设备绑定，不占用安卓设备名额。
+        # Android 脚本按“用户 × 项目 × 设备”维度绑定。
+        # 设备上限来自当前项目授权 Authorization.authorized_devices：
+        #   0 表示不限设备数；>0 表示当前项目最多可绑定 N 台 active Android 设备。
         if body.client_type == "android":
             result = await db.execute(
                 select(DeviceBinding).where(
                     DeviceBinding.user_id == user.id,
+                    DeviceBinding.game_project_id == game_project.id,
                     DeviceBinding.device_fingerprint == body.device_fingerprint,
                     DeviceBinding.status == "active",
                 )
@@ -199,24 +193,27 @@ async def login_user(
                 # 已绑定设备：更新最后在线时间
                 binding.last_seen_at = now
             else:
-                # 新设备：检查绑定数量上限
-                limit = DEVICE_LIMIT_BY_LEVEL.get(user.user_level)
-                if limit is not None:
+                # 新设备：检查当前项目授权设备数上限
+                limit = int(auth.authorized_devices or 0)
+                if limit > 0:
                     count_result = await db.execute(
                         select(func.count(DeviceBinding.id)).where(
                             DeviceBinding.user_id == user.id,
+                            DeviceBinding.game_project_id == game_project.id,
                             DeviceBinding.status == "active",
                         )
                     )
-                    current_count = count_result.scalar_one()
+                    current_count = int(count_result.scalar_one() or 0)
                     if current_count >= limit:
                         fail_reason = "fail_device_limit"
                         raise HTTPException(
                             status_code=status.HTTP_403_FORBIDDEN,
-                            detail=f"设备绑定数量已达上限（{limit} 台）",
+                            detail=f"当前项目设备绑定数量已达上限（{limit} 台）",
                         )
+
                 new_binding = DeviceBinding(
                     user_id=user.id,
+                    game_project_id=game_project.id,
                     device_fingerprint=body.device_fingerprint,
                     last_seen_at=now,
                     status="active",
@@ -227,7 +224,7 @@ async def login_user(
         # Step 9 & 10：签发 Token
         access_token, jti = create_access_token(
             user_id=user.id,
-            user_level=user.user_level,
+            user_level=auth.user_level,
             game_project_code=game_project.code_name,
         )
         refresh_token = create_refresh_token()
@@ -260,7 +257,7 @@ async def login_user(
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             user_id=user.id,
             username=user.username,
-            user_level=user.user_level,
+            user_level=auth.user_level,
             game_project_code=game_project.code_name,
         )
 

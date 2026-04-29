@@ -13,7 +13,7 @@ r"""
       - User（账号主体）
       - Authorization（用户 × 项目授权）
       - AuthorizationCharge（授权扣点快照）
-      - DeviceBinding（用户设备绑定）
+      - DeviceBinding（用户 × 项目 × 设备绑定）
       - GameProject（项目注册表）
       - AgentProjectAuth（代理 × 项目授权）
       - LoginLog（登录日志）
@@ -27,6 +27,10 @@ r"""
       - 新增 AuthorizationCharge 授权扣点快照表
       - BalanceTransaction 新增 related_charge_id
       - 支持删除用户按剩余未使用时间自动返点
+
+    v1.0.6:
+      - DeviceBinding 新增 game_project_id
+      - 设备绑定口径由 user_id + device_fingerprint 调整为 user_id + game_project_id + device_fingerprint
 
     v1.0.4:
       - Authorization 新增 user_level
@@ -325,6 +329,10 @@ class GameProject(Base):
     authorization_charges: Mapped[list["AuthorizationCharge"]] = relationship(
         "AuthorizationCharge",
         back_populates="project",
+    )
+    device_bindings: Mapped[list["DeviceBinding"]] = relationship(
+        "DeviceBinding",
+        back_populates="game_project",
     )
 
     def __repr__(self) -> str:
@@ -652,7 +660,15 @@ class AuthorizationCharge(Base):
 class DeviceBinding(Base):
     __tablename__ = "device_binding"
     __table_args__ = (
-        UniqueConstraint("user_id", "device_fingerprint", name="uq_user_device"),
+        UniqueConstraint(
+            "user_id",
+            "game_project_id",
+            "device_fingerprint",
+            name="uq_user_project_device",
+        ),
+        Index("idx_device_binding_user_project", "user_id", "game_project_id"),
+        Index("idx_device_binding_project_last_seen", "game_project_id", "last_seen_at"),
+        Index("idx_device_binding_device", "device_fingerprint"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -660,6 +676,12 @@ class DeviceBinding(Base):
         Integer,
         ForeignKey("user.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    game_project_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("game_project.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="绑定所属项目；迁移期允许为空，新登录绑定必须写入",
     )
     device_fingerprint: Mapped[str] = mapped_column(String(256), nullable=False)
     bound_at: Mapped[datetime] = mapped_column(
@@ -683,9 +705,16 @@ class DeviceBinding(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="device_bindings")
+    game_project: Mapped["GameProject | None"] = relationship(
+        "GameProject",
+        back_populates="device_bindings",
+    )
 
     def __repr__(self) -> str:
-        return f"<DeviceBinding user={self.user_id} fp={self.device_fingerprint[:16]}...>"
+        return (
+            f"<DeviceBinding user={self.user_id} project={self.game_project_id} "
+            f"fp={self.device_fingerprint[:16]}...>"
+        )
 
 
 # ── 版本记录表 ────────────────────────────────────────────────
