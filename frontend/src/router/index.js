@@ -3,13 +3,13 @@
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.5.0
+ * 版本: V1.6.0
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
  *
  * 当前业务口径:
- *   - 代理等级不再单独开设独立页面入口。
- *   - 代理等级策略后续融合到代理管理页内展示或弹窗设置。
+ *   - 代理管理是代理相关能力的统一入口。
+ *   - 代理详情页用于承载代理统计、下级代理、授权项目、点数、流水、安全操作。
  *   - 用户数量仅作统计展示。
  */
 
@@ -83,6 +83,12 @@ const router = createRouter({
           meta: { requiresAdmin: true, title: '代理管理' },
         },
         {
+          path: 'agents/:id',
+          name: 'AgentDetail',
+          component: () => import('@/views/shared/AgentDetail.vue'),
+          meta: { requiresAdmin: true, title: '代理详情' },
+        },
+        {
           path: 'login-logs',
           name: 'LoginLogs',
           component: () => import('@/views/shared/LoginLogView.vue'),
@@ -149,7 +155,7 @@ const router = createRouter({
       ],
     },
     { path: '/403', name: 'Forbidden', component: Forbidden },
-    { path: '/:pathMatch(.*)*', name: 'NotFound' , component: NotFound },
+    { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound },
   ],
 })
 

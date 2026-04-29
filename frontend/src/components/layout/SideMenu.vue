@@ -33,12 +33,14 @@
  * 名称: 左侧菜单
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.3.0
+ * 版本: V1.4.0
  * 功能说明:
  *   根据管理员 / 代理身份显示不同菜单。
  *
- * 本版新增:
- *   - 管理员：代理等级
+ * 当前业务口径:
+ *   - 代理管理是代理相关能力的统一入口。
+ *   - 代理业务等级不再作为独立菜单页面展示。
+ *   - 等级策略后续如需配置，应融合进代理管理页的弹窗或折叠区域。
  */
 
 import { computed } from 'vue'
@@ -60,7 +62,6 @@ import {
   Tickets,
   Wallet,
   List,
-  Medal,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -86,7 +87,6 @@ const menuItems = computed(() => {
       { label: '总览', path: '/dashboard', icon: Odometer },
       { label: '用户管理', path: '/users', icon: User },
       { label: '代理管理', path: '/agents', icon: Share },
-      { label: '代理等级', path: '/agent-level-policies', icon: Medal },
       { label: '项目管理', path: '/projects', icon: Grid },
       { label: '项目定价', path: '/pricing', icon: Coin },
       { label: '项目准入', path: '/project-access-policies', icon: Grid },

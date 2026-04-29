@@ -4,7 +4,7 @@
       <div>
         <h2>代理管理</h2>
         <p class="page-desc">
-          代理是项目售卖与用户授权主体；组织层级用于代理树关系。用户数量仅作统计，实际业务限制以项目准入、项目授权、点数余额和授权扣点规则为准。
+          代理是项目售卖与用户授权主体；组织层级用于代理树关系，业务等级用于项目准入、授信建议、自动开通能力和代理治理。用户数量仅作统计，实际业务限制以项目准入、项目授权、点数余额和授权扣点规则为准。
         </p>
       </div>
 
@@ -17,6 +17,14 @@
         新建代理
       </el-button>
     </div>
+
+    <el-alert
+      title="说明：组织层级来自 Agent.level；业务等级来自 AgentBusinessProfile.tier_level。二者不是同一个概念。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="top-alert"
+    />
 
     <!-- 过滤栏 -->
     <el-card shadow="never" class="filter-card">
@@ -31,6 +39,7 @@
         <el-form-item>
           <el-button type="primary" @click="loadAgents">查询</el-button>
           <el-button @click="resetFilter">重置</el-button>
+          <el-button :icon="Refresh" :loading="loading" @click="loadAgents">刷新</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -63,9 +72,11 @@
       >
         <el-table-column type="selection" width="44" />
 
-        <el-table-column prop="username" label="代理名" min-width="130">
+        <el-table-column prop="username" label="代理名" min-width="145">
           <template #default="{ row }">
-            <div class="agent-name">{{ row.username }}</div>
+            <button class="agent-link" type="button" @click="goDetail(row)">
+              {{ row.username }}
+            </button>
             <div class="agent-id">ID: {{ row.id }}</div>
           </template>
         </el-table-column>
@@ -76,20 +87,53 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="业务等级" width="130">
+          <template #default="{ row }">
+            <template v-if="row.business_profile">
+              <el-tooltip placement="top">
+                <template #content>
+                  <div class="level-tip">
+                    <div>业务等级：Lv.{{ row.business_profile.tier_level }}</div>
+                    <div>等级名称：{{ row.business_profile.tier_name }}</div>
+                    <div>默认授信：{{ numberText(row.business_profile.credit_limit) }}</div>
+                    <div>最高授信：{{ numberText(row.business_profile.max_credit_limit) }}</div>
+                  </div>
+                </template>
+                <el-tag type="primary" effect="light" size="small">
+                  Lv.{{ row.business_profile.tier_level }} · {{ row.business_profile.tier_name }}
+                </el-tag>
+              </el-tooltip>
+            </template>
+            <el-tag v-else type="info" effect="plain" size="small">未加载</el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="风险状态" width="100">
+          <template #default="{ row }">
+            <el-tag
+              :type="riskStatusType(row.business_profile?.risk_status)"
+              effect="light"
+              size="small"
+            >
+              {{ riskStatusText(row.business_profile?.risk_status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column label="状态" width="80">
           <template #default="{ row }">
             <StatusBadge :status="row.status" type="agent" />
           </template>
         </el-table-column>
 
-        <el-table-column label="已授权项目" min-width="260">
+        <el-table-column label="已授权项目" min-width="250">
           <template #default="{ row }">
             <div v-if="!row.authorized_projects?.length" class="no-data">未授权项目</div>
             <div v-else class="project-list">
               <el-tooltip
                 v-for="p in row.authorized_projects"
                 :key="p.project_id"
-                :content="`${p.display_name} 用户数: ${p.user_count ?? 0} 人${p.valid_until ? '  到期: ' + fmtDate(p.valid_until) : '  永久'}`"
+                :content="`${p.display_name} 直属授权用户数: ${p.user_count ?? 0} 人${p.valid_until ? '  到期: ' + fmtDate(p.valid_until) : '  永久'}`"
                 placement="top"
               >
                 <div class="proj-badge">
@@ -129,8 +173,9 @@
           <template #default="{ row }">{{ formatDatetime(row.created_at) }}</template>
         </el-table-column>
 
-        <el-table-column v-if="auth.isAdmin" label="操作" width="270" fixed="right">
+        <el-table-column v-if="auth.isAdmin" label="操作" width="315" fixed="right">
           <template #default="{ row }">
+            <el-button text size="small" @click="goDetail(row)">详情</el-button>
             <el-button text size="small" @click="openEditDialog(row)">编辑</el-button>
             <el-button
               text
@@ -172,19 +217,21 @@
     <el-dialog
       v-model="dialog.visible"
       :title="dialog.isEdit ? '编辑代理' : '新建代理'"
-      width="480px"
+      width="620px"
       destroy-on-close
     >
       <el-form
         ref="dialogFormRef"
         :model="dialog.form"
         :rules="dialogRules"
-        label-width="95px"
+        label-width="105px"
         autocomplete="off"
       >
         <template v-if="!dialog.isEdit">
           <input type="text" style="display:none" tabindex="-1" aria-hidden="true" />
           <input type="password" style="display:none" tabindex="-1" aria-hidden="true" />
+
+          <el-divider content-position="left">账号主体</el-divider>
 
           <el-form-item label="代理名" prop="username">
             <el-input
@@ -219,13 +266,7 @@
           </el-form-item>
         </template>
 
-        <el-alert
-          title="用户数量不再作为代理配额限制。代理是否能继续售卖项目，由项目准入、项目授权、点数余额和授权扣点规则决定。"
-          type="info"
-          show-icon
-          :closable="false"
-          class="dialog-alert"
-        />
+        <el-divider content-position="left">基础属性</el-divider>
 
         <el-form-item label="佣金比例">
           <el-input-number
@@ -238,6 +279,48 @@
           />
           <div class="field-hint">单位：%（留空不设置）。</div>
         </el-form-item>
+
+        <el-divider content-position="left">业务画像</el-divider>
+
+        <el-form-item label="业务等级" prop="tier_level">
+          <el-select v-model="dialog.form.tier_level" style="width:100%">
+            <el-option
+              v-for="item in levelPolicies"
+              :key="item.level"
+              :label="`Lv.${item.level} · ${item.level_name}`"
+              :value="item.level"
+            />
+          </el-select>
+          <div class="field-hint">业务等级用于项目准入、授信建议、自动开通能力，不等于组织层级。</div>
+        </el-form-item>
+
+        <el-form-item label="风险状态" prop="risk_status">
+          <el-select v-model="dialog.form.risk_status" style="width:100%">
+            <el-option label="正常 normal" value="normal" />
+            <el-option label="观察 watch" value="watch" />
+            <el-option label="限制 restricted" value="restricted" />
+            <el-option label="冻结 frozen" value="frozen" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="备注">
+          <el-input
+            v-model="dialog.form.remark"
+            type="textarea"
+            :rows="3"
+            maxlength="2000"
+            show-word-limit
+            placeholder="可记录代理来源、合作说明、风险备注等"
+          />
+        </el-form-item>
+
+        <el-alert
+          title="用户数量仅作统计展示。代理是否能继续开展业务，由项目准入、项目授权、点数余额和授权扣点规则决定。"
+          type="info"
+          show-icon
+          :closable="false"
+          class="dialog-alert"
+        />
       </el-form>
 
       <template #footer>
@@ -504,27 +587,32 @@
  * 名称: 代理管理
  * 作者: 蜂巢·大圣 (HiveGreatSage)
  * 时间: 2026-04-29
- * 版本: V1.2.0
+ * 版本: V1.4.0
  * 功能说明:
  *   管理员代理管理列表。
+ *   融合代理基础信息、业务画像、项目授权、点数余额。
  *
  * 当前业务口径:
+ *   - Agent.level 表示组织层级。
+ *   - AgentBusinessProfile.tier_level 表示业务等级。
  *   - 用户数量仅作统计展示。
- *   - 用户数量只作统计展示。
  *   - 代理业务能力由项目授权、项目准入、点数余额、授权扣点和风险治理决定。
  */
 
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import { projectApi } from '@/api/project'
 import { balanceApi } from '@/api/balance'
+import { adminAgentProfileApi } from '@/api/admin/agentProfile'
 import { useAuthStore } from '@/stores/auth'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { formatDatetime } from '@/utils/format'
 
 const auth = useAuthStore()
+const router = useRouter()
 
 const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('zh-CN', {
   year: 'numeric',
@@ -536,6 +624,43 @@ const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('zh-CN', {
 
 const numberText = (value) => Number(value || 0).toFixed(2)
 
+const riskStatusText = (status) => {
+  const map = {
+    normal: '正常',
+    watch: '观察',
+    restricted: '限制',
+    frozen: '冻结',
+  }
+  return map[status] || '未知'
+}
+
+const riskStatusType = (status) => {
+  const map = {
+    normal: 'success',
+    watch: 'warning',
+    restricted: 'danger',
+    frozen: 'info',
+  }
+  return map[status] || 'info'
+}
+
+const normalizeNullableText = (value) => {
+  const text = String(value ?? '').trim()
+  return text ? text : null
+}
+
+const goDetail = (row) => {
+  router.push(`/agents/${row.id}`)
+}
+
+// ── 等级策略 ────────────────────────────────────────────────
+const levelPolicies = ref([])
+
+const loadLevelPolicies = async () => {
+  const res = await adminAgentProfileApi.levelPolicies()
+  levelPolicies.value = Array.isArray(res.data) ? res.data : []
+}
+
 // ── 列表 ────────────────────────────────────────────────────
 const loading = ref(false)
 const agents = ref([])
@@ -544,15 +669,39 @@ const batchLoading = ref(false)
 const filter = reactive({ status: null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
+const enrichAgentsWithProfiles = async (rows) => {
+  if (!rows.length) return []
+
+  const results = await Promise.allSettled(
+    rows.map(row => adminAgentProfileApi.businessProfile(row.id))
+  )
+
+  return rows.map((row, index) => {
+    const result = results[index]
+    const profile = result.status === 'fulfilled' ? result.value.data : null
+
+    return {
+      ...row,
+      business_profile: profile,
+    }
+  })
+}
+
 const loadAgents = async () => {
   loading.value = true
   try {
+    if (!levelPolicies.value.length) {
+      await loadLevelPolicies()
+    }
+
     const res = await balanceApi.agentsFull({
       page: pagination.page,
       page_size: pagination.pageSize,
       status: filter.status || undefined,
     })
-    agents.value = res.data.agents || []
+
+    const rows = res.data.agents || []
+    agents.value = await enrichAgentsWithProfiles(rows)
     pagination.total = res.data.total || 0
   } finally {
     loading.value = false
@@ -620,15 +769,24 @@ const dialog = reactive({
     password: '',
     parent_agent_id: null,
     commission_rate: null,
+    tier_level: 1,
+    risk_status: 'normal',
+    remark: '',
   },
 })
 
 const dialogRules = {
   username: [{ required: true, message: '请输入代理名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  tier_level: [{ required: true, message: '请选择业务等级', trigger: 'change' }],
+  risk_status: [{ required: true, message: '请选择风险状态', trigger: 'change' }],
 }
 
-const openCreateDialog = () => {
+const openCreateDialog = async () => {
+  if (!levelPolicies.value.length) {
+    await loadLevelPolicies()
+  }
+
   dialog.isEdit = false
   dialog.editId = null
   dialog.form = {
@@ -636,16 +794,32 @@ const openCreateDialog = () => {
     password: '',
     parent_agent_id: null,
     commission_rate: null,
+    tier_level: 1,
+    risk_status: 'normal',
+    remark: '',
   }
   dialog._uid = Date.now()
   dialog.visible = true
 }
 
-const openEditDialog = (row) => {
+const openEditDialog = async (row) => {
+  if (!levelPolicies.value.length) {
+    await loadLevelPolicies()
+  }
+
+  let profile = row.business_profile
+  if (!profile) {
+    const res = await adminAgentProfileApi.businessProfile(row.id)
+    profile = res.data
+  }
+
   dialog.isEdit = true
   dialog.editId = row.id
   dialog.form = {
     commission_rate: row.commission_rate,
+    tier_level: profile?.tier_level || 1,
+    risk_status: profile?.risk_status || 'normal',
+    remark: profile?.remark || '',
   }
   dialog.visible = true
 }
@@ -661,18 +835,33 @@ const submitDialog = async () => {
       await agentApi.update(dialog.editId, {
         commission_rate: dialog.form.commission_rate,
       })
+
+      await adminAgentProfileApi.updateBusinessProfile(dialog.editId, {
+        tier_level: dialog.form.tier_level,
+        risk_status: dialog.form.risk_status,
+        remark: normalizeNullableText(dialog.form.remark),
+      })
     } else {
-      await agentApi.create({
+      const createRes = await agentApi.create({
         username: dialog.form.username,
         password: dialog.form.password,
         parent_agent_id: dialog.form.parent_agent_id || null,
         commission_rate: dialog.form.commission_rate,
       })
+
+      const newAgentId = createRes.data?.id
+      if (newAgentId) {
+        await adminAgentProfileApi.updateBusinessProfile(newAgentId, {
+          tier_level: dialog.form.tier_level,
+          risk_status: dialog.form.risk_status,
+          remark: normalizeNullableText(dialog.form.remark),
+        })
+      }
     }
 
     ElMessage.success('操作成功')
     dialog.visible = false
-    loadAgents()
+    await loadAgents()
   } finally {
     dialog.loading = false
   }
@@ -907,6 +1096,7 @@ const doUnfreeze = async () => {
   line-height: 1.6;
 }
 
+.top-alert,
 .filter-card,
 .table-card {
   border-radius: 10px;
@@ -933,16 +1123,30 @@ const doUnfreeze = async () => {
   font-weight: 500;
 }
 
-.agent-name {
+.agent-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  color: #2563eb;
   font-size: 13px;
   font-weight: 700;
-  color: #1e293b;
+  cursor: pointer;
+}
+
+.agent-link:hover {
+  text-decoration: underline;
 }
 
 .agent-id {
   margin-top: 2px;
   font-size: 11px;
   color: #94a3b8;
+}
+
+.level-tip {
+  line-height: 1.8;
 }
 
 .field-hint {
