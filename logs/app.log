@@ -124,3 +124,20 @@
 2026-04-30 04:02:12.665 | INFO     | app.main:lifespan:137 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
 2026-04-30 04:08:52.620 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
 2026-04-30 04:08:55.022 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
+2026-04-30 04:11:37.440 | INFO     | app.main:lifespan:146 - 关闭数据库连接池...
+2026-04-30 04:11:37.453 | INFO     | app.main:lifespan:148 - HiveGreatSage-Verify 已关闭
+2026-04-30 04:11:38.871 | INFO     | app.main:_setup_sentry:89 - Sentry DSN 未配置，跳过初始化
+2026-04-30 04:11:38.872 | INFO     | app.main:lifespan:137 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
+2026-04-30 04:17:53.693 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
+2026-04-30 04:18:03.698 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
+2026-04-30 04:18:07.953 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=None agent=2 user_id_filter=None
+2026-04-30 04:18:18.405 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-30 04:18:24.217 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-30 04:18:34.246 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-30 04:18:36.979 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-30 04:18:46.998 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-30 04:22:53.040 | INFO     | app.routers.device_admin:list_all_devices:115 - [list_all_devices] admin=admin agent=None user_id_filter=None
+2026-04-30 04:39:23.365 | INFO     | app.main:lifespan:146 - 关闭数据库连接池...
+2026-04-30 04:39:23.387 | INFO     | app.main:lifespan:148 - HiveGreatSage-Verify 已关闭
+2026-04-30 04:39:24.837 | INFO     | app.main:_setup_sentry:89 - Sentry DSN 未配置，跳过初始化
+2026-04-30 04:39:24.838 | INFO     | app.main:lifespan:137 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天

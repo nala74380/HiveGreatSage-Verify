@@ -3,7 +3,7 @@ r"""
 名称: 代理余额与项目定价服务层
 作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-04-29
-版本: V1.4.1
+版本: V1.4.2
 功能说明:
     项目定价管理、代理余额管理、授权扣点、删除用户返点、流水查询。
 
@@ -12,12 +12,25 @@ r"""
     - 代理可查看自己的余额与流水。
     - 授权扣点时保存 AuthorizationCharge 快照。
     - 删除用户时按授权扣点快照自动返点。
+    - 代理列表增强接口返回：
+        代理基础信息；
+        用户数量统计；
+        点数余额；
+        已授权项目；
+        每个已授权项目下的直属授权用户数。
     - 流水返回完整业务上下文：
         管理员给谁充值/授信/冻结/解冻；
         代理给哪个用户授权了什么项目；
         项目内用户等级、单价、授权设备数、到期时间；
         删除用户返点的原始扣点、已购买小时、已用小时、已用点数、返还点数；
         扣点/返点前后余额变化。
+
+项目授权用户统计口径:
+    authorized_projects[].user_count 表示：
+        当前代理直属用户中，拥有该项目 active Authorization 的用户数量。
+
+    不统计下级代理用户。
+    下级代理及权限范围统计由代理详情页的 subtree 统计承担。
 
 计费规则:
     - trial  试用：按周计费，1 周 = 168 小时。
@@ -48,6 +61,7 @@ from app.models.main.models import (
     Agent,
     AgentBalance,
     AgentProjectAuth,
+    Authorization,
     AuthorizationCharge,
     BalanceTransaction,
     GameProject,
@@ -730,8 +744,6 @@ async def refund_user_authorization_points_on_delete(
             continue
 
         raw_used_hours = _ceil_hours(charge.valid_from, now)
-
-        # 已确认规则：不足 1 小时按 1 小时计算。
         used_hours = min(max(raw_used_hours, 1), paid_hours)
 
         hourly_cost = original_cost / Decimal(paid_hours)
@@ -1089,7 +1101,7 @@ def _build_transaction_business_text(
                 f"代理 {agent_name} 给用户 {username} 授权项目「{project_name}」："
                 f"{level_name}，{devices} 台，授权快照价格 {price_text}，"
                 f"购买 {paid_hours} 小时，到期 {expiry_text}，"
-                f"本次扣除 {amount} 点，原始应扣 { _fmt_money(original_cost) } 点。"
+                f"本次扣除 {amount} 点，原始应扣 {_fmt_money(original_cost)} 点。"
             )
 
         return tx.description or f"代理 {agent_name} 发生授权扣点 {amount} 点。"
@@ -1131,6 +1143,19 @@ async def get_agents_with_balance_and_projects(
     page_size: int = 20,
     status_filter: str | None = None,
 ) -> dict:
+    """
+    管理端代理增强列表。
+
+    返回:
+        - 代理基础信息
+        - 直属用户数
+        - 点数余额
+        - 已授权项目
+        - 每个已授权项目下的直属授权用户数
+
+    authorized_projects[].user_count 口径:
+        当前代理直属用户中，拥有该项目 active Authorization 的用户数量。
+    """
     query = select(Agent)
 
     if status_filter:
@@ -1156,6 +1181,36 @@ async def get_agents_with_balance_and_projects(
     )
     balance_map = {b.agent_id: b for b in bal_result.scalars().all()}
 
+    user_count_result = await db.execute(
+        select(User.created_by_agent_id, func.count(User.id).label("cnt"))
+        .where(
+            User.created_by_agent_id.in_(agent_ids),
+            User.is_deleted == False,  # noqa: E712
+        )
+        .group_by(User.created_by_agent_id)
+    )
+    user_count_map = {row[0]: row[1] for row in user_count_result.all()}
+
+    project_user_count_result = await db.execute(
+        select(
+            User.created_by_agent_id.label("agent_id"),
+            Authorization.game_project_id.label("project_id"),
+            func.count(func.distinct(User.id)).label("cnt"),
+        )
+        .join(Authorization, Authorization.user_id == User.id)
+        .where(
+            User.created_by_agent_id.in_(agent_ids),
+            User.is_deleted == False,  # noqa: E712
+            Authorization.status == "active",
+        )
+        .group_by(User.created_by_agent_id, Authorization.game_project_id)
+    )
+
+    project_user_count_map = {
+        (row.agent_id, row.project_id): row.cnt
+        for row in project_user_count_result.all()
+    }
+
     auth_result = await db.execute(
         select(AgentProjectAuth, GameProject)
         .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
@@ -1167,24 +1222,16 @@ async def get_agents_with_balance_and_projects(
 
     project_map: dict[int, list[dict]] = {}
     for auth, project in auth_result.all():
+        user_count = project_user_count_map.get((auth.agent_id, project.id), 0)
+
         project_map.setdefault(auth.agent_id, []).append({
             "project_id": project.id,
             "code_name": project.code_name,
             "display_name": project.display_name,
             "project_type": project.project_type,
             "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
-            "user_count": 0,
+            "user_count": user_count,
         })
-
-    user_count_result = await db.execute(
-        select(User.created_by_agent_id, func.count(User.id).label("cnt"))
-        .where(
-            User.created_by_agent_id.in_(agent_ids),
-            User.is_deleted == False,  # noqa: E712
-        )
-        .group_by(User.created_by_agent_id)
-    )
-    user_count_map = {row[0]: row[1] for row in user_count_result.all()}
 
     def _fmt_balance(b: AgentBalance | None) -> dict:
         if not b:

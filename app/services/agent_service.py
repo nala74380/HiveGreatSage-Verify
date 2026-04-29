@@ -2,15 +2,15 @@ r"""
 文件位置: app/services/agent_service.py
 文件名称: agent_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-29
-版本: V1.1.0
+日期/时间: 2026-04-30
+版本: V1.1.1
 功能说明:
     代理管理及登录服务层，包含：
       - admin_login()           管理员登录，签发 Admin Token
       - agent_login()           代理登录，签发 Agent Token
       - create_agent()          创建代理（管理员调用）
       - list_agents()           查询代理列表（管理员，分页）
-      - get_agent()             查询代理详情（含用户数统计）
+      - get_agent()             查询代理详情（含有效直属用户数统计）
       - update_agent()          更新代理状态/佣金
       ---- Phase 2 新增（WITH RECURSIVE）────────────────────────
       - get_agent_subtree()     获取某代理及其所有下级代理的树形结构
@@ -26,7 +26,15 @@ r"""
     - Agent.level 表示代理组织层级 / 代理树深度。
     - AgentBusinessProfile.tier_level 表示代理业务等级。
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
+    - 业务统计默认只统计未软删除用户。
+    - 已软删除用户保留在数据库中用于审计，不进入代理业务统计。
     - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
+
+本版修复:
+    V1.1.1:
+      - 修复代理直属用户数统计包含已软删除用户的问题。
+      - 修复代理树 total_users / subtree_user_count 包含已软删除用户的问题。
+      - 所有代理业务用户统计统一过滤 User.is_deleted == False。
 
 关联文档:
     [[01-网络验证系统/数据库设计]]
@@ -35,6 +43,7 @@ r"""
     [[01-网络验证系统/代理点数计费与返点规则]]
 
 改进历史:
+    V1.1.1 (2026-04-30) - 代理用户统计排除已软删除用户。
     V1.1.0 (2026-04-29) - 移除旧账号数量限制口径，用户数量仅作统计。
     V1.0.1 (2026-04-25) - 新增 Phase 2 递归查询：get_agent_subtree /
                           get_all_agent_ids_in_subtree / list_agents_in_scope
@@ -236,7 +245,7 @@ async def get_agent(
     agent_id: int,
     db: AsyncSession,
 ) -> AgentResponse:
-    """查询代理详情（含直接创建的用户数统计）。"""
+    """查询代理详情（含有效直属用户数统计）。"""
     agent = await _get_agent_or_404(agent_id, db)
     return await _agent_to_response(agent, db)
 
@@ -283,7 +292,7 @@ async def get_agent_subtree(
 
     实现步骤：
       1. 用 WITH RECURSIVE 一次查询出子树内所有节点（扁平列表）。
-      2. 批量查询各代理的直属用户数（一次 GROUP BY，避免 N+1）。
+      2. 批量查询各代理的有效直属用户数（一次 GROUP BY，避免 N+1）。
       3. 在 Python 层将扁平列表组装成嵌套树形结构。
       4. 递归计算每个节点的 subtree_user_count。
 
@@ -448,9 +457,12 @@ async def _agent_to_response(
     agent: Agent,
     db: AsyncSession,
 ) -> AgentResponse:
-    """将 Agent ORM 对象转换为 AgentResponse，附带直属用户数统计。"""
+    """将 Agent ORM 对象转换为 AgentResponse，附带有效直属用户数统计。"""
     count_result = await db.execute(
-        select(func.count(User.id)).where(User.created_by_agent_id == agent.id)
+        select(func.count(User.id)).where(
+            User.created_by_agent_id == agent.id,
+            User.is_deleted == False,  # noqa: E712
+        )
     )
     users_count = count_result.scalar_one()
 
@@ -540,20 +552,25 @@ async def _batch_user_counts(
     db: AsyncSession,
 ) -> dict[int, int]:
     """
-    批量查询多个代理的直属用户数。
+    批量查询多个代理的有效直属用户数。
 
     返回:
       {agent_id: user_count}
 
-    注意:
-      用户数量只作为统计，不再作为代理配额限制。
+    统计口径:
+      - 只统计 User.is_deleted == False 的用户。
+      - 已软删除用户保留审计，但不进入业务统计。
+      - 用户数量只作为统计，不再作为代理配额限制。
     """
     if not agent_ids:
         return {}
 
     counts_result = await db.execute(
         select(User.created_by_agent_id, func.count(User.id))
-        .where(User.created_by_agent_id.in_(agent_ids))
+        .where(
+            User.created_by_agent_id.in_(agent_ids),
+            User.is_deleted == False,  # noqa: E712
+        )
         .group_by(User.created_by_agent_id)
     )
 
@@ -610,7 +627,7 @@ def _accumulate_subtree_count(
     递归计算 subtree_user_count。
 
     subtree_user_count =
-      当前代理直属用户数 + 所有子代理 subtree_user_count 之和
+      当前代理有效直属用户数 + 所有子代理 subtree_user_count 之和
     """
     total = node.users_count
 

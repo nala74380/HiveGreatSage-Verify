@@ -26,7 +26,6 @@
       class="top-alert"
     />
 
-    <!-- 过滤栏 -->
     <el-card shadow="never" class="filter-card">
       <el-form inline :model="filter">
         <el-form-item label="状态">
@@ -44,7 +43,6 @@
       </el-form>
     </el-card>
 
-    <!-- 批量操作 -->
     <div v-if="selectedIds.length > 0" class="batch-toolbar">
       <span class="batch-info">已选 {{ selectedIds.length }} 条</span>
       <el-popconfirm
@@ -60,7 +58,6 @@
       <el-button size="small" @click="selectedIds = []">取消选择</el-button>
     </div>
 
-    <!-- 代理表格 -->
     <el-card shadow="never" class="table-card">
       <el-table
         v-loading="loading"
@@ -173,10 +170,10 @@
           <template #default="{ row }">{{ formatDatetime(row.created_at) }}</template>
         </el-table-column>
 
-        <el-table-column v-if="auth.isAdmin" label="操作" width="315" fixed="right">
+        <el-table-column v-if="auth.isAdmin" label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button text size="small" @click="goDetail(row)">详情</el-button>
-            <el-button text size="small" @click="openEditDialog(row)">编辑</el-button>
+            <el-button text size="small" type="primary" @click="openEditDrawer(row)">编辑</el-button>
             <el-button
               text
               size="small"
@@ -185,8 +182,6 @@
             >
               {{ row.status === 'active' ? '停用' : '启用' }}
             </el-button>
-            <el-button text size="small" type="primary" @click="openAuthDialog(row)">项目授权</el-button>
-            <el-button text size="small" type="success" @click="openBalanceDialog(row)">点数</el-button>
             <el-popconfirm
               title="确认删除该代理？"
               confirm-button-text="删除"
@@ -213,64 +208,62 @@
       />
     </el-card>
 
-    <!-- 新建 / 编辑 对话框 -->
+    <!-- 新建代理弹窗 -->
     <el-dialog
-      v-model="dialog.visible"
-      :title="dialog.isEdit ? '编辑代理' : '新建代理'"
+      v-model="createDialog.visible"
+      title="新建代理"
       width="620px"
       destroy-on-close
     >
       <el-form
-        ref="dialogFormRef"
-        :model="dialog.form"
-        :rules="dialogRules"
+        ref="createFormRef"
+        :model="createDialog.form"
+        :rules="createRules"
         label-width="105px"
         autocomplete="off"
       >
-        <template v-if="!dialog.isEdit">
-          <input type="text" style="display:none" tabindex="-1" aria-hidden="true" />
-          <input type="password" style="display:none" tabindex="-1" aria-hidden="true" />
+        <input type="text" style="display:none" tabindex="-1" aria-hidden="true" />
+        <input type="password" style="display:none" tabindex="-1" aria-hidden="true" />
 
-          <el-divider content-position="left">账号主体</el-divider>
+        <el-divider content-position="left">账号主体</el-divider>
 
-          <el-form-item label="代理名" prop="username">
-            <el-input
-              v-model="dialog.form.username"
-              :name="'agent_name_' + dialog._uid"
-              autocomplete="new-password"
-              placeholder="请输入代理名"
-              clearable
-            />
-          </el-form-item>
+        <el-form-item label="代理名" prop="username">
+          <el-input
+            v-model="createDialog.form.username"
+            :name="'agent_name_' + createDialog._uid"
+            autocomplete="new-password"
+            placeholder="请输入代理名"
+            clearable
+          />
+        </el-form-item>
 
-          <el-form-item label="密码" prop="password">
-            <el-input
-              v-model="dialog.form.password"
-              :name="'agent_pwd_' + dialog._uid"
-              type="password"
-              show-password
-              autocomplete="new-password"
-              placeholder="请输入密码"
-            />
-          </el-form-item>
+        <el-form-item label="密码" prop="password">
+          <el-input
+            v-model="createDialog.form.password"
+            :name="'agent_pwd_' + createDialog._uid"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            placeholder="请输入密码"
+          />
+        </el-form-item>
 
-          <el-form-item label="上级代理 ID">
-            <el-input-number
-              v-model="dialog.form.parent_agent_id"
-              :min="1"
-              controls-position="right"
-              placeholder="留空=顶级代理"
-              style="width:100%"
-            />
-            <div class="field-hint">留空则创建为顶级代理（直属管理员）。</div>
-          </el-form-item>
-        </template>
+        <el-form-item label="上级代理 ID">
+          <el-input-number
+            v-model="createDialog.form.parent_agent_id"
+            :min="1"
+            controls-position="right"
+            placeholder="留空=顶级代理"
+            style="width:100%"
+          />
+          <div class="field-hint">留空则创建为顶级代理（直属管理员）。</div>
+        </el-form-item>
 
         <el-divider content-position="left">基础属性</el-divider>
 
         <el-form-item label="佣金比例">
           <el-input-number
-            v-model="dialog.form.commission_rate"
+            v-model="createDialog.form.commission_rate"
             :min="0"
             :max="100"
             :precision="2"
@@ -283,7 +276,7 @@
         <el-divider content-position="left">业务画像</el-divider>
 
         <el-form-item label="业务等级" prop="tier_level">
-          <el-select v-model="dialog.form.tier_level" style="width:100%">
+          <el-select v-model="createDialog.form.tier_level" style="width:100%">
             <el-option
               v-for="item in levelPolicies"
               :key="item.level"
@@ -291,11 +284,10 @@
               :value="item.level"
             />
           </el-select>
-          <div class="field-hint">业务等级用于项目准入、授信建议、自动开通能力，不等于组织层级。</div>
         </el-form-item>
 
         <el-form-item label="风险状态" prop="risk_status">
-          <el-select v-model="dialog.form.risk_status" style="width:100%">
+          <el-select v-model="createDialog.form.risk_status" style="width:100%">
             <el-option label="正常 normal" value="normal" />
             <el-option label="观察 watch" value="watch" />
             <el-option label="限制 restricted" value="restricted" />
@@ -305,7 +297,7 @@
 
         <el-form-item label="备注">
           <el-input
-            v-model="dialog.form.remark"
+            v-model="createDialog.form.remark"
             type="textarea"
             :rows="3"
             maxlength="2000"
@@ -313,271 +305,513 @@
             placeholder="可记录代理来源、合作说明、风险备注等"
           />
         </el-form-item>
-
-        <el-alert
-          title="用户数量仅作统计展示。代理是否能继续开展业务，由项目准入、项目授权、点数余额和授权扣点规则决定。"
-          type="info"
-          show-icon
-          :closable="false"
-          class="dialog-alert"
-        />
       </el-form>
 
       <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dialog.loading" @click="submitDialog">确定</el-button>
+        <el-button @click="createDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="createDialog.loading" @click="submitCreate">
+          创建
+        </el-button>
       </template>
     </el-dialog>
 
-    <!-- 项目授权弹窗 -->
-    <el-dialog
-      v-model="authDialog.visible"
-      :title="`项目授权 — ${authDialog.agentName}`"
-      width="620px"
+    <!-- 统一编辑抽屉 -->
+    <el-drawer
+      v-model="editDrawer.visible"
+      size="760px"
+      :title="editDrawer.agent ? `编辑代理 — ${editDrawer.agent.username}` : '编辑代理'"
       destroy-on-close
     >
-      <div class="auth-section">
-        <div class="auth-section-title">
-          已授权项目
-          <el-button size="small" :icon="Refresh" @click="loadAgentAuths" style="margin-left:8px" />
-        </div>
-
-        <el-table
-          v-loading="authDialog.listLoading"
-          :data="authDialog.auths"
-          size="small"
-          empty-text="暂无授权项目"
-        >
-          <el-table-column label="项目名称" min-width="140" prop="project_display_name" />
-          <el-table-column label="类型" width="110">
-            <template #default="{ row }">
-              <el-tag :type="row.project_type === 'game' ? 'primary' : 'info'" effect="plain" size="small">
-                {{ row.project_type === 'game' ? '🎮 游戏' : '🔑 验证' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="到期" width="130">
-            <template #default="{ row }">
-              {{ row.valid_until ? formatDatetime(row.valid_until) : '永久' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="75">
-            <template #default="{ row }">
-              <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="light">
-                {{ row.status === 'active' ? '有效' : '已停用' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column width="80" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                text
-                size="small"
-                type="danger"
-                :disabled="row.status !== 'active'"
-                @click="revokeAuth(row)"
-              >
-                停用
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-
-      <el-divider content-position="left">新增项目授权</el-divider>
-
-      <el-form ref="authFormRef" :model="authDialog.form" :rules="authRules" label-width="90px">
-        <el-form-item label="选择项目" prop="project_id">
-          <el-select
-            v-model="authDialog.form.project_id"
-            placeholder="请选择项目"
-            filterable
-            style="width:100%"
-          >
-            <el-option
-              v-for="p in allProjects"
-              :key="p.id"
-              :label="`${p.display_name}（${p.project_type === 'game' ? '游戏' : '验证'}）`"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="到期时间">
-          <div class="expiry-picker-wrap">
-            <div class="quick-btns">
-              <el-button size="small" @click="setAuthExpiry(30)">一个月</el-button>
-              <el-button size="small" @click="setAuthExpiry(90)">三个月</el-button>
-              <el-button size="small" @click="setAuthExpiry(365)">一年</el-button>
-              <el-button size="small" type="info" plain @click="authDialog.form.valid_until = null">永久</el-button>
+      <div v-loading="editDrawer.loading" class="drawer-body">
+        <template v-if="editDrawer.agent">
+          <div class="drawer-head">
+            <div class="drawer-avatar">
+              {{ editDrawer.agent.username.charAt(0).toUpperCase() }}
             </div>
-            <el-date-picker
-              v-model="authDialog.form.valid_until"
-              type="datetime"
-              placeholder="不填为永久有效"
-              style="width:100%"
-            />
-          </div>
-        </el-form-item>
-
-        <el-form-item>
-          <el-button type="primary" :loading="authDialog.grantLoading" @click="grantAuth">
-            授予权限
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </el-dialog>
-
-    <!-- 点数余额弹窗 -->
-    <el-dialog
-      v-model="balanceDialog.visible"
-      :title="`点数管理 — ${balanceDialog.agentName}`"
-      width="600px"
-      destroy-on-close
-    >
-      <div class="balance-summary" v-loading="balanceDialog.loading">
-        <div class="balance-item charged">
-          <div class="bal-num">{{ numberText(balanceDialog.info?.charged_points) }}</div>
-          <div class="bal-lbl">充值点数</div>
-        </div>
-        <div class="balance-item credit">
-          <div class="bal-num">{{ numberText(balanceDialog.info?.credit_points) }}</div>
-          <div class="bal-lbl">授信点数</div>
-        </div>
-        <div class="balance-item frozen">
-          <div class="bal-num">{{ numberText(balanceDialog.info?.frozen_credit) }}</div>
-          <div class="bal-lbl">已冻结授信</div>
-        </div>
-        <div class="balance-item total">
-          <div class="bal-num highlight">{{ numberText(balanceDialog.info?.available_total) }}</div>
-          <div class="bal-lbl">可用余额</div>
-        </div>
-      </div>
-
-      <el-divider />
-
-      <el-tabs v-model="balanceDialog.tab" class="balance-tabs">
-        <el-tab-pane label="充值" name="recharge">
-          <el-form :model="balanceDialog.rechargeForm" label-width="80px" style="margin-top:12px">
-            <el-form-item label="充值点数">
-              <el-input-number
-                v-model="balanceDialog.rechargeForm.amount"
-                :min="0.01"
-                :precision="2"
-                :step="100"
-                controls-position="right"
-                style="width:200px"
-              />
-              <div class="quick-btns inline-quick">
-                <el-button size="small" @click="balanceDialog.rechargeForm.amount = 100">100</el-button>
-                <el-button size="small" @click="balanceDialog.rechargeForm.amount = 500">500</el-button>
-                <el-button size="small" @click="balanceDialog.rechargeForm.amount = 1000">1000</el-button>
-                <el-button size="small" @click="balanceDialog.rechargeForm.amount = 5000">5000</el-button>
+            <div class="drawer-meta">
+              <div class="drawer-name">{{ editDrawer.agent.username }}</div>
+              <div class="drawer-sub">
+                ID: {{ editDrawer.agent.id }}
+                <span class="dot">·</span>
+                组织层级 Lv.{{ editDrawer.agent.level }}
+                <span class="dot">·</span>
+                {{ editDrawer.agent.status === 'active' ? '正常' : '已停用' }}
               </div>
-            </el-form-item>
-            <el-form-item label="备注">
-              <el-input
-                v-model="balanceDialog.rechargeForm.description"
-                placeholder="线下付款备注，如：微信转账 ¥100"
-              />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :loading="balanceDialog.opLoading" @click="doRecharge">
-                确认充值
-              </el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+            </div>
+          </div>
 
-        <el-tab-pane label="授信" name="credit">
-          <el-form :model="balanceDialog.creditForm" label-width="80px" style="margin-top:12px">
-            <el-form-item label="授信点数">
-              <el-input-number
-                v-model="balanceDialog.creditForm.amount"
-                :min="0.01"
-                :precision="2"
-                :step="100"
-                controls-position="right"
-                style="width:200px"
-              />
-            </el-form-item>
-            <el-form-item label="备注">
-              <el-input v-model="balanceDialog.creditForm.description" placeholder="授信原因" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="warning" :loading="balanceDialog.opLoading" @click="doCredit">
-                确认授信
-              </el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+          <el-tabs v-model="editDrawer.activeTab" class="drawer-tabs">
+            <!-- 基础信息 -->
+            <el-tab-pane label="基础信息" name="base">
+              <el-form label-width="120px" :model="editDrawer.baseForm">
+                <el-form-item label="账号状态">
+                  <el-select v-model="editDrawer.baseForm.status" style="width:100%">
+                    <el-option label="正常 active" value="active" />
+                    <el-option label="停用 suspended" value="suspended" />
+                  </el-select>
+                </el-form-item>
 
-        <el-tab-pane label="冻结/解冻" name="freeze">
-          <el-form :model="balanceDialog.freezeForm" label-width="80px" style="margin-top:12px">
-            <el-form-item label="操作金额">
-              <el-input-number
-                v-model="balanceDialog.freezeForm.amount"
-                :min="0.01"
-                :precision="2"
-                controls-position="right"
-                style="width:200px"
-              />
-            </el-form-item>
-            <el-form-item label="备注">
-              <el-input v-model="balanceDialog.freezeForm.description" placeholder="冻结/解冻原因" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="danger" :loading="balanceDialog.opLoading" @click="doFreeze">
-                冻结授信
-              </el-button>
-              <el-button :loading="balanceDialog.opLoading" @click="doUnfreeze" style="margin-left:12px">
-                解冻授信
-              </el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+                <el-form-item label="佣金比例">
+                  <el-input-number
+                    v-model="editDrawer.baseForm.commission_rate"
+                    :min="0"
+                    :max="100"
+                    :precision="2"
+                    controls-position="right"
+                    style="width:100%"
+                  />
+                  <div class="field-hint">单位：%。</div>
+                </el-form-item>
 
-        <el-tab-pane label="流水记录" name="txlog">
-          <el-table
-            v-loading="balanceDialog.txLoading"
-            :data="balanceDialog.transactions"
-            size="small"
-            max-height="280"
-            style="margin-top:8px"
-          >
-            <el-table-column label="时间" width="140">
-              <template #default="{ row }">{{ fmtDate(row.created_at) }}</template>
-            </el-table-column>
-            <el-table-column label="类型" width="75">
-              <template #default="{ row }">
-                <el-tag
-                  size="small"
-                  :type="{ recharge:'success', credit:'warning', consume:'danger', freeze:'info', unfreeze:'', adjust:'' }[row.tx_type]"
+                <el-form-item label="组织层级">
+                  <el-tag type="info" effect="plain">Lv.{{ editDrawer.agent.level }}</el-tag>
+                  <div class="field-hint">组织层级由代理树决定，不在这里直接修改。</div>
+                </el-form-item>
+
+                <el-form-item label="上级代理 ID">
+                  <span v-if="editDrawer.agent.parent_agent_id" class="mono">
+                    {{ editDrawer.agent.parent_agent_id }}
+                  </span>
+                  <span v-else class="muted">顶级代理</span>
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button
+                    type="primary"
+                    :loading="editDrawer.saveLoading"
+                    @click="saveBaseAndProfile"
+                  >
+                    保存基础信息
+                  </el-button>
+                </el-form-item>
+              </el-form>
+            </el-tab-pane>
+
+            <!-- 业务画像 -->
+            <el-tab-pane label="业务画像" name="profile">
+              <el-form label-width="145px" :model="editDrawer.profileForm">
+                <el-form-item label="业务等级">
+                  <el-select v-model="editDrawer.profileForm.tier_level" style="width:100%">
+                    <el-option
+                      v-for="item in levelPolicies"
+                      :key="item.level"
+                      :label="`Lv.${item.level} · ${item.level_name}`"
+                      :value="item.level"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="风险状态">
+                  <el-select v-model="editDrawer.profileForm.risk_status" style="width:100%">
+                    <el-option label="正常 normal" value="normal" />
+                    <el-option label="观察 watch" value="watch" />
+                    <el-option label="限制 restricted" value="restricted" />
+                    <el-option label="冻结 frozen" value="frozen" />
+                  </el-select>
+                </el-form-item>
+
+                <el-divider content-position="left">能力覆盖</el-divider>
+
+                <el-form-item label="默认授信覆盖">
+                  <el-input-number
+                    v-model="editDrawer.profileForm.credit_limit_override"
+                    :min="0"
+                    :precision="2"
+                    controls-position="right"
+                    style="width:100%"
+                  />
+                  <div class="field-hint">留空表示使用业务等级策略默认值。</div>
+                </el-form-item>
+
+                <el-form-item label="最高授信覆盖">
+                  <el-input-number
+                    v-model="editDrawer.profileForm.max_credit_limit_override"
+                    :min="0"
+                    :precision="2"
+                    controls-position="right"
+                    style="width:100%"
+                  />
+                  <div class="field-hint">留空表示使用业务等级策略默认值。</div>
+                </el-form-item>
+
+                <el-form-item label="下级创建覆盖">
+                  <el-select
+                    v-model="editDrawer.profileForm.can_create_sub_agents_override"
+                    clearable
+                    placeholder="使用等级策略"
+                    style="width:100%"
+                  >
+                    <el-option label="使用等级策略" :value="null" />
+                    <el-option label="允许" :value="true" />
+                    <el-option label="不允许" :value="false" />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="最大下级覆盖">
+                  <el-input-number
+                    v-model="editDrawer.profileForm.max_sub_agents_override"
+                    :min="0"
+                    controls-position="right"
+                    style="width:100%"
+                  />
+                  <div class="field-hint">留空表示使用业务等级策略默认值。</div>
+                </el-form-item>
+
+                <el-form-item label="备注">
+                  <el-input
+                    v-model="editDrawer.profileForm.remark"
+                    type="textarea"
+                    :rows="4"
+                    maxlength="2000"
+                    show-word-limit
+                  />
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button
+                    type="primary"
+                    :loading="editDrawer.saveLoading"
+                    @click="saveBaseAndProfile"
+                  >
+                    保存业务画像
+                  </el-button>
+                </el-form-item>
+              </el-form>
+            </el-tab-pane>
+
+            <!-- 密码 -->
+            <el-tab-pane label="修改密码" name="password">
+              <el-alert
+                title="自动生成密码时，明文只会在本次响应中返回，请复制后妥善保存。"
+                type="warning"
+                show-icon
+                :closable="false"
+                class="inner-alert"
+              />
+
+              <el-form label-width="120px" :model="editDrawer.passwordForm">
+                <el-form-item label="重置方式">
+                  <el-radio-group v-model="editDrawer.passwordForm.auto_generate">
+                    <el-radio :label="true">自动生成</el-radio>
+                    <el-radio :label="false">手动设置</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+
+                <el-form-item
+                  v-if="!editDrawer.passwordForm.auto_generate"
+                  label="新密码"
                 >
-                  {{ row.tx_type_label }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="余额类型" width="90">
-              <template #default="{ row }">
-                {{ row.balance_type === 'charged' ? '充值' : '授信' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="变动" width="90" align="right">
-              <template #default="{ row }">
-                <span :class="row.amount >= 0 ? 'amt-pos' : 'amt-neg'">
-                  {{ row.amount >= 0 ? '+' : '' }}{{ Number(row.amount || 0).toFixed(2) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="变后余额" width="100" align="right">
-              <template #default="{ row }">{{ Number(row.balance_after || 0).toFixed(2) }}</template>
-            </el-table-column>
-            <el-table-column label="备注" min-width="120" show-overflow-tooltip prop="description" />
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
-    </el-dialog>
+                  <el-input
+                    v-model="editDrawer.passwordForm.new_password"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    placeholder="请输入至少 6 位新密码"
+                  />
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button
+                    type="danger"
+                    :loading="editDrawer.passwordLoading"
+                    @click="resetAgentPassword"
+                  >
+                    重置密码
+                  </el-button>
+                </el-form-item>
+
+                <el-form-item v-if="editDrawer.generatedPassword" label="生成密码">
+                  <el-input
+                    :model-value="editDrawer.generatedPassword"
+                    readonly
+                  >
+                    <template #append>
+                      <el-button @click="copyGeneratedPassword">复制</el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+              </el-form>
+            </el-tab-pane>
+
+            <!-- 授权项目 -->
+            <el-tab-pane label="授权项目" name="projects">
+              <div class="section-title-row">
+                <span class="section-title">已授权项目</span>
+                <el-button size="small" :icon="Refresh" @click="loadEditProjectAuths">刷新</el-button>
+              </div>
+
+              <el-table
+                v-loading="editDrawer.projectLoading"
+                :data="editDrawer.projectAuths"
+                size="small"
+                stripe
+                empty-text="暂无授权项目"
+              >
+                <el-table-column label="项目名称" min-width="150">
+                  <template #default="{ row }">
+                    {{ row.project_display_name || row.project_name || row.display_name || '—' }}
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="类型" width="90">
+                  <template #default="{ row }">
+                    <el-tag
+                      :type="row.project_type === 'game' ? 'primary' : 'info'"
+                      effect="plain"
+                      size="small"
+                    >
+                      {{ row.project_type === 'game' ? '游戏' : '验证' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="到期" width="150">
+                  <template #default="{ row }">
+                    {{ row.valid_until ? fmtDate(row.valid_until) : '永久' }}
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="状态" width="80">
+                  <template #default="{ row }">
+                    <el-tag :type="row.status === 'active' ? 'success' : 'info'" effect="light" size="small">
+                      {{ row.status === 'active' ? '有效' : '已停用' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+
+                <el-table-column width="80" fixed="right">
+                  <template #default="{ row }">
+                    <el-button
+                      text
+                      size="small"
+                      type="danger"
+                      :disabled="row.status !== 'active'"
+                      @click="revokeEditAuth(row)"
+                    >
+                      停用
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <el-divider content-position="left">新增项目授权</el-divider>
+
+              <el-form ref="editAuthFormRef" :model="editDrawer.authForm" :rules="authRules" label-width="90px">
+                <el-form-item label="选择项目" prop="project_id">
+                  <el-select
+                    v-model="editDrawer.authForm.project_id"
+                    placeholder="请选择项目"
+                    filterable
+                    style="width:100%"
+                  >
+                    <el-option
+                      v-for="p in allProjects"
+                      :key="p.id"
+                      :label="`${p.display_name}（${p.project_type === 'game' ? '游戏' : '验证'}）`"
+                      :value="p.id"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="到期时间">
+                  <div class="expiry-picker-wrap">
+                    <div class="quick-btns">
+                      <el-button size="small" @click="setEditAuthExpiry(30)">一个月</el-button>
+                      <el-button size="small" @click="setEditAuthExpiry(90)">三个月</el-button>
+                      <el-button size="small" @click="setEditAuthExpiry(365)">一年</el-button>
+                      <el-button size="small" type="info" plain @click="editDrawer.authForm.valid_until = null">
+                        永久
+                      </el-button>
+                    </div>
+                    <el-date-picker
+                      v-model="editDrawer.authForm.valid_until"
+                      type="datetime"
+                      placeholder="不填为永久有效"
+                      style="width:100%"
+                    />
+                  </div>
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button
+                    type="primary"
+                    :loading="editDrawer.grantLoading"
+                    @click="grantEditAuth"
+                  >
+                    授予权限
+                  </el-button>
+                </el-form-item>
+              </el-form>
+            </el-tab-pane>
+
+            <!-- 点数管理 -->
+            <el-tab-pane label="点数管理" name="balance">
+              <div class="balance-summary" v-loading="editDrawer.balanceLoading">
+                <div class="balance-item charged">
+                  <div class="bal-num">{{ numberText(editDrawer.balance?.charged_points) }}</div>
+                  <div class="bal-lbl">充值点数</div>
+                </div>
+                <div class="balance-item credit">
+                  <div class="bal-num">{{ numberText(editDrawer.balance?.credit_points) }}</div>
+                  <div class="bal-lbl">授信点数</div>
+                </div>
+                <div class="balance-item frozen">
+                  <div class="bal-num">{{ numberText(editDrawer.balance?.frozen_credit) }}</div>
+                  <div class="bal-lbl">已冻结授信</div>
+                </div>
+                <div class="balance-item total">
+                  <div class="bal-num highlight">{{ numberText(editDrawer.balance?.available_total) }}</div>
+                  <div class="bal-lbl">可用余额</div>
+                </div>
+              </div>
+
+              <el-tabs v-model="editDrawer.balanceTab" class="balance-tabs">
+                <el-tab-pane label="充值" name="recharge">
+                  <el-form :model="editDrawer.rechargeForm" label-width="80px" style="margin-top:12px">
+                    <el-form-item label="充值点数">
+                      <el-input-number
+                        v-model="editDrawer.rechargeForm.amount"
+                        :min="0.01"
+                        :precision="2"
+                        :step="100"
+                        controls-position="right"
+                        style="width:220px"
+                      />
+                      <div class="quick-btns inline-quick">
+                        <el-button size="small" @click="editDrawer.rechargeForm.amount = 100">100</el-button>
+                        <el-button size="small" @click="editDrawer.rechargeForm.amount = 500">500</el-button>
+                        <el-button size="small" @click="editDrawer.rechargeForm.amount = 1000">1000</el-button>
+                        <el-button size="small" @click="editDrawer.rechargeForm.amount = 5000">5000</el-button>
+                      </div>
+                    </el-form-item>
+
+                    <el-form-item label="备注">
+                      <el-input
+                        v-model="editDrawer.rechargeForm.description"
+                        placeholder="线下付款备注，如：微信转账 ¥100"
+                      />
+                    </el-form-item>
+
+                    <el-form-item>
+                      <el-button
+                        type="primary"
+                        :loading="editDrawer.balanceOpLoading"
+                        @click="doEditRecharge"
+                      >
+                        确认充值
+                      </el-button>
+                    </el-form-item>
+                  </el-form>
+                </el-tab-pane>
+
+                <el-tab-pane label="授信" name="credit">
+                  <el-form :model="editDrawer.creditForm" label-width="80px" style="margin-top:12px">
+                    <el-form-item label="授信点数">
+                      <el-input-number
+                        v-model="editDrawer.creditForm.amount"
+                        :min="0.01"
+                        :precision="2"
+                        :step="100"
+                        controls-position="right"
+                        style="width:220px"
+                      />
+                    </el-form-item>
+
+                    <el-form-item label="备注">
+                      <el-input v-model="editDrawer.creditForm.description" placeholder="授信原因" />
+                    </el-form-item>
+
+                    <el-form-item>
+                      <el-button
+                        type="warning"
+                        :loading="editDrawer.balanceOpLoading"
+                        @click="doEditCredit"
+                      >
+                        确认授信
+                      </el-button>
+                    </el-form-item>
+                  </el-form>
+                </el-tab-pane>
+
+                <el-tab-pane label="冻结/解冻" name="freeze">
+                  <el-form :model="editDrawer.freezeForm" label-width="80px" style="margin-top:12px">
+                    <el-form-item label="操作金额">
+                      <el-input-number
+                        v-model="editDrawer.freezeForm.amount"
+                        :min="0.01"
+                        :precision="2"
+                        controls-position="right"
+                        style="width:220px"
+                      />
+                    </el-form-item>
+
+                    <el-form-item label="备注">
+                      <el-input v-model="editDrawer.freezeForm.description" placeholder="冻结/解冻原因" />
+                    </el-form-item>
+
+                    <el-form-item>
+                      <el-button
+                        type="danger"
+                        :loading="editDrawer.balanceOpLoading"
+                        @click="doEditFreeze"
+                      >
+                        冻结授信
+                      </el-button>
+                      <el-button
+                        :loading="editDrawer.balanceOpLoading"
+                        style="margin-left:12px"
+                        @click="doEditUnfreeze"
+                      >
+                        解冻授信
+                      </el-button>
+                    </el-form-item>
+                  </el-form>
+                </el-tab-pane>
+
+                <el-tab-pane label="流水记录" name="txlog">
+                  <el-table
+                    v-loading="editDrawer.txLoading"
+                    :data="editDrawer.transactions"
+                    size="small"
+                    max-height="320"
+                    stripe
+                    empty-text="暂无流水"
+                    style="margin-top:8px"
+                  >
+                    <el-table-column label="时间" width="140">
+                      <template #default="{ row }">{{ fmtDate(row.created_at) }}</template>
+                    </el-table-column>
+                    <el-table-column label="类型" width="75">
+                      <template #default="{ row }">
+                        <el-tag size="small" effect="light">{{ row.tx_type_label || row.tx_type }}</el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="余额类型" width="90">
+                      <template #default="{ row }">
+                        {{ row.balance_type === 'charged' ? '充值' : '授信' }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="变动" width="90" align="right">
+                      <template #default="{ row }">
+                        <span :class="Number(row.amount || 0) >= 0 ? 'amt-pos' : 'amt-neg'">
+                          {{ Number(row.amount || 0) >= 0 ? '+' : '' }}{{ numberText(row.amount) }}
+                        </span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="变后余额" width="100" align="right">
+                      <template #default="{ row }">{{ numberText(row.balance_after) }}</template>
+                    </el-table-column>
+                    <el-table-column label="说明" min-width="160" show-overflow-tooltip>
+                      <template #default="{ row }">{{ row.business_text || row.description || '—' }}</template>
+                    </el-table-column>
+                  </el-table>
+                </el-tab-pane>
+              </el-tabs>
+            </el-tab-pane>
+          </el-tabs>
+        </template>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -586,11 +820,11 @@
  * 文件位置: src/views/shared/AgentList.vue
  * 名称: 代理管理
  * 作者: 蜂巢·大圣 (HiveGreatSage)
- * 时间: 2026-04-29
- * 版本: V1.4.0
+ * 时间: 2026-04-30
+ * 版本: V1.5.0
  * 功能说明:
  *   管理员代理管理列表。
- *   融合代理基础信息、业务画像、项目授权、点数余额。
+ *   融合代理基础信息、业务画像、密码重置、项目授权、点数管理。
  *
  * 当前业务口径:
  *   - Agent.level 表示组织层级。
@@ -624,6 +858,16 @@ const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('zh-CN', {
 
 const numberText = (value) => Number(value || 0).toFixed(2)
 
+const normalizeNullableText = (value) => {
+  const text = String(value ?? '').trim()
+  return text ? text : null
+}
+
+const normalizeNullableNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null
+  return Number(value)
+}
+
 const riskStatusText = (status) => {
   const map = {
     normal: '正常',
@@ -644,11 +888,6 @@ const riskStatusType = (status) => {
   return map[status] || 'info'
 }
 
-const normalizeNullableText = (value) => {
-  const text = String(value ?? '').trim()
-  return text ? text : null
-}
-
 const goDetail = (row) => {
   router.push(`/agents/${row.id}`)
 }
@@ -659,6 +898,16 @@ const levelPolicies = ref([])
 const loadLevelPolicies = async () => {
   const res = await adminAgentProfileApi.levelPolicies()
   levelPolicies.value = Array.isArray(res.data) ? res.data : []
+}
+
+// ── 项目列表 ────────────────────────────────────────────────
+const allProjects = ref([])
+
+const loadAllProjects = async () => {
+  if (allProjects.value.length) return
+
+  const res = await projectApi.list({ page: 1, page_size: 100, is_active: true })
+  allProjects.value = res.data.projects || []
 }
 
 // ── 列表 ────────────────────────────────────────────────────
@@ -689,6 +938,7 @@ const enrichAgentsWithProfiles = async (rows) => {
 
 const loadAgents = async () => {
   loading.value = true
+
   try {
     if (!levelPolicies.value.length) {
       await loadLevelPolicies()
@@ -756,13 +1006,12 @@ const deleteAgent = async (row) => {
   loadAgents()
 }
 
-// ── 新建 / 编辑 ─────────────────────────────────────────────
-const dialogFormRef = ref(null)
-const dialog = reactive({
+// ── 新建代理 ────────────────────────────────────────────────
+const createFormRef = ref(null)
+
+const createDialog = reactive({
   visible: false,
-  isEdit: false,
   loading: false,
-  editId: null,
   _uid: Date.now(),
   form: {
     username: '',
@@ -775,7 +1024,7 @@ const dialog = reactive({
   },
 })
 
-const dialogRules = {
+const createRules = {
   username: [{ required: true, message: '请输入代理名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
   tier_level: [{ required: true, message: '请选择业务等级', trigger: 'change' }],
@@ -787,9 +1036,7 @@ const openCreateDialog = async () => {
     await loadLevelPolicies()
   }
 
-  dialog.isEdit = false
-  dialog.editId = null
-  dialog.form = {
+  createDialog.form = {
     username: '',
     password: '',
     parent_agent_id: null,
@@ -798,274 +1045,431 @@ const openCreateDialog = async () => {
     risk_status: 'normal',
     remark: '',
   }
-  dialog._uid = Date.now()
-  dialog.visible = true
+
+  createDialog._uid = Date.now()
+  createDialog.visible = true
 }
 
-const openEditDialog = async (row) => {
-  if (!levelPolicies.value.length) {
-    await loadLevelPolicies()
-  }
-
-  let profile = row.business_profile
-  if (!profile) {
-    const res = await adminAgentProfileApi.businessProfile(row.id)
-    profile = res.data
-  }
-
-  dialog.isEdit = true
-  dialog.editId = row.id
-  dialog.form = {
-    commission_rate: row.commission_rate,
-    tier_level: profile?.tier_level || 1,
-    risk_status: profile?.risk_status || 'normal',
-    remark: profile?.remark || '',
-  }
-  dialog.visible = true
-}
-
-const submitDialog = async () => {
-  const valid = await dialogFormRef.value?.validate().catch(() => false)
+const submitCreate = async () => {
+  const valid = await createFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  dialog.loading = true
+  createDialog.loading = true
 
   try {
-    if (dialog.isEdit) {
-      await agentApi.update(dialog.editId, {
-        commission_rate: dialog.form.commission_rate,
-      })
+    const createRes = await agentApi.create({
+      username: createDialog.form.username,
+      password: createDialog.form.password,
+      parent_agent_id: createDialog.form.parent_agent_id || null,
+      commission_rate: createDialog.form.commission_rate,
+    })
 
-      await adminAgentProfileApi.updateBusinessProfile(dialog.editId, {
-        tier_level: dialog.form.tier_level,
-        risk_status: dialog.form.risk_status,
-        remark: normalizeNullableText(dialog.form.remark),
+    const newAgentId = createRes.data?.id
+    if (newAgentId) {
+      await adminAgentProfileApi.updateBusinessProfile(newAgentId, {
+        tier_level: createDialog.form.tier_level,
+        risk_status: createDialog.form.risk_status,
+        remark: normalizeNullableText(createDialog.form.remark),
       })
-    } else {
-      const createRes = await agentApi.create({
-        username: dialog.form.username,
-        password: dialog.form.password,
-        parent_agent_id: dialog.form.parent_agent_id || null,
-        commission_rate: dialog.form.commission_rate,
-      })
-
-      const newAgentId = createRes.data?.id
-      if (newAgentId) {
-        await adminAgentProfileApi.updateBusinessProfile(newAgentId, {
-          tier_level: dialog.form.tier_level,
-          risk_status: dialog.form.risk_status,
-          remark: normalizeNullableText(dialog.form.remark),
-        })
-      }
     }
 
-    ElMessage.success('操作成功')
-    dialog.visible = false
+    ElMessage.success('代理创建成功')
+    createDialog.visible = false
     await loadAgents()
   } finally {
-    dialog.loading = false
+    createDialog.loading = false
   }
 }
 
-// ── 项目授权弹窗 ────────────────────────────────────────────
-const authFormRef = ref(null)
-const allProjects = ref([])
-const authDialog = reactive({
+// ── 统一编辑抽屉 ────────────────────────────────────────────
+const editAuthFormRef = ref(null)
+
+const editDrawer = reactive({
   visible: false,
-  agentId: null,
-  agentName: '',
-  auths: [],
-  listLoading: false,
+  loading: false,
+  saveLoading: false,
+  passwordLoading: false,
+  projectLoading: false,
   grantLoading: false,
-  form: { project_id: null, valid_until: null },
+  balanceLoading: false,
+  balanceOpLoading: false,
+  txLoading: false,
+
+  activeTab: 'base',
+  balanceTab: 'recharge',
+
+  agent: null,
+  profile: null,
+  balance: null,
+  projectAuths: [],
+  transactions: [],
+  generatedPassword: '',
+
+  baseForm: {
+    status: 'active',
+    commission_rate: null,
+  },
+
+  profileForm: {
+    tier_level: 1,
+    risk_status: 'normal',
+    remark: '',
+    credit_limit_override: null,
+    max_credit_limit_override: null,
+    can_create_sub_agents_override: null,
+    max_sub_agents_override: null,
+  },
+
+  passwordForm: {
+    auto_generate: true,
+    new_password: '',
+  },
+
+  authForm: {
+    project_id: null,
+    valid_until: null,
+  },
+
+  rechargeForm: {
+    amount: 100,
+    description: '',
+  },
+
+  creditForm: {
+    amount: 100,
+    description: '',
+  },
+
+  freezeForm: {
+    amount: 100,
+    description: '',
+  },
 })
 
 const authRules = {
   project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
 }
 
-const openAuthDialog = async (row) => {
-  authDialog.agentId = row.id
-  authDialog.agentName = row.username
-  authDialog.form = { project_id: null, valid_until: null }
-  authDialog.visible = true
-
-  loadAgentAuths()
-
-  if (!allProjects.value.length) {
-    const res = await projectApi.list({ page: 1, page_size: 100, is_active: true })
-    allProjects.value = res.data.projects || []
-  }
+const resetEditDrawerState = () => {
+  editDrawer.generatedPassword = ''
+  editDrawer.activeTab = 'base'
+  editDrawer.balanceTab = 'recharge'
+  editDrawer.projectAuths = []
+  editDrawer.transactions = []
+  editDrawer.balance = null
+  editDrawer.authForm = { project_id: null, valid_until: null }
+  editDrawer.passwordForm = { auto_generate: true, new_password: '' }
+  editDrawer.rechargeForm = { amount: 100, description: '' }
+  editDrawer.creditForm = { amount: 100, description: '' }
+  editDrawer.freezeForm = { amount: 100, description: '' }
 }
 
-const loadAgentAuths = async () => {
-  if (!authDialog.agentId) return
+const openEditDrawer = async (row) => {
+  resetEditDrawerState()
 
-  authDialog.listLoading = true
+  editDrawer.visible = true
+  editDrawer.loading = true
+  editDrawer.agent = row
+
   try {
-    const res = await projectApi.listAgentAuths(authDialog.agentId)
-    authDialog.auths = res.data || []
+    if (!levelPolicies.value.length) {
+      await loadLevelPolicies()
+    }
+
+    await loadAllProjects()
+
+    const [detailRes, profileRes] = await Promise.all([
+      agentApi.detail(row.id),
+      adminAgentProfileApi.businessProfile(row.id),
+    ])
+
+    editDrawer.agent = detailRes.data
+    editDrawer.profile = profileRes.data
+
+    editDrawer.baseForm = {
+      status: detailRes.data.status,
+      commission_rate: detailRes.data.commission_rate,
+    }
+
+    editDrawer.profileForm = {
+      tier_level: profileRes.data?.tier_level || 1,
+      risk_status: profileRes.data?.risk_status || 'normal',
+      remark: profileRes.data?.remark || '',
+      credit_limit_override: profileRes.data?.credit_limit_override ?? null,
+      max_credit_limit_override: profileRes.data?.max_credit_limit_override ?? null,
+      can_create_sub_agents_override: profileRes.data?.can_create_sub_agents_override ?? null,
+      max_sub_agents_override: profileRes.data?.max_sub_agents_override ?? null,
+    }
+
+    await Promise.all([
+      loadEditProjectAuths(),
+      loadEditBalance(),
+      loadEditTransactions(),
+    ])
   } finally {
-    authDialog.listLoading = false
+    editDrawer.loading = false
   }
 }
 
-const setAuthExpiry = (days) => {
+const saveBaseAndProfile = async () => {
+  if (!editDrawer.agent) return
+
+  editDrawer.saveLoading = true
+
+  try {
+    await agentApi.update(editDrawer.agent.id, {
+      status: editDrawer.baseForm.status,
+      commission_rate: editDrawer.baseForm.commission_rate,
+    })
+
+    await adminAgentProfileApi.updateBusinessProfile(editDrawer.agent.id, {
+      tier_level: editDrawer.profileForm.tier_level,
+      risk_status: editDrawer.profileForm.risk_status,
+      remark: normalizeNullableText(editDrawer.profileForm.remark),
+      credit_limit_override: normalizeNullableNumber(editDrawer.profileForm.credit_limit_override),
+      max_credit_limit_override: normalizeNullableNumber(editDrawer.profileForm.max_credit_limit_override),
+      can_create_sub_agents_override: editDrawer.profileForm.can_create_sub_agents_override,
+      max_sub_agents_override: normalizeNullableNumber(editDrawer.profileForm.max_sub_agents_override),
+    })
+
+    ElMessage.success('代理信息已保存')
+
+    const [detailRes, profileRes] = await Promise.all([
+      agentApi.detail(editDrawer.agent.id),
+      adminAgentProfileApi.businessProfile(editDrawer.agent.id),
+    ])
+
+    editDrawer.agent = detailRes.data
+    editDrawer.profile = profileRes.data
+
+    await loadAgents()
+  } finally {
+    editDrawer.saveLoading = false
+  }
+}
+
+const resetAgentPassword = async () => {
+  if (!editDrawer.agent) return
+
+  if (!editDrawer.passwordForm.auto_generate && !editDrawer.passwordForm.new_password) {
+    ElMessage.warning('请输入新密码')
+    return
+  }
+
+  editDrawer.passwordLoading = true
+  editDrawer.generatedPassword = ''
+
+  try {
+    const res = await adminAgentProfileApi.resetPassword(editDrawer.agent.id, {
+      auto_generate: editDrawer.passwordForm.auto_generate,
+      new_password: editDrawer.passwordForm.auto_generate
+        ? null
+        : editDrawer.passwordForm.new_password,
+    })
+
+    editDrawer.generatedPassword = res.data?.generated_password || ''
+    editDrawer.passwordForm.new_password = ''
+
+    if (editDrawer.generatedPassword) {
+      ElMessage.success('密码已重置，请复制生成密码')
+    } else {
+      ElMessage.success('密码已重置')
+    }
+  } finally {
+    editDrawer.passwordLoading = false
+  }
+}
+
+const copyGeneratedPassword = async () => {
+  if (!editDrawer.generatedPassword) return
+
+  await navigator.clipboard.writeText(editDrawer.generatedPassword)
+  ElMessage.success('已复制')
+}
+
+// ── 编辑抽屉：项目授权 ──────────────────────────────────────
+const loadEditProjectAuths = async () => {
+  if (!editDrawer.agent) return
+
+  editDrawer.projectLoading = true
+
+  try {
+    const res = await projectApi.listAgentAuths(editDrawer.agent.id)
+    editDrawer.projectAuths = Array.isArray(res.data) ? res.data : []
+  } finally {
+    editDrawer.projectLoading = false
+  }
+}
+
+const setEditAuthExpiry = (days) => {
   const d = new Date()
   d.setDate(d.getDate() + days)
-  authDialog.form.valid_until = d
+  editDrawer.authForm.valid_until = d
 }
 
-const grantAuth = async () => {
-  const valid = await authFormRef.value?.validate().catch(() => false)
+const grantEditAuth = async () => {
+  if (!editDrawer.agent) return
+
+  const valid = await editAuthFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  authDialog.grantLoading = true
+  editDrawer.grantLoading = true
 
   try {
-    await projectApi.grantAgentAuth(authDialog.agentId, {
-      project_id: authDialog.form.project_id,
-      valid_until: authDialog.form.valid_until || null,
+    await projectApi.grantAgentAuth(editDrawer.agent.id, {
+      project_id: editDrawer.authForm.project_id,
+      valid_until: editDrawer.authForm.valid_until || null,
     })
 
-    ElMessage.success('授权成功')
-    authDialog.form = { project_id: null, valid_until: null }
-    loadAgentAuths()
-    loadAgents()
+    ElMessage.success('项目授权成功')
+    editDrawer.authForm = { project_id: null, valid_until: null }
+
+    await Promise.all([
+      loadEditProjectAuths(),
+      loadAgents(),
+    ])
   } finally {
-    authDialog.grantLoading = false
+    editDrawer.grantLoading = false
   }
 }
 
-const revokeAuth = async (authRow) => {
-  await projectApi.revokeAgentAuth(authDialog.agentId, authRow.id)
-  ElMessage.success('已停用授权')
-  loadAgentAuths()
-  loadAgents()
+const revokeEditAuth = async (authRow) => {
+  if (!editDrawer.agent) return
+
+  await projectApi.revokeAgentAuth(editDrawer.agent.id, authRow.id)
+  ElMessage.success('已停用项目授权')
+
+  await Promise.all([
+    loadEditProjectAuths(),
+    loadAgents(),
+  ])
 }
 
-// ── 点数余额弹窗 ────────────────────────────────────────────
-const balanceDialog = reactive({
-  visible: false,
-  agentId: null,
-  agentName: '',
-  tab: 'recharge',
-  loading: false,
-  opLoading: false,
-  txLoading: false,
-  info: null,
-  transactions: [],
-  rechargeForm: { amount: 100, description: '' },
-  creditForm: { amount: 100, description: '' },
-  freezeForm: { amount: 100, description: '' },
-})
+// ── 编辑抽屉：点数 ──────────────────────────────────────────
+const loadEditBalance = async () => {
+  if (!editDrawer.agent) return
 
-const openBalanceDialog = async (row) => {
-  balanceDialog.agentId = row.id
-  balanceDialog.agentName = row.username
-  balanceDialog.tab = 'recharge'
-  balanceDialog.visible = true
-  balanceDialog.rechargeForm = { amount: 100, description: '' }
-  balanceDialog.creditForm = { amount: 100, description: '' }
-  balanceDialog.freezeForm = { amount: 100, description: '' }
-
-  await loadBalance()
-  loadTransactions()
-}
-
-const loadBalance = async () => {
-  balanceDialog.loading = true
+  editDrawer.balanceLoading = true
 
   try {
-    const res = await balanceApi.getBalance(balanceDialog.agentId)
-    balanceDialog.info = res.data
+    const res = await balanceApi.getBalance(editDrawer.agent.id)
+    editDrawer.balance = res.data
   } finally {
-    balanceDialog.loading = false
+    editDrawer.balanceLoading = false
   }
 }
 
-const loadTransactions = async () => {
-  balanceDialog.txLoading = true
+const loadEditTransactions = async () => {
+  if (!editDrawer.agent) return
+
+  editDrawer.txLoading = true
 
   try {
-    const res = await balanceApi.getTransactions(balanceDialog.agentId, { page: 1, page_size: 50 })
-    balanceDialog.transactions = res.data.transactions || []
+    const res = await balanceApi.getTransactions(editDrawer.agent.id, {
+      page: 1,
+      page_size: 50,
+    })
+    editDrawer.transactions = res.data.transactions || []
   } finally {
-    balanceDialog.txLoading = false
+    editDrawer.txLoading = false
   }
 }
 
-const doRecharge = async () => {
-  balanceDialog.opLoading = true
+const doEditRecharge = async () => {
+  if (!editDrawer.agent) return
+
+  editDrawer.balanceOpLoading = true
 
   try {
-    const res = await balanceApi.recharge(balanceDialog.agentId, {
-      amount: balanceDialog.rechargeForm.amount,
-      description: balanceDialog.rechargeForm.description || undefined,
+    const res = await balanceApi.recharge(editDrawer.agent.id, {
+      amount: editDrawer.rechargeForm.amount,
+      description: editDrawer.rechargeForm.description || undefined,
     })
 
-    balanceDialog.info = res.data
-    ElMessage.success(`充值成功，可用余额: ${numberText(res.data.available_total)} 点`)
-    balanceDialog.rechargeForm = { amount: 100, description: '' }
-    loadTransactions()
-    loadAgents()
+    editDrawer.balance = res.data
+    editDrawer.rechargeForm = { amount: 100, description: '' }
+
+    ElMessage.success(`充值成功，可用余额：${numberText(res.data.available_total)} 点`)
+
+    await Promise.all([
+      loadEditTransactions(),
+      loadAgents(),
+    ])
   } finally {
-    balanceDialog.opLoading = false
+    editDrawer.balanceOpLoading = false
   }
 }
 
-const doCredit = async () => {
-  balanceDialog.opLoading = true
+const doEditCredit = async () => {
+  if (!editDrawer.agent) return
+
+  editDrawer.balanceOpLoading = true
 
   try {
-    const res = await balanceApi.credit(balanceDialog.agentId, {
-      amount: balanceDialog.creditForm.amount,
-      description: balanceDialog.creditForm.description || undefined,
+    const res = await balanceApi.credit(editDrawer.agent.id, {
+      amount: editDrawer.creditForm.amount,
+      description: editDrawer.creditForm.description || undefined,
     })
 
-    balanceDialog.info = res.data
+    editDrawer.balance = res.data
+    editDrawer.creditForm = { amount: 100, description: '' }
+
     ElMessage.success('授信成功')
-    balanceDialog.creditForm = { amount: 100, description: '' }
-    loadTransactions()
-    loadAgents()
+
+    await Promise.all([
+      loadEditTransactions(),
+      loadAgents(),
+    ])
   } finally {
-    balanceDialog.opLoading = false
+    editDrawer.balanceOpLoading = false
   }
 }
 
-const doFreeze = async () => {
-  balanceDialog.opLoading = true
+const doEditFreeze = async () => {
+  if (!editDrawer.agent) return
+
+  editDrawer.balanceOpLoading = true
 
   try {
-    const res = await balanceApi.freeze(balanceDialog.agentId, {
-      amount: balanceDialog.freezeForm.amount,
-      description: balanceDialog.freezeForm.description || undefined,
+    const res = await balanceApi.freeze(editDrawer.agent.id, {
+      amount: editDrawer.freezeForm.amount,
+      description: editDrawer.freezeForm.description || undefined,
     })
 
-    balanceDialog.info = res.data
-    ElMessage.warning(`已冻结 ${numberText(balanceDialog.freezeForm.amount)} 点授信`)
-    loadTransactions()
-    loadAgents()
+    editDrawer.balance = res.data
+
+    ElMessage.warning(`已冻结 ${numberText(editDrawer.freezeForm.amount)} 点授信`)
+
+    await Promise.all([
+      loadEditTransactions(),
+      loadAgents(),
+    ])
   } finally {
-    balanceDialog.opLoading = false
+    editDrawer.balanceOpLoading = false
   }
 }
 
-const doUnfreeze = async () => {
-  balanceDialog.opLoading = true
+const doEditUnfreeze = async () => {
+  if (!editDrawer.agent) return
+
+  editDrawer.balanceOpLoading = true
 
   try {
-    const res = await balanceApi.unfreeze(balanceDialog.agentId, {
-      amount: balanceDialog.freezeForm.amount,
-      description: balanceDialog.freezeForm.description || undefined,
+    const res = await balanceApi.unfreeze(editDrawer.agent.id, {
+      amount: editDrawer.freezeForm.amount,
+      description: editDrawer.freezeForm.description || undefined,
     })
 
-    balanceDialog.info = res.data
-    ElMessage.success(`已解冻 ${numberText(balanceDialog.freezeForm.amount)} 点`)
-    loadTransactions()
-    loadAgents()
+    editDrawer.balance = res.data
+
+    ElMessage.success(`已解冻 ${numberText(editDrawer.freezeForm.amount)} 点`)
+
+    await Promise.all([
+      loadEditTransactions(),
+      loadAgents(),
+    ])
   } finally {
-    balanceDialog.opLoading = false
+    editDrawer.balanceOpLoading = false
   }
 }
 </script>
@@ -1155,11 +1559,6 @@ const doUnfreeze = async () => {
   margin-top: 2px;
 }
 
-.dialog-alert {
-  margin-bottom: 16px;
-  border-radius: 8px;
-}
-
 .no-data {
   font-size: 12px;
   color: #94a3b8;
@@ -1210,13 +1609,76 @@ const doUnfreeze = async () => {
   margin-top: 1px;
 }
 
-.auth-section-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #1e293b;
-  margin-bottom: 10px;
+.drawer-body {
+  padding-bottom: 32px;
+}
+
+.drawer-head {
   display: flex;
   align-items: center;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.drawer-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: #fff;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawer-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.drawer-sub {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.dot {
+  margin: 0 5px;
+  color: #cbd5e1;
+}
+
+.drawer-tabs {
+  margin-top: 14px;
+}
+
+.inner-alert {
+  margin-bottom: 14px;
+  border-radius: 8px;
+}
+
+.mono {
+  font-family: 'Cascadia Code', monospace;
+  font-size: 12px;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
 }
 
 .expiry-picker-wrap {
@@ -1239,7 +1701,7 @@ const doUnfreeze = async () => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
-  margin-bottom: 4px;
+  margin-bottom: 16px;
 }
 
 .balance-item {
