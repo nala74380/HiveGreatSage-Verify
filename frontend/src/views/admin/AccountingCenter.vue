@@ -55,49 +55,51 @@
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <!-- 账务总览 -->
         <el-tab-pane label="账务总览" name="overview">
-          <div class="overview-grid">
-            <div class="overview-block">
-              <div class="block-title">今日变化</div>
+          <div v-loading="overviewLoading">
+            <div class="overview-grid">
+              <div class="overview-block">
+                <div class="block-title">今日变化</div>
 
-              <el-descriptions :column="1" border size="small">
-                <el-descriptions-item label="今日充值">
-                  {{ fmtMoney(overview.today_recharge) }} 点
-                </el-descriptions-item>
-                <el-descriptions-item label="今日授信">
-                  {{ fmtMoney(overview.today_credit) }} 点
-                </el-descriptions-item>
-                <el-descriptions-item label="今日冻结">
-                  {{ fmtMoney(overview.today_freeze) }} 点
-                </el-descriptions-item>
-                <el-descriptions-item label="今日解冻">
-                  {{ fmtMoney(overview.today_unfreeze) }} 点
-                </el-descriptions-item>
-                <el-descriptions-item label="今日扣点">
-                  {{ fmtMoney(overview.today_consume) }} 点
-                </el-descriptions-item>
-                <el-descriptions-item label="今日返点">
-                  {{ fmtMoney(overview.today_refund) }} 点
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
+                <el-descriptions :column="1" border size="small">
+                  <el-descriptions-item label="今日充值">
+                    {{ fmtMoney(overview.today_recharge) }} 点
+                  </el-descriptions-item>
+                  <el-descriptions-item label="今日授信">
+                    {{ fmtMoney(overview.today_credit) }} 点
+                  </el-descriptions-item>
+                  <el-descriptions-item label="今日冻结">
+                    {{ fmtMoney(overview.today_freeze) }} 点
+                  </el-descriptions-item>
+                  <el-descriptions-item label="今日解冻">
+                    {{ fmtMoney(overview.today_unfreeze) }} 点
+                  </el-descriptions-item>
+                  <el-descriptions-item label="今日扣点">
+                    {{ fmtMoney(overview.today_consume) }} 点
+                  </el-descriptions-item>
+                  <el-descriptions-item label="今日返点">
+                    {{ fmtMoney(overview.today_refund) }} 点
+                  </el-descriptions-item>
+                </el-descriptions>
+              </div>
 
-            <div class="overview-block">
-              <div class="block-title">累计状态</div>
+              <div class="overview-block">
+                <div class="block-title">累计状态</div>
 
-              <el-descriptions :column="1" border size="small">
-                <el-descriptions-item label="钱包数量">
-                  {{ overview.wallet_count || 0 }} 个
-                </el-descriptions-item>
-                <el-descriptions-item label="累计扣点">
-                  {{ fmtMoney(overview.total_consumed) }} 点
-                </el-descriptions-item>
-                <el-descriptions-item label="累计返点">
-                  {{ fmtMoney(overview.total_refunded) }} 点
-                </el-descriptions-item>
-                <el-descriptions-item label="待返点快照">
-                  {{ overview.refundable_snapshot_count || 0 }} 条
-                </el-descriptions-item>
-              </el-descriptions>
+                <el-descriptions :column="1" border size="small">
+                  <el-descriptions-item label="钱包数量">
+                    {{ overview.wallet_count || 0 }} 个
+                  </el-descriptions-item>
+                  <el-descriptions-item label="累计扣点">
+                    {{ fmtMoney(overview.total_consumed) }} 点
+                  </el-descriptions-item>
+                  <el-descriptions-item label="累计返点">
+                    {{ fmtMoney(overview.total_refunded) }} 点
+                  </el-descriptions-item>
+                  <el-descriptions-item label="待返点快照">
+                    {{ overview.refundable_snapshot_count || 0 }} 条
+                  </el-descriptions-item>
+                </el-descriptions>
+              </div>
             </div>
           </div>
         </el-tab-pane>
@@ -107,7 +109,12 @@
           <div class="filter-row">
             <el-form inline :model="ledgerFilter">
               <el-form-item label="类型">
-                <el-select v-model="ledgerFilter.entry_type" clearable placeholder="全部" style="width:150px">
+                <el-select
+                  v-model="ledgerFilter.entry_type"
+                  clearable
+                  placeholder="全部"
+                  style="width:150px"
+                >
                   <el-option label="充值" value="recharge" />
                   <el-option label="授信" value="credit" />
                   <el-option label="冻结" value="freeze" />
@@ -120,15 +127,30 @@
               </el-form-item>
 
               <el-form-item label="代理 ID">
-                <el-input-number v-model="ledgerFilter.agent_id" :min="1" controls-position="right" style="width:130px" />
+                <el-input-number
+                  v-model="ledgerFilter.agent_id"
+                  :min="1"
+                  controls-position="right"
+                  style="width:130px"
+                />
               </el-form-item>
 
               <el-form-item label="用户 ID">
-                <el-input-number v-model="ledgerFilter.related_user_id" :min="1" controls-position="right" style="width:130px" />
+                <el-input-number
+                  v-model="ledgerFilter.related_user_id"
+                  :min="1"
+                  controls-position="right"
+                  style="width:130px"
+                />
               </el-form-item>
 
               <el-form-item label="项目 ID">
-                <el-input-number v-model="ledgerFilter.related_project_id" :min="1" controls-position="right" style="width:130px" />
+                <el-input-number
+                  v-model="ledgerFilter.related_project_id"
+                  :min="1"
+                  controls-position="right"
+                  style="width:130px"
+                />
               </el-form-item>
 
               <el-form-item>
@@ -138,8 +160,16 @@
             </el-form>
           </div>
 
-          <el-table v-loading="ledgerLoading" :data="ledgerRows" stripe row-key="id" style="width:100%">
+          <el-table
+            v-loading="ledgerLoading"
+            :data="ledgerRows"
+            stripe
+            row-key="id"
+            style="width:100%"
+            empty-text="暂无账本记录"
+          >
             <el-table-column prop="id" label="ID" width="70" />
+
             <el-table-column label="类型" width="110">
               <template #default="{ row }">
                 <el-tag :type="entryTypeTag(row.entry_type)" effect="light">
@@ -155,9 +185,9 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="余额类型" width="105">
+            <el-table-column label="余额类型" width="110">
               <template #default="{ row }">
-                {{ row.balance_type_label || row.balance_type }}
+                {{ row.balance_type_label || row.balance_type || '—' }}
               </template>
             </el-table-column>
 
@@ -219,11 +249,21 @@
           <div class="filter-row">
             <el-form inline :model="walletFilter">
               <el-form-item label="关键词">
-                <el-input v-model="walletFilter.keyword" clearable placeholder="代理账号" style="width:180px" />
+                <el-input
+                  v-model="walletFilter.keyword"
+                  clearable
+                  placeholder="代理账号"
+                  style="width:180px"
+                />
               </el-form-item>
 
               <el-form-item label="代理 ID">
-                <el-input-number v-model="walletFilter.agent_id" :min="1" controls-position="right" style="width:130px" />
+                <el-input-number
+                  v-model="walletFilter.agent_id"
+                  :min="1"
+                  controls-position="right"
+                  style="width:130px"
+                />
               </el-form-item>
 
               <el-form-item label="状态">
@@ -250,11 +290,83 @@
             </el-form>
           </div>
 
-          <wallet-table
-            :rows="walletRows"
-            :loading="walletLoading"
-            @action="openWalletAction"
-          />
+          <el-table
+            v-loading="walletLoading"
+            :data="walletRows"
+            stripe
+            row-key="agent_id"
+            style="width:100%"
+            empty-text="暂无代理钱包"
+          >
+            <el-table-column label="代理" min-width="160">
+              <template #default="{ row }">
+                <div class="main-text">{{ row.agent_username || `ID=${row.agent_id}` }}</div>
+                <div class="sub-text">ID={{ row.agent_id }} · Lv.{{ row.agent_level || '-' }}</div>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="充值余额" width="115" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.charged_balance) }}</template>
+            </el-table-column>
+
+            <el-table-column label="授信余额" width="115" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.credit_balance) }}</template>
+            </el-table-column>
+
+            <el-table-column label="冻结授信" width="115" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.frozen_credit) }}</template>
+            </el-table-column>
+
+            <el-table-column label="可用授信" width="115" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.available_credit) }}</template>
+            </el-table-column>
+
+            <el-table-column label="可用总点数" width="125" align="right">
+              <template #default="{ row }">
+                <span class="price-val">{{ fmtMoney(row.available_total) }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="累计扣点" width="115" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.total_consumed) }}</template>
+            </el-table-column>
+
+            <el-table-column label="累计返点" width="115" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.total_refunded) }}</template>
+            </el-table-column>
+
+            <el-table-column label="状态" width="135">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.status === 'active' ? 'success' : 'info'">
+                  {{ walletStatusLabel(row.status) }}
+                </el-tag>
+                <el-tag
+                  size="small"
+                  :type="row.risk_status === 'normal' ? 'success' : 'warning'"
+                  style="margin-left:4px"
+                >
+                  {{ riskStatusLabel(row.risk_status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="操作" width="240" fixed="right">
+              <template #default="{ row }">
+                <el-button text size="small" type="success" @click="openWalletAction('recharge', row)">
+                  充值
+                </el-button>
+                <el-button text size="small" type="primary" @click="openWalletAction('credit', row)">
+                  授信
+                </el-button>
+                <el-button text size="small" type="warning" @click="openWalletAction('freeze', row)">
+                  冻结
+                </el-button>
+                <el-button text size="small" type="success" @click="openWalletAction('unfreeze', row)">
+                  解冻
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
 
           <div class="pager-row">
             <span class="total-text">共 {{ walletPager.total }} 个钱包</span>
@@ -280,12 +392,67 @@
             class="inner-alert"
           />
 
-          <wallet-table
-            :rows="walletRows"
-            :loading="walletLoading"
-            mode="credit"
-            @action="openWalletAction"
-          />
+          <el-table
+            v-loading="walletLoading"
+            :data="walletRows"
+            stripe
+            row-key="agent_id"
+            style="width:100%"
+            empty-text="暂无授信钱包"
+          >
+            <el-table-column label="代理" min-width="160">
+              <template #default="{ row }">
+                <div class="main-text">{{ row.agent_username || `ID=${row.agent_id}` }}</div>
+                <div class="sub-text">ID={{ row.agent_id }} · Lv.{{ row.agent_level || '-' }}</div>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="授信余额" width="130" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.credit_balance) }}</template>
+            </el-table-column>
+
+            <el-table-column label="冻结授信" width="130" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.frozen_credit) }}</template>
+            </el-table-column>
+
+            <el-table-column label="可用授信" width="130" align="right">
+              <template #default="{ row }">
+                <span class="price-val">{{ fmtMoney(row.available_credit) }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="授信使用状态" min-width="180">
+              <template #default="{ row }">
+                <el-progress
+                  :percentage="creditUsePercent(row)"
+                  :stroke-width="10"
+                  :show-text="true"
+                />
+              </template>
+            </el-table-column>
+
+            <el-table-column label="风险状态" width="120">
+              <template #default="{ row }">
+                <el-tag :type="row.risk_status === 'normal' ? 'success' : 'warning'" size="small">
+                  {{ riskStatusLabel(row.risk_status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="操作" width="190" fixed="right">
+              <template #default="{ row }">
+                <el-button text size="small" type="primary" @click="openWalletAction('credit', row)">
+                  授信
+                </el-button>
+                <el-button text size="small" type="warning" @click="openWalletAction('freeze', row)">
+                  冻结
+                </el-button>
+                <el-button text size="small" type="success" @click="openWalletAction('unfreeze', row)">
+                  解冻
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-tab-pane>
 
         <!-- 扣点与返点 -->
@@ -303,22 +470,46 @@
               <div class="filter-row">
                 <el-form inline :model="chargeFilter">
                   <el-form-item label="代理 ID">
-                    <el-input-number v-model="chargeFilter.agent_id" :min="1" controls-position="right" style="width:130px" />
+                    <el-input-number
+                      v-model="chargeFilter.agent_id"
+                      :min="1"
+                      controls-position="right"
+                      style="width:130px"
+                    />
                   </el-form-item>
+
                   <el-form-item label="用户 ID">
-                    <el-input-number v-model="chargeFilter.user_id" :min="1" controls-position="right" style="width:130px" />
+                    <el-input-number
+                      v-model="chargeFilter.user_id"
+                      :min="1"
+                      controls-position="right"
+                      style="width:130px"
+                    />
                   </el-form-item>
+
                   <el-form-item label="项目 ID">
-                    <el-input-number v-model="chargeFilter.project_id" :min="1" controls-position="right" style="width:130px" />
+                    <el-input-number
+                      v-model="chargeFilter.project_id"
+                      :min="1"
+                      controls-position="right"
+                      style="width:130px"
+                    />
                   </el-form-item>
+
                   <el-form-item label="返点状态">
-                    <el-select v-model="chargeFilter.refund_status" clearable placeholder="全部" style="width:130px">
+                    <el-select
+                      v-model="chargeFilter.refund_status"
+                      clearable
+                      placeholder="全部"
+                      style="width:130px"
+                    >
                       <el-option label="未返点" value="none" />
                       <el-option label="部分返点" value="partial" />
                       <el-option label="已返点" value="refunded" />
                       <el-option label="无返点" value="no_refund" />
                     </el-select>
                   </el-form-item>
+
                   <el-form-item>
                     <el-button type="primary" @click="searchCharges">查询</el-button>
                     <el-button @click="resetChargeFilter">重置</el-button>
@@ -326,8 +517,15 @@
                 </el-form>
               </div>
 
-              <el-table v-loading="chargeLoading" :data="chargeRows" stripe row-key="id">
+              <el-table
+                v-loading="chargeLoading"
+                :data="chargeRows"
+                stripe
+                row-key="id"
+                empty-text="暂无授权扣点快照"
+              >
                 <el-table-column prop="id" label="ID" width="70" />
+
                 <el-table-column label="代理 / 用户 / 项目" min-width="220">
                   <template #default="{ row }">
                     <div class="main-text">{{ row.agent_username || `代理ID=${row.agent_id}` }}</div>
@@ -342,9 +540,7 @@
                     <div class="sub-text">
                       {{ fmtMoney(row.unit_price) }} 点 × {{ row.period_count }} 期
                     </div>
-                    <div class="sub-text">
-                      购买 {{ row.paid_hours }} 小时
-                    </div>
+                    <div class="sub-text">购买 {{ row.paid_hours }} 小时</div>
                   </template>
                 </el-table-column>
 
@@ -387,8 +583,15 @@
             </el-tab-pane>
 
             <el-tab-pane label="删除返点记录" name="refunds">
-              <el-table v-loading="refundLoading" :data="refundRows" stripe row-key="id">
+              <el-table
+                v-loading="refundLoading"
+                :data="refundRows"
+                stripe
+                row-key="id"
+                empty-text="暂无删除返点记录"
+              >
                 <el-table-column prop="id" label="ID" width="70" />
+
                 <el-table-column label="代理 / 用户 / 项目" min-width="220">
                   <template #default="{ row }">
                     <div class="main-text">{{ row.agent_username || `代理ID=${row.agent_id}` }}</div>
@@ -444,26 +647,32 @@
 
         <!-- 对账检查 -->
         <el-tab-pane label="对账检查" name="reconciliation">
-          <placeholder-panel
-            title="对账检查"
-            desc="对账检查用于比对 accounting_wallet 钱包快照与 accounting_ledger_entry 账本累计是否一致。数据库表已预留，后续接入对账运行接口。"
-          />
+          <div class="placeholder-panel">
+            <div class="placeholder-title">对账检查</div>
+            <div class="placeholder-desc">
+              对账检查用于比对 accounting_wallet 钱包快照与 accounting_ledger_entry 账本累计是否一致。数据库表已预留，后续接入对账运行接口。
+            </div>
+          </div>
         </el-tab-pane>
 
         <!-- 代理账单 -->
         <el-tab-pane label="代理账单" name="bills">
-          <placeholder-panel
-            title="代理账单"
-            desc="代理账单用于按月汇总代理的期初余额、本月充值、本月授信、本月扣点、本月返点和期末余额。数据库表已预留，后续接入月账单生成接口。"
-          />
+          <div class="placeholder-panel">
+            <div class="placeholder-title">代理账单</div>
+            <div class="placeholder-desc">
+              代理账单用于按月汇总代理的期初余额、本月充值、本月授信、本月扣点、本月返点和期末余额。数据库表已预留，后续接入月账单生成接口。
+            </div>
+          </div>
         </el-tab-pane>
 
         <!-- 风险审计 -->
         <el-tab-pane label="风险审计" name="risk">
-          <placeholder-panel
-            title="风险审计"
-            desc="风险审计用于识别短时间大量返点、授信占用过高、扣点异常增长等账务风险。数据库表已预留，后续接入风险事件接口。"
-          />
+          <div class="placeholder-panel">
+            <div class="placeholder-title">风险审计</div>
+            <div class="placeholder-desc">
+              风险审计用于识别短时间大量返点、授信占用过高、扣点异常增长等账务风险。数据库表已预留，后续接入风险事件接口。
+            </div>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -540,25 +749,16 @@
  * 名称: 账务中心
  * 作者: 蜂巢·大圣 (HiveGreatSage)
  * 时间: 2026-04-30
- * 版本: V1.0.0
+ * 版本: V1.0.1
  * 功能说明:
  *   平台内部点数资产治理入口。
  *
- * 当前已接入:
- *   - 账务总览
- *   - 点数账本
- *   - 代理钱包
- *   - 授信管理
- *   - 授权扣点快照
- *   - 删除返点记录
- *
- * 后续预留:
- *   - 对账检查
- *   - 代理账单
- *   - 风险审计
+ * 修复说明:
+ *   V1.0.1 移除局部 render/h 组件，改成纯模板稳定版，
+ *   避免 Element Plus 组件解析异常导致页面主体空白。
  */
 
-import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { accountingApi } from '@/api/accounting'
@@ -644,6 +844,18 @@ const actionDialog = reactive({
 
 const fmtMoney = (value) => Number(value || 0).toFixed(2)
 
+const cleanParams = (params) => {
+  const result = {}
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== '') {
+      result[key] = value
+    }
+  })
+
+  return result
+}
+
 const levelLabel = (level) => {
   const map = {
     trial: '试用',
@@ -653,6 +865,25 @@ const levelLabel = (level) => {
     tester: '测试',
   }
   return map[level] || level || '—'
+}
+
+const walletStatusLabel = (status) => {
+  const map = {
+    active: '正常',
+    locked: '锁定',
+    closed: '关闭',
+  }
+  return map[status] || status || '正常'
+}
+
+const riskStatusLabel = (status) => {
+  const map = {
+    normal: '正常',
+    watch: '观察',
+    restricted: '受限',
+    frozen: '冻结',
+  }
+  return map[status] || status || '正常'
 }
 
 const refundStatusLabel = (status) => {
@@ -689,6 +920,16 @@ const entryTypeTag = (type) => {
   return map[type] || 'info'
 }
 
+const creditUsePercent = (row) => {
+  const credit = Number(row.credit_balance || 0)
+  const available = Number(row.available_credit || 0)
+
+  if (credit <= 0) return 0
+
+  const used = Math.max(0, credit - available)
+  return Math.min(100, Number(((used / credit) * 100).toFixed(0)))
+}
+
 const actionTitle = computed(() => {
   const map = {
     recharge: '代理充值',
@@ -706,8 +947,18 @@ const actionButtonType = computed(() => {
   return 'success'
 })
 
+const safeLoad = async (task, errorMessage) => {
+  try {
+    await task()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(errorMessage)
+  }
+}
+
 const loadOverview = async () => {
   overviewLoading.value = true
+
   try {
     const res = await accountingApi.overview()
     Object.assign(overview, res.data || {})
@@ -718,15 +969,16 @@ const loadOverview = async () => {
 
 const loadLedger = async () => {
   ledgerLoading.value = true
+
   try {
-    const res = await accountingApi.ledger({
+    const res = await accountingApi.ledger(cleanParams({
       page: ledgerPager.page,
       page_size: ledgerPager.pageSize,
-      entry_type: ledgerFilter.entry_type || undefined,
-      agent_id: ledgerFilter.agent_id || undefined,
-      related_user_id: ledgerFilter.related_user_id || undefined,
-      related_project_id: ledgerFilter.related_project_id || undefined,
-    })
+      entry_type: ledgerFilter.entry_type,
+      agent_id: ledgerFilter.agent_id,
+      related_user_id: ledgerFilter.related_user_id,
+      related_project_id: ledgerFilter.related_project_id,
+    }))
 
     ledgerRows.value = res.data.transactions || []
     ledgerPager.total = res.data.total || 0
@@ -737,15 +989,16 @@ const loadLedger = async () => {
 
 const loadWallets = async () => {
   walletLoading.value = true
+
   try {
-    const res = await accountingApi.wallets({
+    const res = await accountingApi.wallets(cleanParams({
       page: walletPager.page,
       page_size: walletPager.pageSize,
-      keyword: walletFilter.keyword || undefined,
-      status: walletFilter.status || undefined,
-      risk_status: walletFilter.risk_status || undefined,
-      agent_id: walletFilter.agent_id || undefined,
-    })
+      keyword: walletFilter.keyword,
+      status: walletFilter.status,
+      risk_status: walletFilter.risk_status,
+      agent_id: walletFilter.agent_id,
+    }))
 
     walletRows.value = res.data.wallets || []
     walletPager.total = res.data.total || 0
@@ -756,15 +1009,16 @@ const loadWallets = async () => {
 
 const loadCharges = async () => {
   chargeLoading.value = true
+
   try {
-    const res = await accountingApi.charges({
+    const res = await accountingApi.charges(cleanParams({
       page: chargePager.page,
       page_size: chargePager.pageSize,
-      agent_id: chargeFilter.agent_id || undefined,
-      user_id: chargeFilter.user_id || undefined,
-      project_id: chargeFilter.project_id || undefined,
-      refund_status: chargeFilter.refund_status || undefined,
-    })
+      agent_id: chargeFilter.agent_id,
+      user_id: chargeFilter.user_id,
+      project_id: chargeFilter.project_id,
+      refund_status: chargeFilter.refund_status,
+    }))
 
     chargeRows.value = res.data.charges || []
     chargePager.total = res.data.total || 0
@@ -775,14 +1029,15 @@ const loadCharges = async () => {
 
 const loadRefunds = async () => {
   refundLoading.value = true
+
   try {
-    const res = await accountingApi.refunds({
+    const res = await accountingApi.refunds(cleanParams({
       page: refundPager.page,
       page_size: refundPager.pageSize,
-      agent_id: chargeFilter.agent_id || undefined,
-      user_id: chargeFilter.user_id || undefined,
-      project_id: chargeFilter.project_id || undefined,
-    })
+      agent_id: chargeFilter.agent_id,
+      user_id: chargeFilter.user_id,
+      project_id: chargeFilter.project_id,
+    }))
 
     refundRows.value = res.data.refunds || []
     refundPager.total = res.data.total || 0
@@ -793,27 +1048,38 @@ const loadRefunds = async () => {
 
 const loadAll = async () => {
   await Promise.all([
-    loadOverview(),
-    loadLedger(),
-    loadWallets(),
-    loadCharges(),
-    loadRefunds(),
+    safeLoad(loadOverview, '账务总览加载失败'),
+    safeLoad(loadLedger, '点数账本加载失败'),
+    safeLoad(loadWallets, '代理钱包加载失败'),
+    safeLoad(loadCharges, '扣点快照加载失败'),
+    safeLoad(loadRefunds, '返点记录加载失败'),
   ])
 }
 
 const handleTabChange = async (tabName) => {
-  if (tabName === 'overview') await loadOverview()
-  if (tabName === 'ledger') await loadLedger()
-  if (tabName === 'wallets') await loadWallets()
-  if (tabName === 'credit') await loadWallets()
+  if (tabName === 'overview') {
+    await safeLoad(loadOverview, '账务总览加载失败')
+  }
+
+  if (tabName === 'ledger') {
+    await safeLoad(loadLedger, '点数账本加载失败')
+  }
+
+  if (tabName === 'wallets' || tabName === 'credit') {
+    await safeLoad(loadWallets, '代理钱包加载失败')
+  }
+
   if (tabName === 'charges') {
-    await Promise.all([loadCharges(), loadRefunds()])
+    await Promise.all([
+      safeLoad(loadCharges, '扣点快照加载失败'),
+      safeLoad(loadRefunds, '返点记录加载失败'),
+    ])
   }
 }
 
 const searchLedger = () => {
   ledgerPager.page = 1
-  loadLedger()
+  safeLoad(loadLedger, '点数账本加载失败')
 }
 
 const resetLedgerFilter = () => {
@@ -822,12 +1088,12 @@ const resetLedgerFilter = () => {
   ledgerFilter.related_user_id = null
   ledgerFilter.related_project_id = null
   ledgerPager.page = 1
-  loadLedger()
+  safeLoad(loadLedger, '点数账本加载失败')
 }
 
 const searchWallets = () => {
   walletPager.page = 1
-  loadWallets()
+  safeLoad(loadWallets, '代理钱包加载失败')
 }
 
 const resetWalletFilter = () => {
@@ -836,14 +1102,15 @@ const resetWalletFilter = () => {
   walletFilter.risk_status = ''
   walletFilter.agent_id = null
   walletPager.page = 1
-  loadWallets()
+  safeLoad(loadWallets, '代理钱包加载失败')
 }
 
 const searchCharges = () => {
   chargePager.page = 1
   refundPager.page = 1
-  loadCharges()
-  loadRefunds()
+
+  safeLoad(loadCharges, '扣点快照加载失败')
+  safeLoad(loadRefunds, '返点记录加载失败')
 }
 
 const resetChargeFilter = () => {
@@ -853,11 +1120,12 @@ const resetChargeFilter = () => {
   chargeFilter.refund_status = ''
   chargePager.page = 1
   refundPager.page = 1
-  loadCharges()
-  loadRefunds()
+
+  safeLoad(loadCharges, '扣点快照加载失败')
+  safeLoad(loadRefunds, '返点记录加载失败')
 }
 
-const openWalletAction = ({ action, row }) => {
+const openWalletAction = (action, row) => {
   actionDialog.action = action
   actionDialog.row = row
   actionDialog.form = {
@@ -893,139 +1161,18 @@ const submitWalletAction = async () => {
     actionDialog.visible = false
 
     await Promise.all([
-      loadOverview(),
-      loadWallets(),
-      loadLedger(),
+      safeLoad(loadOverview, '账务总览刷新失败'),
+      safeLoad(loadWallets, '代理钱包刷新失败'),
+      safeLoad(loadLedger, '点数账本刷新失败'),
     ])
   } finally {
     actionDialog.loading = false
   }
 }
 
-onMounted(loadAll)
-
-/**
- * 局部表格组件：避免代理钱包和授信管理重复写表格。
- */
-const WalletTable = defineComponent({
-  name: 'WalletTable',
-  props: {
-    rows: {
-      type: Array,
-      default: () => [],
-    },
-    loading: {
-      type: Boolean,
-      default: false,
-    },
-    mode: {
-      type: String,
-      default: 'wallet',
-    },
-  },
-  emits: ['action'],
-  setup(props, { emit }) {
-    const money = (value) => Number(value || 0).toFixed(2)
-
-    return () => h('div', [
-      h(
-        resolveElTable(),
-        {
-          data: props.rows,
-          stripe: true,
-          rowKey: 'agent_id',
-          style: 'width:100%',
-          loading: props.loading,
-        },
-        {
-          default: () => [
-            h(resolveElTableColumn(), { label: '代理', minWidth: 160 }, {
-              default: ({ row }) => h('div', [
-                h('div', { class: 'main-text' }, row.agent_username || `ID=${row.agent_id}`),
-                h('div', { class: 'sub-text' }, `ID=${row.agent_id} · Lv.${row.agent_level || '-'}`),
-              ]),
-            }),
-
-            h(resolveElTableColumn(), { label: '充值余额', width: 115, align: 'right' }, {
-              default: ({ row }) => money(row.charged_balance),
-            }),
-
-            h(resolveElTableColumn(), { label: '授信余额', width: 115, align: 'right' }, {
-              default: ({ row }) => money(row.credit_balance),
-            }),
-
-            h(resolveElTableColumn(), { label: '冻结授信', width: 115, align: 'right' }, {
-              default: ({ row }) => money(row.frozen_credit),
-            }),
-
-            h(resolveElTableColumn(), { label: '可用授信', width: 115, align: 'right' }, {
-              default: ({ row }) => money(row.available_credit),
-            }),
-
-            h(resolveElTableColumn(), { label: '可用总点数', width: 125, align: 'right' }, {
-              default: ({ row }) => h('span', { class: 'price-val' }, money(row.available_total)),
-            }),
-
-            h(resolveElTableColumn(), { label: '累计扣点', width: 115, align: 'right' }, {
-              default: ({ row }) => money(row.total_consumed),
-            }),
-
-            h(resolveElTableColumn(), { label: '累计返点', width: 115, align: 'right' }, {
-              default: ({ row }) => money(row.total_refunded),
-            }),
-
-            h(resolveElTableColumn(), { label: '状态', width: 120 }, {
-              default: ({ row }) => h('div', [
-                h(resolveElTag(), { size: 'small', type: row.status === 'active' ? 'success' : 'info' }, () => row.status || 'active'),
-                h(resolveElTag(), { size: 'small', type: row.risk_status === 'normal' ? 'success' : 'warning', style: 'margin-left:4px' }, () => row.risk_status || 'normal'),
-              ]),
-            }),
-
-            h(resolveElTableColumn(), { label: '操作', width: props.mode === 'credit' ? 190 : 240, fixed: 'right' }, {
-              default: ({ row }) => h('div', [
-                props.mode !== 'credit'
-                  ? h(resolveElButton(), { text: true, size: 'small', type: 'success', onClick: () => emit('action', { action: 'recharge', row }) }, () => '充值')
-                  : null,
-                h(resolveElButton(), { text: true, size: 'small', type: 'primary', onClick: () => emit('action', { action: 'credit', row }) }, () => '授信'),
-                h(resolveElButton(), { text: true, size: 'small', type: 'warning', onClick: () => emit('action', { action: 'freeze', row }) }, () => '冻结'),
-                h(resolveElButton(), { text: true, size: 'small', type: 'success', onClick: () => emit('action', { action: 'unfreeze', row }) }, () => '解冻'),
-              ]),
-            }),
-          ],
-        },
-      ),
-    ])
-  },
+onMounted(() => {
+  loadAll()
 })
-
-const PlaceholderPanel = defineComponent({
-  name: 'PlaceholderPanel',
-  props: {
-    title: {
-      type: String,
-      required: true,
-    },
-    desc: {
-      type: String,
-      required: true,
-    },
-  },
-  setup(props) {
-    return () => h('div', { class: 'placeholder-panel' }, [
-      h('div', { class: 'placeholder-title' }, props.title),
-      h('div', { class: 'placeholder-desc' }, props.desc),
-    ])
-  },
-})
-
-/**
- * Element Plus 组件在模板里可自动解析。
- * render 函数局部组件里用字符串标签名最稳。
- */
-function resolveElTable() { return 'el-table' }
-function resolveElTableColumn() { return 'el-table-column' }
-function resolveElButton() { return 'el-button' }
-function resolveElTag() { return 'el-tag' }
 </script>
 
 <style scoped>
