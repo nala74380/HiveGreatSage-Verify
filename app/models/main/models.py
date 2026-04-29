@@ -3,7 +3,7 @@ r"""
 文件名称: models.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-29
-版本: v1.0.4
+版本: v1.0.5
 功能说明:
     hive_platform 主库的全部 ORM 模型。
 
@@ -12,6 +12,7 @@ r"""
       - Agent（多级代理，自引用外键）
       - User（账号主体）
       - Authorization（用户 × 项目授权）
+      - AuthorizationCharge（授权扣点快照）
       - DeviceBinding（用户设备绑定）
       - GameProject（项目注册表）
       - AgentProjectAuth（代理 × 项目授权）
@@ -22,6 +23,11 @@ r"""
       - BalanceTransaction（点数流水）
 
 重要模型调整:
+    v1.0.5:
+      - 新增 AuthorizationCharge 授权扣点快照表
+      - BalanceTransaction 新增 related_charge_id
+      - 支持删除用户按剩余未使用时间自动返点
+
     v1.0.4:
       - Authorization 新增 user_level
       - Authorization 新增 authorized_devices
@@ -163,6 +169,10 @@ class Agent(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    authorization_charges: Mapped[list["AuthorizationCharge"]] = relationship(
+        "AuthorizationCharge",
+        back_populates="agent",
+    )
 
     def __repr__(self) -> str:
         return f"<Agent id={self.id} username={self.username} level={self.level}>"
@@ -252,6 +262,10 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    authorization_charges: Mapped[list["AuthorizationCharge"]] = relationship(
+        "AuthorizationCharge",
+        back_populates="user",
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username}>"
@@ -307,6 +321,10 @@ class GameProject(Base):
         "ProjectPrice",
         back_populates="project",
         cascade="all, delete-orphan",
+    )
+    authorization_charges: Mapped[list["AuthorizationCharge"]] = relationship(
+        "AuthorizationCharge",
+        back_populates="project",
     )
 
     def __repr__(self) -> str:
@@ -416,11 +434,171 @@ class Authorization(Base):
         "GameProject",
         back_populates="authorizations",
     )
+    charges: Mapped[list["AuthorizationCharge"]] = relationship(
+        "AuthorizationCharge",
+        back_populates="authorization",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return (
             f"<Authorization user={self.user_id} project={self.game_project_id} "
             f"level={self.user_level} devices={self.authorized_devices}>"
+        )
+
+
+# ── 授权扣点快照表 ───────────────────────────────────────────
+class AuthorizationCharge(Base):
+    __tablename__ = "authorization_charge"
+    __table_args__ = (
+        CheckConstraint(
+            "user_level IN ('trial', 'normal', 'vip', 'svip')",
+            name="chk_authorization_charge_user_level_enum",
+        ),
+        CheckConstraint(
+            "authorized_devices > 0",
+            name="chk_authorization_charge_devices_positive",
+        ),
+        CheckConstraint(
+            "billing_period_hours > 0",
+            name="chk_authorization_charge_period_hours_positive",
+        ),
+        CheckConstraint(
+            "period_count > 0",
+            name="chk_authorization_charge_period_count_positive",
+        ),
+        CheckConstraint(
+            "paid_hours > 0",
+            name="chk_authorization_charge_paid_hours_positive",
+        ),
+        CheckConstraint(
+            "original_cost >= 0",
+            name="chk_authorization_charge_original_cost_non_negative",
+        ),
+        CheckConstraint(
+            "charged_consumed >= 0",
+            name="chk_authorization_charge_charged_consumed_non_negative",
+        ),
+        CheckConstraint(
+            "credit_consumed >= 0",
+            name="chk_authorization_charge_credit_consumed_non_negative",
+        ),
+        CheckConstraint(
+            "refunded_points >= 0",
+            name="chk_authorization_charge_refunded_non_negative",
+        ),
+        CheckConstraint(
+            "refund_status IN ('none', 'refunded', 'no_refund')",
+            name="chk_authorization_charge_refund_status_enum",
+        ),
+        Index("idx_authorization_charge_authorization", "authorization_id"),
+        Index("idx_authorization_charge_agent", "agent_id", "created_at"),
+        Index("idx_authorization_charge_user_project", "user_id", "project_id"),
+        Index("idx_authorization_charge_refund_status", "refund_status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    authorization_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("authorization.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("agent.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("game_project.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    user_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    unit_price: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+    authorized_devices: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    billing_period: Mapped[str] = mapped_column(String(20), nullable=False)
+    billing_period_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    paid_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    original_cost: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+    charged_consumed: Mapped[float] = mapped_column(
+        Numeric(14, 4),
+        nullable=False,
+        server_default="0",
+    )
+    credit_consumed: Mapped[float] = mapped_column(
+        Numeric(14, 4),
+        nullable=False,
+        server_default="0",
+    )
+
+    refunded_points: Mapped[float] = mapped_column(
+        Numeric(14, 4),
+        nullable=False,
+        server_default="0",
+    )
+    refund_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="none",
+    )
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_refund_paid_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_refund_used_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_refund_used_cost: Mapped[float | None] = mapped_column(Numeric(14, 4), nullable=True)
+    last_refund_points: Mapped[float | None] = mapped_column(Numeric(14, 4), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    authorization: Mapped["Authorization"] = relationship(
+        "Authorization",
+        back_populates="charges",
+    )
+    agent: Mapped["Agent"] = relationship(
+        "Agent",
+        back_populates="authorization_charges",
+    )
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="authorization_charges",
+    )
+    project: Mapped["GameProject"] = relationship(
+        "GameProject",
+        back_populates="authorization_charges",
+    )
+    transactions: Mapped[list["BalanceTransaction"]] = relationship(
+        "BalanceTransaction",
+        back_populates="charge",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AuthorizationCharge id={self.id} user={self.user_id} "
+            f"project={self.project_id} original={self.original_cost}>"
         )
 
 
@@ -640,6 +818,7 @@ class BalanceTransaction(Base):
     __tablename__ = "balance_transaction"
     __table_args__ = (
         Index("idx_balance_tx_agent", "agent_id", "created_at"),
+        Index("idx_balance_tx_related_charge", "related_charge_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -651,7 +830,7 @@ class BalanceTransaction(Base):
     tx_type: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        comment="recharge/credit/consume/freeze/unfreeze/adjust",
+        comment="recharge/credit/consume/refund/freeze/unfreeze/adjust",
     )
     balance_type: Mapped[str] = mapped_column(
         String(20),
@@ -665,9 +844,20 @@ class BalanceTransaction(Base):
     operated_by_admin_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     related_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     related_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    related_charge_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("authorization_charge.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联授权扣点快照 ID",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+    )
+
+    charge: Mapped["AuthorizationCharge | None"] = relationship(
+        "AuthorizationCharge",
+        back_populates="transactions",
     )
 
     def __repr__(self) -> str:

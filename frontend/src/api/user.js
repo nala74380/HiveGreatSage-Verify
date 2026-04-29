@@ -3,7 +3,7 @@
  * 名称: 用户 API 统一出口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.3.0
+ * 版本: V1.3.1
  * 功能及相关说明:
  *   用户管理接口统一出口。
  *
@@ -12,10 +12,10 @@
  *   - Authorization 是用户在某项目下的授权记录。
  *   - 项目内等级、授权设备数、到期时间全部归属 Authorization。
  *
- * 改进内容:
- *   V1.3.0 - 新增项目授权更新、创建者代理详情接口
- *   V1.2.0 - 新增 updatePassword
- *   V1.1.0 - 拆分 sharedUserApi / adminUserApi，并保留兼容门面
+ * 本版修复:
+ *   - delete(userId) 改为调用 /api/users/{userId}
+ *   - 代理端删除用户不再调用 /admin/api/users/{userId}
+ *   - 避免代理 Token 调管理员接口导致自动退出登录
  */
 
 import http from './http'
@@ -42,7 +42,9 @@ export const userApi = {
     return http.patch(`/api/users/${userId}`, data)
   },
 
-  delete: adminUserApi.delete,
+  delete(userId) {
+    return http.delete(`/api/users/${userId}`)
+  },
 
   // ── 密码 ──────────────────────────────────────────────────
   updatePassword(userId, data) {
@@ -67,7 +69,7 @@ export const userApi = {
     return http.get(`/api/users/creators/agents/${agentId}`, { params })
   },
 
-  // ── 设备绑定，保留兼容 ────────────────────────────────────
+  // ── 管理员设备操作，保留管理员专用接口 ───────────────────
   deviceBindings: adminUserApi.deviceBindings,
   unbindDevice: adminUserApi.unbindDevice,
 }

@@ -4,21 +4,30 @@
       <div>
         <h2>点数流水</h2>
         <p class="page-desc">
-          查看管理员充值/授信/冻结/解冻，以及代理给用户授权项目产生的扣点流水。
+          查看管理员充值 / 授信 / 冻结 / 解冻，以及代理给用户授权项目扣点、删除用户返点等全局流水。
         </p>
       </div>
       <el-button :icon="Refresh" @click="loadTransactions" :loading="loading">刷新</el-button>
     </div>
 
+    <el-alert
+      title="返点规则：删除用户时，按每个项目授权单独计算；不足 1 小时按 1 小时扣费；返点 = 原始扣点 - 每小时成本 × 已使用小时数 - 已返还点数。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="tip-alert"
+    />
+
     <el-card shadow="never" class="filter-card">
       <el-form inline :model="filter">
         <el-form-item label="类型">
-          <el-select v-model="filter.tx_type" clearable placeholder="全部" style="width:130px">
+          <el-select v-model="filter.tx_type" clearable placeholder="全部" style="width:150px">
             <el-option label="充值" value="recharge" />
             <el-option label="授信" value="credit" />
             <el-option label="冻结" value="freeze" />
             <el-option label="解冻" value="unfreeze" />
-            <el-option label="消费/扣点" value="consume" />
+            <el-option label="授权扣点" value="consume" />
+            <el-option label="删除用户返点" value="refund" />
           </el-select>
         </el-form-item>
 
@@ -75,10 +84,10 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="类型" width="105">
+        <el-table-column label="类型" width="120">
           <template #default="{ row }">
             <el-tag :type="txTagType(row.tx_type)" effect="plain">
-              {{ row.tx_type_label }}
+              {{ txTypeLabel(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -114,7 +123,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="业务说明" min-width="420">
+        <el-table-column label="业务说明" min-width="520">
           <template #default="{ row }">
             <div class="business-text">{{ row.business_text || row.description || '—' }}</div>
 
@@ -131,9 +140,57 @@
               <el-tag v-if="row.authorization_detail" size="small" effect="plain" type="success">
                 {{ row.authorization_detail.authorized_devices }} 台
               </el-tag>
-              <el-tag v-if="row.authorization_detail?.unit_price !== null && row.authorization_detail?.unit_price !== undefined" size="small" effect="plain">
+              <el-tag
+                v-if="row.authorization_detail?.unit_price !== null && row.authorization_detail?.unit_price !== undefined"
+                size="small"
+                effect="plain"
+              >
                 {{ fmt(row.authorization_detail.unit_price) }} 点/{{ row.authorization_detail.unit_label }}
               </el-tag>
+            </div>
+
+            <div v-if="row.tx_type === 'refund'" class="detail-line refund-line">
+              <el-tag size="small" effect="plain" type="success">返点</el-tag>
+              <el-tag size="small" effect="plain" type="info">
+                用户：{{ row.related_username || `ID=${row.related_user_id}` }}
+              </el-tag>
+              <el-tag size="small" effect="plain" type="primary">
+                项目：{{ row.related_project_name || `ID=${row.related_project_id}` }}
+              </el-tag>
+
+              <template v-if="row.refund_detail">
+                <el-tag size="small" effect="plain">
+                  原扣点：{{ fmt(row.refund_detail.original_cost) }}
+                </el-tag>
+                <el-tag size="small" effect="plain">
+                  已购买小时：{{ row.refund_detail.paid_hours }}
+                </el-tag>
+                <el-tag size="small" effect="plain">
+                  已用小时：{{ row.refund_detail.used_hours }}
+                </el-tag>
+                <el-tag size="small" effect="plain">
+                  已用点数：{{ fmt(row.refund_detail.used_cost) }}
+                </el-tag>
+                <el-tag size="small" effect="plain" type="success">
+                  返还：{{ fmt(row.refund_detail.refund_points) }}
+                </el-tag>
+              </template>
+
+              <template v-else-if="row.authorization_detail">
+                <el-tag size="small" effect="plain" type="warning">
+                  {{ row.authorization_detail.level_name }}
+                </el-tag>
+                <el-tag size="small" effect="plain" type="success">
+                  {{ row.authorization_detail.authorized_devices }} 台
+                </el-tag>
+                <el-tag
+                  v-if="row.authorization_detail?.unit_price !== null && row.authorization_detail?.unit_price !== undefined"
+                  size="small"
+                  effect="plain"
+                >
+                  当前价：{{ fmt(row.authorization_detail.unit_price) }} 点/{{ row.authorization_detail.unit_label }}
+                </el-tag>
+              </template>
             </div>
           </template>
         </el-table-column>
@@ -161,7 +218,14 @@
  * 名称: 管理员点数流水页面
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.0.0
+ * 版本: V1.1.0
+ * 功能说明:
+ *   管理员查看全局点数流水。
+ *
+ * 本版增强:
+ *   - 支持显示 refund / 删除用户返点 类型。
+ *   - 增加返点公式说明。
+ *   - 兼容后端未来返回 refund_detail。
  */
 
 import { onMounted, reactive, ref } from 'vue'
@@ -218,11 +282,26 @@ const resetFilter = () => {
   loadTransactions()
 }
 
+const txTypeLabel = (row) => {
+  const map = {
+    recharge: '充值',
+    credit: '授信',
+    consume: '授权扣点',
+    refund: '删除用户返点',
+    freeze: '冻结',
+    unfreeze: '解冻',
+    adjust: '调整',
+  }
+
+  return map[row.tx_type] || row.tx_type_label || row.tx_type || '未知'
+}
+
 const txTagType = (type) => {
   const map = {
     recharge: 'success',
     credit: 'primary',
     consume: 'danger',
+    refund: 'success',
     freeze: 'warning',
     unfreeze: 'info',
     adjust: 'info',
@@ -258,6 +337,7 @@ onMounted(loadTransactions)
   font-size: 13px;
 }
 
+.tip-alert,
 .filter-card,
 .table-card {
   border-radius: 10px;
@@ -290,6 +370,10 @@ onMounted(loadTransactions)
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.refund-line {
+  padding-top: 2px;
 }
 
 .text-muted {

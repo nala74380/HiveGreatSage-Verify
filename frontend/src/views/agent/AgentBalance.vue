@@ -4,7 +4,7 @@
       <div>
         <h2>我的余额</h2>
         <p class="page-desc">
-          查看当前点数余额、授信额度、冻结额度，以及用户项目授权扣点明细。
+          查看当前点数余额、授信额度、冻结额度，以及用户项目授权扣点 / 删除用户返点明细。
         </p>
       </div>
       <el-button :icon="Refresh" @click="reloadAll" :loading="loading">刷新</el-button>
@@ -53,13 +53,48 @@
       </el-col>
     </el-row>
 
-    <el-alert
-      title="说明：给用户授权项目时，会按项目定价、项目内等级、授权设备数和授权周期扣点；试用按周，普通/VIP/SVIP 按月。"
-      type="info"
-      show-icon
-      :closable="false"
-      class="tip-alert"
-    />
+    <el-card shadow="never" class="rule-card">
+      <template #header>
+        <div class="rule-header">
+          <span class="card-title">扣点 / 返点规则说明</span>
+          <el-tag effect="plain" type="info">按项目授权单独计算</el-tag>
+        </div>
+      </template>
+
+      <div class="rule-grid">
+        <div class="rule-block">
+          <div class="rule-title">授权扣点规则</div>
+          <div class="rule-line">试用用户：按周计费，1 周 = 168 小时。</div>
+          <div class="rule-line">普通 / VIP / SVIP：按月计费，1 月 = 720 小时。</div>
+          <div class="formula-box">
+            扣点 = 项目等级价格 × 授权设备数 × 授权周期数
+          </div>
+          <div class="rule-line">
+            授权周期数 = 向上取整（授权时长 ÷ 计费周期）。
+          </div>
+        </div>
+
+        <div class="rule-block">
+          <div class="rule-title">删除用户返点规则</div>
+          <div class="rule-line">删除用户时，按每个项目授权分别计算剩余未使用点数。</div>
+          <div class="rule-line">实际使用时间不足 1 小时，按 1 小时计算。</div>
+          <div class="formula-box">
+            返点 = 原始扣点 - 每小时成本 × 已使用小时数 - 已返还点数
+          </div>
+          <div class="rule-line">
+            每小时成本 = 原始扣点 ÷ 已购买总小时数。
+          </div>
+        </div>
+
+        <div class="rule-block">
+          <div class="rule-title">返点边界</div>
+          <div class="rule-line">已过期授权不返点。</div>
+          <div class="rule-line">管理员免费授权不返点。</div>
+          <div class="rule-line">只有代理实际扣过点的授权才返点。</div>
+          <div class="rule-line">返点会按原扣点来源返还到充值点数 / 授信点数。</div>
+        </div>
+      </div>
+    </el-card>
 
     <el-card shadow="never" class="table-card">
       <template #header>
@@ -70,7 +105,7 @@
             clearable
             placeholder="全部类型"
             size="small"
-            style="width: 150px"
+            style="width: 160px"
             @change="fetchTransactions"
           >
             <el-option label="充值" value="recharge" />
@@ -78,6 +113,7 @@
             <el-option label="冻结" value="freeze" />
             <el-option label="解冻" value="unfreeze" />
             <el-option label="授权扣点" value="consume" />
+            <el-option label="删除用户返点" value="refund" />
           </el-select>
         </div>
       </template>
@@ -94,10 +130,10 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="类型" width="105">
+        <el-table-column label="类型" width="120">
           <template #default="{ row }">
             <el-tag :type="txTagType(row.tx_type)" effect="plain">
-              {{ row.tx_type_label || txTypeLabel(row.tx_type) }}
+              {{ txTypeLabel(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -118,7 +154,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="详细说明" min-width="460">
+        <el-table-column label="详细说明" min-width="560">
           <template #default="{ row }">
             <div class="business-text">{{ row.business_text || row.description || '—' }}</div>
 
@@ -143,6 +179,47 @@
                 {{ fmt(row.authorization_detail.unit_price) }} 点/{{ row.authorization_detail.unit_label }}
               </el-tag>
             </div>
+
+            <div v-if="row.tx_type === 'refund'" class="detail-line refund-line">
+              <el-tag size="small" effect="plain" type="success">返点</el-tag>
+              <el-tag size="small" effect="plain" type="info">
+                用户：{{ row.related_username || `ID=${row.related_user_id}` }}
+              </el-tag>
+              <el-tag size="small" effect="plain" type="primary">
+                项目：{{ row.related_project_name || `ID=${row.related_project_id}` }}
+              </el-tag>
+
+              <template v-if="row.refund_detail">
+                <el-tag size="small" effect="plain">
+                  原扣点：{{ fmt(row.refund_detail.original_cost) }}
+                </el-tag>
+                <el-tag size="small" effect="plain">
+                  已用小时：{{ row.refund_detail.used_hours }}
+                </el-tag>
+                <el-tag size="small" effect="plain">
+                  已用点数：{{ fmt(row.refund_detail.used_cost) }}
+                </el-tag>
+                <el-tag size="small" effect="plain" type="success">
+                  返还：{{ fmt(row.refund_detail.refund_points) }}
+                </el-tag>
+              </template>
+
+              <template v-else-if="row.authorization_detail">
+                <el-tag size="small" effect="plain" type="warning">
+                  {{ row.authorization_detail.level_name }}
+                </el-tag>
+                <el-tag size="small" effect="plain" type="success">
+                  {{ row.authorization_detail.authorized_devices }} 台
+                </el-tag>
+                <el-tag
+                  v-if="row.authorization_detail?.unit_price !== null && row.authorization_detail?.unit_price !== undefined"
+                  size="small"
+                  effect="plain"
+                >
+                  当前价：{{ fmt(row.authorization_detail.unit_price) }} 点/{{ row.authorization_detail.unit_label }}
+                </el-tag>
+              </template>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -165,6 +242,21 @@
 </template>
 
 <script setup>
+/**
+ * 文件位置: src/views/agent/AgentBalance.vue
+ * 名称: 代理端我的余额
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.2.0
+ * 功能说明:
+ *   展示代理余额、授权扣点流水、删除用户返点流水，并解释扣点/返点公式。
+ *
+ * 已确认规则:
+ *   - 授权扣点按项目授权独立计算。
+ *   - 删除用户返点按项目授权独立计算。
+ *   - 实际使用时间不足 1 小时，按 1 小时计算。
+ */
+
 import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { agentBalanceApi } from '@/api/balance'
@@ -252,16 +344,18 @@ const reloadAll = async () => {
   loading.value = false
 }
 
-const txTypeLabel = (type) => {
+const txTypeLabel = (row) => {
   const map = {
     recharge: '充值',
     credit: '授信',
     freeze: '冻结',
     unfreeze: '解冻',
     consume: '授权扣点',
-    refund: '退款',
+    refund: '删除用户返点',
+    adjust: '调整',
   }
-  return map[type] || type || '未知'
+
+  return map[row.tx_type] || row.tx_type_label || row.tx_type || '未知'
 }
 
 const txTagType = (type) => {
@@ -272,6 +366,7 @@ const txTagType = (type) => {
     unfreeze: 'info',
     consume: 'danger',
     refund: 'success',
+    adjust: 'info',
   }
   return map[type] || 'info'
 }
@@ -289,7 +384,7 @@ onMounted(reloadAll)
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .page-header h2 {
@@ -350,10 +445,12 @@ onMounted(reloadAll)
   font-size: 12px;
 }
 
+.rule-card,
 .table-card {
   border-radius: 10px;
 }
 
+.rule-header,
 .card-header-row {
   display: flex;
   justify-content: space-between;
@@ -364,6 +461,43 @@ onMounted(reloadAll)
   font-size: 14px;
   font-weight: 600;
   color: #1e293b;
+}
+
+.rule-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rule-block {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.rule-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.rule-line {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.8;
+}
+
+.formula-box {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: Consolas, monospace;
 }
 
 .amount-plus {
@@ -393,6 +527,10 @@ onMounted(reloadAll)
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.refund-line {
+  padding-top: 2px;
 }
 
 .pager-row {

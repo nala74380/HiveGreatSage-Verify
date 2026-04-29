@@ -1,9 +1,9 @@
 r"""
 文件位置: app/routers/users.py
 文件名称: users.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
+作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-04-29
-版本: V1.2.0
+版本: V1.2.1
 功能说明:
     用户管理路由。
 
@@ -18,6 +18,7 @@ r"""
       GET    /api/users/creators/agents/{agent_id}
       GET    /api/users/{user_id}
       PATCH  /api/users/{user_id}
+      DELETE /api/users/{user_id}
       PATCH  /api/users/{user_id}/password
       POST   /api/users/{user_id}/authorizations
       PATCH  /api/users/{user_id}/authorizations/{auth_id}
@@ -57,6 +58,7 @@ from app.services.user_service import (
     grant_authorization,
     list_users,
     revoke_authorization,
+    soft_delete_user,
     update_authorization,
     update_user,
     update_user_password,
@@ -188,6 +190,34 @@ async def update_user_endpoint(
     return await update_user(
         user_id=user_id,
         body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_endpoint(
+    user_id: int,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> None:
+    """
+    软删除用户。
+
+    Admin:
+        可删除所有用户。
+
+    Agent:
+        只能删除自己创建的用户。
+
+    注意:
+        这是 /api/users/{user_id} 共用删除接口。
+        代理端严禁调用 /admin/api/users/{user_id}。
+    """
+    admin, agent = caller
+    await soft_delete_user(
+        user_id=user_id,
         db=db,
         admin=admin,
         agent=agent,

@@ -72,16 +72,16 @@
     <!-- 批量操作 -->
     <div v-if="selectedIds.length > 0" class="batch-toolbar">
       <span class="batch-info">已选 {{ selectedIds.length }} 条</span>
-      <el-popconfirm
-        :title="`确认批量删除 ${selectedIds.length} 个用户？（软删除）`"
-        confirm-button-text="删除"
-        cancel-button-text="取消"
-        @confirm="batchDelete"
+
+      <el-button
+        type="danger"
+        size="small"
+        :loading="batchLoading"
+        @click="batchDelete"
       >
-        <template #reference>
-          <el-button type="danger" size="small" :loading="batchLoading">批量删除</el-button>
-        </template>
-      </el-popconfirm>
+        批量删除
+      </el-button>
+
       <el-button size="small" @click="selectedIds = []">取消选择</el-button>
     </div>
 
@@ -218,9 +218,8 @@
             </el-button>
             <el-button text size="small" type="primary" @click="openProjectAuthDialog(row)">授权</el-button>
             <el-popconfirm
-              v-if="auth.isAdmin"
-              title="确认删除该用户？（软删除）"
-              confirm-button-text="删除"
+              title="确认删除该用户？删除后用户列表将不再显示，但授权、设备、流水记录会保留用于审计。"
+              confirm-button-text="确认删除"
               cancel-button-text="取消"
               @confirm="deleteUser(row)"
             >
@@ -258,6 +257,7 @@
         </el-form-item>
 
         <el-alert
+          v-if="auth.isAdmin"
           title="用户等级、设备数、到期时间不再属于用户主体，而是属于项目授权。"
           type="info"
           show-icon
@@ -396,6 +396,7 @@
         </el-form-item>
 
         <el-alert
+          v-if="auth.isAdmin"
           title="用户主体不再直接设置等级、设备数、到期时间；这些信息请在项目授权里分别设置。"
           type="info"
           show-icon
@@ -406,6 +407,7 @@
         <el-divider content-position="left">密码</el-divider>
 
         <el-alert
+          v-if="auth.isAdmin"
           title="系统不保存旧密码明文。管理员自动重置后只会一次性显示新密码；关闭弹窗后不可再次查看。"
           type="info"
           show-icon
@@ -881,22 +883,18 @@
  * 名称: 用户管理页面
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.3.0
+ * 版本: V1.3.2
  * 功能说明:
  *   用户管理页面。
  *
- * 核心口径:
- *   - 用户是账号主体。
- *   - 用户等级、设备数、到期时间属于项目授权。
- *   - 同一用户可在不同项目拥有不同等级、设备数和到期时间。
- *
- * 改进内容:
- *   V1.3.0 - 授权模型前端重构；创建者详情；项目筛选只显示对应项目授权明细
+ * 本版修改:
+ *   - 代理端编辑用户弹窗不显示管理员说明型提示。
+ *   - 管理员端仍保留账号主体说明与密码安全说明。
  */
 
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Plus, Refresh } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 
 import { userApi } from '@/api/user'
@@ -989,17 +987,41 @@ const onSelectionChange = (rows) => {
 }
 
 const batchDelete = async () => {
-  batchLoading.value = true
+  const ids = [...selectedIds.value]
+
+  if (!ids.length) {
+    return
+  }
+
   try {
-    const ids = [...selectedIds.value]
-    const results = await Promise.allSettled(ids.map(id => userApi.delete(id)))
+    await ElMessageBox.confirm(
+      `确认批量删除已选中的 ${ids.length} 个用户？删除后用户列表将不再显示，但授权、设备、流水记录会保留用于审计。`,
+      '批量删除确认',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        distinguishCancelAndClose: true,
+      },
+    )
+  } catch {
+    return
+  }
+
+  batchLoading.value = true
+
+  try {
+    const results = await Promise.allSettled(
+      ids.map(id => userApi.delete(id)),
+    )
+
     const success = results.filter(r => r.status === 'fulfilled').length
     const failed = results.length - success
 
     if (failed === 0) {
       ElMessage.success(`已删除 ${success} 个用户`)
     } else {
-      ElMessage.warning(`成功 ${success} 个，失败 ${failed} 个`)
+      ElMessage.warning(`成功 ${success} 个，失败 ${failed} 个；失败项请检查是否有权限删除`)
     }
 
     selectedIds.value = []
@@ -1018,6 +1040,21 @@ const toggleStatus = async (row) => {
 }
 
 const deleteUser = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除用户「${row.username}」？删除后用户列表将不再显示，但授权、设备、流水记录会保留用于审计。`,
+      '删除确认',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        distinguishCancelAndClose: true,
+      },
+    )
+  } catch {
+    return
+  }
+
   await userApi.delete(row.id)
   ElMessage.success('已删除用户')
   await loadUsers()

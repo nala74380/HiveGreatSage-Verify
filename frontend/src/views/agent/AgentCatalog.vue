@@ -3,7 +3,9 @@
     <div class="page-header">
       <div>
         <h2>项目目录</h2>
-        <p class="page-desc">查看当前平台项目与各用户级别点数价格。已授权项目可用于创建和管理用户授权。</p>
+        <p class="page-desc">
+          查看当前平台项目、代理授权状态、用户级别价格与各级别功能差异。
+        </p>
       </div>
       <el-button :icon="Refresh" @click="fetchCatalog" :loading="loading">刷新</el-button>
     </div>
@@ -19,12 +21,74 @@
 
     <el-alert
       v-else
-      title="说明：代理端仅展示试用、普通、VIP、SVIP 价格；测试用户级别不对代理展示。"
+      title="说明：已授权项目可用于创建用户并分配项目授权；未授权项目需联系管理员开通。"
       type="info"
       show-icon
       :closable="false"
       class="tip-alert"
     />
+
+    <el-card shadow="never" class="level-card">
+      <template #header>
+        <div class="level-card-header">
+          <span class="card-title">用户级别功能说明</span>
+          <el-tag size="small" effect="plain" type="info">按项目授权等级生效</el-tag>
+        </div>
+      </template>
+
+      <div class="level-grid">
+        <div class="level-block trial">
+          <div class="level-title-row">
+            <LevelTag level="trial" />
+            <span class="level-title">试用用户</span>
+          </div>
+          <div class="level-desc">等同普通用户，用于短期体验与测试授权。</div>
+          <ul class="level-list">
+            <li>具备普通用户同等基础功能。</li>
+            <li>计费周期按周计算。</li>
+          </ul>
+        </div>
+
+        <div class="level-block normal">
+          <div class="level-title-row">
+            <LevelTag level="normal" />
+            <span class="level-title">普通用户</span>
+          </div>
+          <div class="level-desc">基础功能级别。</div>
+          <ul class="level-list">
+            <li>可使用项目基础验证能力。</li>
+            <li>可使用普通用户范围内的基础功能。</li>
+          </ul>
+        </div>
+
+        <div class="level-block vip">
+          <div class="level-title-row">
+            <LevelTag level="vip" />
+            <span class="level-title">VIP 用户</span>
+          </div>
+          <div class="level-desc">包含普通用户的所有功能，并增加高级能力。</div>
+          <ul class="level-list">
+            <li>包含普通用户的所有功能。</li>
+            <li>可使用游戏账户数据库。</li>
+            <li>可试用组队功能。</li>
+            <li>具备物品价格聚合功能。</li>
+          </ul>
+        </div>
+
+        <div class="level-block svip">
+          <div class="level-title-row">
+            <LevelTag level="svip" />
+            <span class="level-title">SVIP 用户</span>
+          </div>
+          <div class="level-desc">包含 VIP 用户的所有功能，并增加更高阶配置能力。</div>
+          <ul class="level-list">
+            <li>包含 VIP 用户的所有功能。</li>
+            <li>具备游戏账号不同属性设定功能。</li>
+            <li>可扩展其他高级功能。</li>
+          </ul>
+        </div>
+      </div>
+    </el-card>
 
     <el-card shadow="never" class="table-card">
       <el-table
@@ -49,7 +113,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="各级别点数价格" min-width="360">
+        <el-table-column label="各级别点数价格" min-width="420">
           <template #default="{ row }">
             <div class="price-list">
               <template v-if="row.display_prices.length">
@@ -59,7 +123,7 @@
                   class="price-item"
                 >
                   <LevelTag :level="item.level" />
-                  <span class="price-num">{{ item.points }} 点/设备</span>
+                  <span class="price-num">{{ formatPrice(item) }}</span>
                 </span>
               </template>
               <span v-else class="text-muted">暂未定价</span>
@@ -118,30 +182,16 @@
  * 名称: 代理项目目录页面
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.0.2
+ * 版本: V1.1.0
  * 功能及相关说明:
- *   代理查看项目目录、项目价格、当前代理授权状态。
+ *   代理查看项目目录、项目价格、当前代理授权状态、用户级别功能差异。
  *
- *   当前页面调用：
- *     GET /api/agents/my/catalog
- *     GET /api/agents/my-projects
- *
- *   展示规则：
- *     1. 已授权项目显示“已授权”，不再显示“申请授权”。
- *     2. 代理端不展示测试用户级别价格。
- *     3. 价格顺序固定为：试用 → 普通 → VIP → SVIP。
- *
- * 改进内容:
- *   V1.0.2 - 合并代理已授权项目，修正已授权项目仍显示“申请授权”的问题；过滤测试级别；固定价格排序
- *   V1.0.1 - 增加错误提示，不让项目目录接口异常直接触发退出登录
- *   V1.0.0 - 新增代理侧项目目录独立页面
- *
- * 调试信息:
- *   Network 应出现：
- *     GET /api/agents/my/catalog
- *     GET /api/agents/my-projects
- *
- *   若已授权项目仍显示“申请授权”，优先检查 /api/agents/my-projects 返回字段。
+ * 展示规则:
+ *   1. 已授权项目显示“已授权”，不再显示“申请授权”。
+ *   2. 代理端不展示 tester 级别价格。
+ *   3. 页面不显示“测试用户级别不对代理展示”说明文案。
+ *   4. 价格顺序固定为：试用 → 普通 → VIP → SVIP。
+ *   5. 新增试用 / 普通 / VIP / SVIP 功能差异说明。
  */
 
 import { onMounted, ref } from 'vue'
@@ -155,14 +205,6 @@ const loading = ref(false)
 const projects = ref([])
 const error = ref('')
 
-/**
- * 代理端价格展示顺序。
- *
- * 注意：
- *   - 不展示测试用户级别。
- *   - 后端可能返回 trial / normal / vip / svip，也可能返回中文名。
- *   - 这里统一归一化后再排序。
- */
 const DISPLAY_LEVEL_ORDER = ['trial', 'normal', 'vip', 'svip']
 
 const LEVEL_ALIASES = {
@@ -181,8 +223,16 @@ const LEVEL_ALIASES = {
   SVIP: 'svip',
 
   test: 'test',
+  tester: 'test',
   testing: 'test',
   '测试': 'test',
+}
+
+const LEVEL_UNIT_LABELS = {
+  trial: '点/周/设备',
+  normal: '点/月/设备',
+  vip: '点/月/设备',
+  svip: '点/月/设备',
 }
 
 const normalizeLevel = (level) => {
@@ -199,7 +249,6 @@ const normalizeProjectList = (data) => {
     return data
   }
 
-  // 兼容后端未来可能返回 { projects: [] } 或 { items: [] }
   if (Array.isArray(data?.projects)) {
     return data.projects
   }
@@ -275,12 +324,10 @@ const buildDisplayPrices = (rawPrices) => {
 
   const priceMap = new Map()
 
-  // 后端当前更可能返回 { normal: 2, vip: 3.5 } 这种对象。
   if (!Array.isArray(rawPrices) && typeof rawPrices === 'object') {
     for (const [level, points] of Object.entries(rawPrices)) {
       const normalized = normalizeLevel(level)
 
-      // 代理端不展示测试用户级别
       if (normalized === 'test') {
         continue
       }
@@ -293,7 +340,6 @@ const buildDisplayPrices = (rawPrices) => {
     }
   }
 
-  // 兼容后端未来可能返回 [{ user_level, points_per_device }]。
   if (Array.isArray(rawPrices)) {
     for (const item of rawPrices) {
       const normalized = normalizeLevel(item.user_level ?? item.level ?? item.name)
@@ -318,6 +364,7 @@ const buildDisplayPrices = (rawPrices) => {
     .map(level => ({
       level,
       points: priceMap.get(level),
+      unitLabel: LEVEL_UNIT_LABELS[level] || '点/设备',
     }))
 }
 
@@ -329,6 +376,11 @@ const mergeCatalogWithAuth = (catalogProjects, authorizedProjects) => {
     is_authorized: isProjectAuthorized(project, authorizedKeySet),
     display_prices: buildDisplayPrices(project.prices),
   }))
+}
+
+const formatPrice = (item) => {
+  const points = Number(item.points || 0).toFixed(2)
+  return `${points} ${item.unitLabel}`
 }
 
 const getErrorMessage = (err) => {
@@ -421,8 +473,77 @@ onMounted(fetchCatalog)
 }
 
 .tip-alert,
+.level-card,
 .table-card {
   border-radius: 10px;
+}
+
+.level-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.level-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.level-block {
+  border-radius: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.level-block.trial {
+  background: #f8fafc;
+}
+
+.level-block.normal {
+  background: #eff6ff;
+}
+
+.level-block.vip {
+  background: #fff7ed;
+}
+
+.level-block.svip {
+  background: #fef2f2;
+}
+
+.level-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.level-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.level-desc {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.level-list {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.8;
 }
 
 .mono {

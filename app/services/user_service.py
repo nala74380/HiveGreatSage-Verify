@@ -3,7 +3,7 @@ r"""
 文件名称: user_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.2.0
+版本: V1.3.0
 功能说明:
     用户管理服务层。
 
@@ -21,12 +21,17 @@ r"""
     - 授权明细按项目分开显示：等级、授权设备、已激活、未激活、到期时间。
     - 支持修改/重置密码。
     - 代理授权项目时按 Authorization 维度扣点。
+    - 授权扣点时保存 AuthorizationCharge 快照。
+    - 删除用户时自动计算返点。
     - 新增创建者代理详情聚合能力。
+    - 新增 Admin/Agent 共用用户软删除能力。
 
 安全边界:
     - 不查询旧密码明文。
     - 管理员自动生成密码时，只在响应中一次性返回新密码。
     - 代理不能自动生成并查看明文，只能手动修改密码。
+    - 删除用户只做软删除，保留授权、设备、流水等审计数据。
+    - 删除用户返点只处理存在授权扣点快照的代理扣点授权。
 """
 
 import secrets
@@ -64,6 +69,7 @@ from app.schemas.user import (
 from app.services.balance_service import (
     LEVEL_NAMES,
     consume_agent_authorization_points,
+    refund_user_authorization_points_on_delete,
 )
 
 
@@ -365,6 +371,48 @@ async def update_user_password(
     )
 
 
+async def soft_delete_user(
+    user_id: int,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> None:
+    """
+    软删除用户。
+
+    规则:
+      - 管理员可以删除所有用户。
+      - 代理只能删除自己创建的用户。
+      - 只做软删除 is_deleted=True，不物理删除数据。
+      - 授权记录、设备记录、流水记录保留，便于后续审计。
+      - 删除前先按授权扣点快照自动返点。
+      - 返点只处理代理实际扣过点且未过期的授权。
+    """
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    delete_time = datetime.now(timezone.utc)
+
+    await refund_user_authorization_points_on_delete(
+        user_id=user.id,
+        db=db,
+        delete_time=delete_time,
+    )
+
+    auth_result = await db.execute(
+        select(Authorization).where(
+            Authorization.user_id == user.id,
+            Authorization.status == "active",
+        )
+    )
+    for auth_item in auth_result.scalars().all():
+        auth_item.status = "suspended"
+
+    user.is_deleted = True
+    user.status = "suspended"
+    await db.flush()
+
+
 # ═══════════════════════════════════════════════════════════════
 # 项目授权
 # ═══════════════════════════════════════════════════════════════
@@ -390,6 +438,7 @@ async def grant_authorization(
       - 必须设置 valid_until。
       - authorized_devices 必须大于 0。
       - 授权成功前必须完成扣点。
+      - 授权扣点成功后保存 AuthorizationCharge 快照。
       - 已 active 授权不允许代理用 POST 覆盖，避免账务补扣复杂化。
     """
     user = await _get_user_or_404(user_id, db)
@@ -443,25 +492,14 @@ async def grant_authorization(
             detail="该用户已授权此项目。代理修改等级/设备数/续期涉及补扣点，请由管理员处理或后续走专用续费接口。",
         )
 
+    now = datetime.now(timezone.utc)
     consumed_points = 0.0
-
-    if agent is not None:
-        now = datetime.now(timezone.utc)
-        consumed_points = await consume_agent_authorization_points(
-            agent_id=agent.id,
-            user_id=user.id,
-            project_id=project.id,
-            user_level=body.user_level,
-            authorized_devices=body.authorized_devices,
-            start_at=now,
-            valid_until=body.valid_until,
-            db=db,
-        )
 
     if existing:
         existing.status = "active"
         existing.user_level = body.user_level
         existing.authorized_devices = body.authorized_devices
+        existing.valid_from = now
         existing.valid_until = body.valid_until
         auth = existing
     else:
@@ -470,10 +508,27 @@ async def grant_authorization(
             game_project_id=body.game_project_id,
             user_level=body.user_level,
             authorized_devices=body.authorized_devices,
+            valid_from=now,
             valid_until=body.valid_until,
             status="active",
         )
         db.add(auth)
+
+    await db.flush()
+
+    if agent is not None:
+        consume_result = await consume_agent_authorization_points(
+            agent_id=agent.id,
+            user_id=user.id,
+            project_id=project.id,
+            authorization_id=auth.id,
+            user_level=body.user_level,
+            authorized_devices=body.authorized_devices,
+            start_at=now,
+            valid_until=body.valid_until,
+            db=db,
+        )
+        consumed_points = float(consume_result.get("total_cost") or 0.0)
 
     await db.flush()
 
@@ -498,6 +553,7 @@ async def update_authorization(
     当前安全策略:
       - 管理员可以修改等级、设备数、到期时间、状态。
       - 代理暂不允许修改已授权项目，避免账务补扣/退款规则未定导致错账。
+      - 管理员修改授权当前不生成 AuthorizationCharge。
     """
     if admin is None:
         raise HTTPException(
@@ -539,7 +595,7 @@ async def revoke_authorization(
     admin: Admin | None = None,
     agent: Agent | None = None,
 ) -> None:
-    """撤销授权。当前规则：不退款。"""
+    """撤销授权。当前规则：单独停用授权不退款；删除用户时才按规则自动返点。"""
     user = await _get_user_or_404(user_id, db)
     _assert_can_access_user(user=user, admin=admin, agent=agent)
 
