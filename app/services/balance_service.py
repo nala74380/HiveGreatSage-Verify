@@ -3,20 +3,29 @@ r"""
 名称: 代理余额与项目定价服务层
 作者: 蜂巢·大圣 (Hive-GreatSage)
 时间: 2026-04-29
-版本: V1.1.0
+版本: V1.3.0
 功能说明:
     项目定价管理、代理余额管理、授权扣点、流水查询。
+
+核心能力:
+    - 管理员可查看全局点数流水。
+    - 代理可查看自己的余额与流水。
+    - 流水返回完整业务上下文：
+        管理员给谁充值/授信/冻结/解冻；
+        代理给哪个用户授权了什么项目；
+        项目内用户等级、单价、授权设备数、到期时间；
+        扣点前后余额变化。
 
 计费规则:
     - trial  试用：按周计费，ceil(授权天数 / 7)
     - normal 普通：按月计费，ceil(授权天数 / 30)
     - vip    VIP：按月计费，ceil(授权天数 / 30)
     - svip   SVIP：按月计费，ceil(授权天数 / 30)
-    - tester 测试：不进入代理售卖定价体系，不展示、不扣代理点数
+    - tester 测试：不进入代理售卖定价体系
 
 点数规则:
-    - 点数保留小数点后两位。
-    - 扣点顺序：优先 charged_points，不足部分再扣 credit_points - frozen_credit。
+    - 点数保留两位小数。
+    - 扣点顺序：优先扣充值点数，再扣授信点数。
     - 所有余额变动必须写 balance_transaction。
 """
 
@@ -25,10 +34,11 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.main.models import (
+    Admin,
     Agent,
     AgentBalance,
     AgentProjectAuth,
@@ -39,8 +49,6 @@ from app.models.main.models import (
     User,
 )
 
-
-# ── 用户级别与计费周期 ─────────────────────────────────────────
 
 LEVEL_NAMES = {
     "trial": "试用",
@@ -53,40 +61,33 @@ LEVEL_NAMES = {
 PRICING_LEVELS = ["trial", "normal", "vip", "svip"]
 
 BILLING_RULES = {
-    "trial": {
-        "period": "week",
-        "period_days": 7,
-        "period_name": "周",
-        "unit_label": "每周/台",
-    },
-    "normal": {
-        "period": "month",
-        "period_days": 30,
-        "period_name": "月",
-        "unit_label": "每月/台",
-    },
-    "vip": {
-        "period": "month",
-        "period_days": 30,
-        "period_name": "月",
-        "unit_label": "每月/台",
-    },
-    "svip": {
-        "period": "month",
-        "period_days": 30,
-        "period_name": "月",
-        "unit_label": "每月/台",
-    },
+    "trial": {"period": "week", "period_days": 7, "period_name": "周", "unit_label": "每周/台"},
+    "normal": {"period": "month", "period_days": 30, "period_name": "月", "unit_label": "每月/台"},
+    "vip": {"period": "month", "period_days": 30, "period_name": "月", "unit_label": "每月/台"},
+    "svip": {"period": "month", "period_days": 30, "period_name": "月", "unit_label": "每月/台"},
+}
+
+TX_TYPE_LABELS = {
+    "recharge": "充值",
+    "credit": "授信",
+    "consume": "消费",
+    "freeze": "冻结",
+    "unfreeze": "解冻",
+    "adjust": "调整",
+}
+
+BALANCE_TYPE_LABELS = {
+    "charged": "充值点数",
+    "credit": "授信点数",
 }
 
 
-def _money(value: float | Decimal) -> Decimal:
-    """统一保留两位小数。"""
-    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+def _money(value: float | Decimal | int | None) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+def _fmt_money(value: float | Decimal | int | None) -> str:
+    return f"{float(_money(value)):.2f}"
 
 
 def _ensure_aware(dt: datetime) -> datetime:
@@ -95,8 +96,13 @@ def _ensure_aware(dt: datetime) -> datetime:
     return dt
 
 
+def _fmt_dt(dt: datetime | None) -> str:
+    if not dt:
+        return "永久"
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _calc_period_count(user_level: str, start_at: datetime, end_at: datetime) -> int:
-    """按用户级别计算计费周期数，至少 1 个周期。"""
     if user_level not in BILLING_RULES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -120,21 +126,19 @@ def _calc_period_count(user_level: str, start_at: datetime, end_at: datetime) ->
 # ═══════════════════════════════════════════════════════════════
 
 async def get_project_prices(project_id: int, db: AsyncSession) -> list[dict]:
-    """获取项目各级别定价。只返回代理售卖级别，不返回 tester。"""
     result = await db.execute(
         select(ProjectPrice)
         .where(
             ProjectPrice.project_id == project_id,
             ProjectPrice.user_level.in_(PRICING_LEVELS),
         )
-        .order_by(ProjectPrice.user_level)
     )
     prices = {p.user_level: p for p in result.scalars().all()}
 
     return [
         {
             "user_level": level,
-            "level_name": LEVEL_NAMES.get(level, level),
+            "level_name": LEVEL_NAMES[level],
             "billing_period": BILLING_RULES[level]["period"],
             "billing_period_name": BILLING_RULES[level]["period_name"],
             "unit_label": BILLING_RULES[level]["unit_label"],
@@ -151,12 +155,8 @@ async def set_project_price(
     points_per_device: float,
     db: AsyncSession,
 ) -> dict:
-    """设置或更新某级别单价。"""
     if user_level not in PRICING_LEVELS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"无效或不可售卖的用户级别: {user_level}",
-        )
+        raise HTTPException(status_code=400, detail=f"不可售卖用户级别: {user_level}")
 
     if points_per_device < 0:
         raise HTTPException(status_code=400, detail="点数不能为负数")
@@ -165,7 +165,7 @@ async def set_project_price(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
-    normalized_points = _money(points_per_device)
+    normalized = _money(points_per_device)
 
     result = await db.execute(
         select(ProjectPrice).where(
@@ -176,12 +176,12 @@ async def set_project_price(
     price = result.scalar_one_or_none()
 
     if price:
-        price.points_per_device = normalized_points
+        price.points_per_device = normalized
     else:
         price = ProjectPrice(
             project_id=project_id,
             user_level=user_level,
-            points_per_device=normalized_points,
+            points_per_device=normalized,
         )
         db.add(price)
 
@@ -189,7 +189,7 @@ async def set_project_price(
 
     return {
         "user_level": user_level,
-        "level_name": LEVEL_NAMES.get(user_level, user_level),
+        "level_name": LEVEL_NAMES[user_level],
         "billing_period": BILLING_RULES[user_level]["period"],
         "billing_period_name": BILLING_RULES[user_level]["period_name"],
         "unit_label": BILLING_RULES[user_level]["unit_label"],
@@ -199,7 +199,6 @@ async def set_project_price(
 
 
 async def delete_project_price(project_id: int, user_level: str, db: AsyncSession) -> None:
-    """删除某级别单价。"""
     result = await db.execute(
         select(ProjectPrice).where(
             ProjectPrice.project_id == project_id,
@@ -215,7 +214,6 @@ async def delete_project_price(project_id: int, user_level: str, db: AsyncSessio
 
 
 async def get_all_projects_with_prices(db: AsyncSession) -> list[dict]:
-    """获取所有项目及其定价，代理项目目录使用。"""
     result = await db.execute(
         select(GameProject, ProjectPrice)
         .outerjoin(
@@ -226,11 +224,10 @@ async def get_all_projects_with_prices(db: AsyncSession) -> list[dict]:
         .where(GameProject.is_active == True)  # noqa: E712
         .order_by(GameProject.id, ProjectPrice.user_level)
     )
-    rows = result.all()
 
     projects: dict[int, dict] = {}
 
-    for project, price in rows:
+    for project, price in result.all():
         if project.id not in projects:
             projects[project.id] = {
                 "id": project.id,
@@ -246,7 +243,7 @@ async def get_all_projects_with_prices(db: AsyncSession) -> list[dict]:
             level = price.user_level
             projects[project.id]["prices"][level] = float(_money(price.points_per_device))
             projects[project.id]["price_meta"][level] = {
-                "level_name": LEVEL_NAMES.get(level, level),
+                "level_name": LEVEL_NAMES[level],
                 "billing_period": BILLING_RULES[level]["period"],
                 "billing_period_name": BILLING_RULES[level]["period_name"],
                 "unit_label": BILLING_RULES[level]["unit_label"],
@@ -260,7 +257,6 @@ async def get_all_projects_with_prices(db: AsyncSession) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════
 
 async def _get_or_create_balance(agent_id: int, db: AsyncSession) -> AgentBalance:
-    """获取代理余额记录，不存在则自动创建。"""
     result = await db.execute(
         select(AgentBalance).where(AgentBalance.agent_id == agent_id)
     )
@@ -275,7 +271,6 @@ async def _get_or_create_balance(agent_id: int, db: AsyncSession) -> AgentBalanc
 
 
 async def get_agent_balance(agent_id: int, db: AsyncSession) -> dict:
-    """查询代理余额。"""
     balance = await _get_or_create_balance(agent_id, db)
 
     charged = float(balance.charged_points)
@@ -288,8 +283,6 @@ async def get_agent_balance(agent_id: int, db: AsyncSession) -> dict:
 
     return {
         "agent_id": agent_id,
-
-        # 标准字段
         "charged_points": charged,
         "credit_points": credit,
         "frozen_credit": frozen,
@@ -327,7 +320,7 @@ async def recharge_agent(
         amount=amount_dec,
         balance_before=before,
         balance_after=after,
-        description=description or f"管理员充值 {amount_dec} 点",
+        description=description or f"管理员充值 {_fmt_money(amount_dec)} 点",
         operated_by_admin_id=admin_id,
     )
     db.add(tx)
@@ -360,7 +353,7 @@ async def credit_agent(
         amount=amount_dec,
         balance_before=before,
         balance_after=after,
-        description=description or f"管理员授信 {amount_dec} 点",
+        description=description or f"管理员授信 {_fmt_money(amount_dec)} 点",
         operated_by_admin_id=admin_id,
     )
     db.add(tx)
@@ -400,7 +393,7 @@ async def freeze_credit(
         amount=amount_dec,
         balance_before=before,
         balance_after=after,
-        description=description or f"冻结授信 {amount_dec} 点",
+        description=description or f"冻结授信 {_fmt_money(amount_dec)} 点",
         operated_by_admin_id=admin_id,
     )
     db.add(tx)
@@ -440,7 +433,7 @@ async def unfreeze_credit(
         amount=-amount_dec,
         balance_before=before,
         balance_after=after,
-        description=description or f"解冻授信 {amount_dec} 点",
+        description=description or f"解冻授信 {_fmt_money(amount_dec)} 点",
         operated_by_admin_id=admin_id,
     )
     db.add(tx)
@@ -457,23 +450,16 @@ async def calculate_authorization_cost(
     *,
     project_id: int,
     user_level: str,
-    device_count: int,
+    authorized_devices: int,
     start_at: datetime,
     valid_until: datetime,
     db: AsyncSession,
 ) -> dict:
-    """计算授权扣点，不修改余额。"""
     if user_level not in PRICING_LEVELS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"用户级别 {user_level} 不支持代理授权扣点",
-        )
+        raise HTTPException(status_code=400, detail=f"用户级别 {user_level} 不支持代理计费")
 
-    if device_count <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="代理授权用户时设备数必须大于 0，不能为无限制",
-        )
+    if authorized_devices <= 0:
+        raise HTTPException(status_code=400, detail="代理授权设备数必须大于 0")
 
     result = await db.execute(
         select(ProjectPrice).where(
@@ -482,27 +468,26 @@ async def calculate_authorization_cost(
         )
     )
     price = result.scalar_one_or_none()
-
     if not price:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"该项目尚未设置 {LEVEL_NAMES.get(user_level, user_level)} 级别定价，无法扣点授权",
+            status_code=400,
+            detail=f"该项目尚未设置 {LEVEL_NAMES.get(user_level, user_level)} 级别定价",
         )
 
     period_count = _calc_period_count(user_level, start_at, valid_until)
     unit_price = _money(price.points_per_device)
-    total_cost = _money(unit_price * Decimal(device_count) * Decimal(period_count))
+    total_cost = _money(unit_price * Decimal(authorized_devices) * Decimal(period_count))
 
     return {
         "project_id": project_id,
         "user_level": user_level,
-        "level_name": LEVEL_NAMES.get(user_level, user_level),
+        "level_name": LEVEL_NAMES[user_level],
+        "unit_price": float(unit_price),
+        "authorized_devices": authorized_devices,
+        "period_count": period_count,
         "billing_period": BILLING_RULES[user_level]["period"],
         "billing_period_name": BILLING_RULES[user_level]["period_name"],
         "unit_label": BILLING_RULES[user_level]["unit_label"],
-        "unit_price": float(unit_price),
-        "device_count": device_count,
-        "period_count": period_count,
         "total_cost": float(total_cost),
     }
 
@@ -513,20 +498,15 @@ async def consume_agent_authorization_points(
     user_id: int,
     project_id: int,
     user_level: str,
-    device_count: int,
+    authorized_devices: int,
     start_at: datetime,
     valid_until: datetime,
     db: AsyncSession,
 ) -> float:
-    """
-    代理给用户授权项目时扣点。
-
-    扣点失败则抛出 HTTPException，调用方应保持授权不写入。
-    """
     cost = await calculate_authorization_cost(
         project_id=project_id,
         user_level=user_level,
-        device_count=device_count,
+        authorized_devices=authorized_devices,
         start_at=start_at,
         valid_until=valid_until,
         db=db,
@@ -547,15 +527,18 @@ async def consume_agent_authorization_points(
     if total_cost > available_total:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"代理点数不足：需扣 {total_cost} 点，"
-                f"当前可用 {available_total} 点"
-            ),
+            detail=f"代理点数不足：需扣 {total_cost} 点，当前可用 {available_total} 点",
         )
 
     remaining = total_cost
+    description = (
+        f"用户项目授权扣点：用户ID={user_id}，项目ID={project_id}，"
+        f"{cost['level_name']}，{authorized_devices}台，"
+        f"单价{_fmt_money(cost['unit_price'])}点/{cost['unit_label']}，"
+        f"{cost['period_count']}{cost['billing_period_name']}，"
+        f"到期{_fmt_dt(valid_until)}，合计{_fmt_money(total_cost)}点"
+    )
 
-    # 优先扣充值点数
     if charged > 0 and remaining > 0:
         consume_charged = min(charged, remaining)
         before = charged
@@ -570,16 +553,11 @@ async def consume_agent_authorization_points(
             amount=-consume_charged,
             balance_before=before,
             balance_after=after,
-            description=(
-                f"用户授权扣点：用户ID={user_id}，项目ID={project_id}，"
-                f"{cost['level_name']}，{device_count}台，"
-                f"{cost['period_count']}{cost['billing_period_name']}"
-            ),
+            description=description,
             related_user_id=user_id,
             related_project_id=project_id,
         ))
 
-    # 再扣授信点数
     if remaining > 0:
         before = credit
         after = credit - remaining
@@ -592,11 +570,7 @@ async def consume_agent_authorization_points(
             amount=-remaining,
             balance_before=before,
             balance_after=after,
-            description=(
-                f"用户授权扣点：用户ID={user_id}，项目ID={project_id}，"
-                f"{cost['level_name']}，{device_count}台，"
-                f"{cost['period_count']}{cost['billing_period_name']}"
-            ),
+            description=description,
             related_user_id=user_id,
             related_project_id=project_id,
         ))
@@ -608,19 +582,37 @@ async def consume_agent_authorization_points(
 
 
 # ═══════════════════════════════════════════════════════════════
-# 查询
+# 点数流水查询
 # ═══════════════════════════════════════════════════════════════
 
 async def get_balance_transactions(
-    agent_id: int,
+    agent_id: int | None,
     db: AsyncSession,
     page: int = 1,
     page_size: int = 50,
     tx_type: str | None = None,
+    related_user_id: int | None = None,
+    related_project_id: int | None = None,
 ) -> dict:
-    query = select(BalanceTransaction).where(BalanceTransaction.agent_id == agent_id)
+    """
+    查询点数流水。
+
+    - agent_id=None：管理员全局流水。
+    - agent_id=具体ID：代理自身或管理员查看某代理流水。
+    """
+    query = select(BalanceTransaction)
+
+    if agent_id is not None:
+        query = query.where(BalanceTransaction.agent_id == agent_id)
+
     if tx_type:
         query = query.where(BalanceTransaction.tx_type == tx_type)
+
+    if related_user_id:
+        query = query.where(BalanceTransaction.related_user_id == related_user_id)
+
+    if related_project_id:
+        query = query.where(BalanceTransaction.related_project_id == related_project_id)
 
     total = (
         await db.execute(select(func.count()).select_from(query.subquery()))
@@ -634,38 +626,208 @@ async def get_balance_transactions(
     )
     txs = result.scalars().all()
 
-    tx_type_labels = {
-        "recharge": "充值",
-        "credit": "授信",
-        "consume": "消耗",
-        "freeze": "冻结",
-        "unfreeze": "解冻",
-        "adjust": "调整",
-    }
+    enriched = await _enrich_transactions(txs, db)
 
     return {
-        "transactions": [
-            {
-                "id": t.id,
-                "tx_type": t.tx_type,
-                "tx_type_label": tx_type_labels.get(t.tx_type, t.tx_type),
-                "balance_type": t.balance_type,
-                "amount": float(t.amount),
-                "balance_before": float(t.balance_before),
-                "balance_after": float(t.balance_after),
-                "description": t.description,
-                "operated_by_admin_id": t.operated_by_admin_id,
-                "related_user_id": t.related_user_id,
-                "related_project_id": t.related_project_id,
-                "created_at": t.created_at.isoformat(),
-            }
-            for t in txs
-        ],
+        "transactions": enriched,
         "total": total,
         "page": page,
         "page_size": page_size,
     }
 
+
+async def _enrich_transactions(txs: list[BalanceTransaction], db: AsyncSession) -> list[dict]:
+    if not txs:
+        return []
+
+    agent_ids = sorted({t.agent_id for t in txs if t.agent_id})
+    admin_ids = sorted({t.operated_by_admin_id for t in txs if t.operated_by_admin_id})
+    user_ids = sorted({t.related_user_id for t in txs if t.related_user_id})
+    project_ids = sorted({t.related_project_id for t in txs if t.related_project_id})
+
+    agent_map: dict[int, Agent] = {}
+    admin_map: dict[int, Admin] = {}
+    user_map: dict[int, User] = {}
+    project_map: dict[int, GameProject] = {}
+    auth_map: dict[tuple[int, int], Authorization] = {}
+    price_map: dict[tuple[int, str], ProjectPrice] = {}
+
+    if agent_ids:
+        res = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+        agent_map = {a.id: a for a in res.scalars().all()}
+
+    if admin_ids:
+        res = await db.execute(select(Admin).where(Admin.id.in_(admin_ids)))
+        admin_map = {a.id: a for a in res.scalars().all()}
+
+    if user_ids:
+        res = await db.execute(select(User).where(User.id.in_(user_ids)))
+        user_map = {u.id: u for u in res.scalars().all()}
+
+    if project_ids:
+        res = await db.execute(select(GameProject).where(GameProject.id.in_(project_ids)))
+        project_map = {p.id: p for p in res.scalars().all()}
+
+    auth_conditions = [
+        and_(
+            Authorization.user_id == t.related_user_id,
+            Authorization.game_project_id == t.related_project_id,
+        )
+        for t in txs
+        if t.related_user_id and t.related_project_id
+    ]
+
+    if auth_conditions:
+        res = await db.execute(select(Authorization).where(or_(*auth_conditions)))
+        for auth in res.scalars().all():
+            auth_map[(auth.user_id, auth.game_project_id)] = auth
+
+    price_conditions = []
+    for auth in auth_map.values():
+        if auth.game_project_id and auth.user_level:
+            price_conditions.append(
+                and_(
+                    ProjectPrice.project_id == auth.game_project_id,
+                    ProjectPrice.user_level == auth.user_level,
+                )
+            )
+
+    if price_conditions:
+        res = await db.execute(select(ProjectPrice).where(or_(*price_conditions)))
+        for price in res.scalars().all():
+            price_map[(price.project_id, price.user_level)] = price
+
+    rows: list[dict] = []
+
+    for tx in txs:
+        agent = agent_map.get(tx.agent_id)
+        admin = admin_map.get(tx.operated_by_admin_id) if tx.operated_by_admin_id else None
+        user = user_map.get(tx.related_user_id) if tx.related_user_id else None
+        project = project_map.get(tx.related_project_id) if tx.related_project_id else None
+
+        current_auth = None
+        current_price = None
+
+        if tx.related_user_id and tx.related_project_id:
+            current_auth = auth_map.get((tx.related_user_id, tx.related_project_id))
+
+        if current_auth:
+            current_price = price_map.get((current_auth.game_project_id, current_auth.user_level))
+
+        authorization_detail = None
+        if current_auth:
+            level = current_auth.user_level
+            rule = BILLING_RULES.get(level, {})
+            authorization_detail = {
+                "authorization_id": current_auth.id,
+                "user_level": level,
+                "level_name": LEVEL_NAMES.get(level, level),
+                "authorized_devices": current_auth.authorized_devices,
+                "valid_until": current_auth.valid_until.isoformat() if current_auth.valid_until else None,
+                "status": current_auth.status,
+                "unit_label": rule.get("unit_label"),
+                "billing_period_name": rule.get("period_name"),
+                "unit_price": float(_money(current_price.points_per_device)) if current_price else None,
+            }
+
+        business_text = _build_transaction_business_text(
+            tx=tx,
+            agent=agent,
+            admin=admin,
+            user=user,
+            project=project,
+            authorization_detail=authorization_detail,
+        )
+
+        rows.append({
+            "id": tx.id,
+            "tx_type": tx.tx_type,
+            "tx_type_label": TX_TYPE_LABELS.get(tx.tx_type, tx.tx_type),
+            "balance_type": tx.balance_type,
+            "balance_type_label": BALANCE_TYPE_LABELS.get(tx.balance_type, tx.balance_type),
+            "amount": float(tx.amount),
+            "amount_text": _fmt_money(tx.amount),
+            "balance_before": float(tx.balance_before),
+            "balance_after": float(tx.balance_after),
+            "balance_before_text": _fmt_money(tx.balance_before),
+            "balance_after_text": _fmt_money(tx.balance_after),
+            "description": tx.description,
+
+            "agent_id": tx.agent_id,
+            "agent_username": agent.username if agent else None,
+
+            "operated_by_admin_id": tx.operated_by_admin_id,
+            "operated_by_admin_username": admin.username if admin else None,
+
+            "related_user_id": tx.related_user_id,
+            "related_username": user.username if user else None,
+
+            "related_project_id": tx.related_project_id,
+            "related_project_name": project.display_name if project else None,
+            "related_project_code": project.code_name if project else None,
+
+            "authorization_detail": authorization_detail,
+            "business_text": business_text,
+
+            "created_at": tx.created_at.isoformat() if tx.created_at else None,
+        })
+
+    return rows
+
+
+def _build_transaction_business_text(
+    *,
+    tx: BalanceTransaction,
+    agent: Agent | None,
+    admin: Admin | None,
+    user: User | None,
+    project: GameProject | None,
+    authorization_detail: dict | None,
+) -> str:
+    agent_name = agent.username if agent else f"代理ID={tx.agent_id}"
+    admin_name = admin.username if admin else (f"管理员ID={tx.operated_by_admin_id}" if tx.operated_by_admin_id else "系统")
+    amount = _fmt_money(abs(tx.amount))
+
+    if tx.tx_type == "recharge":
+        return f"{admin_name} 给代理 {agent_name} 充值 {amount} 点。"
+
+    if tx.tx_type == "credit":
+        return f"{admin_name} 给代理 {agent_name} 授信 {amount} 点。"
+
+    if tx.tx_type == "freeze":
+        return f"{admin_name} 冻结代理 {agent_name} 授信 {amount} 点。"
+
+    if tx.tx_type == "unfreeze":
+        return f"{admin_name} 解冻代理 {agent_name} 授信 {amount} 点。"
+
+    if tx.tx_type == "consume":
+        username = user.username if user else f"用户ID={tx.related_user_id}"
+        project_name = project.display_name if project else f"项目ID={tx.related_project_id}"
+
+        if authorization_detail:
+            level_name = authorization_detail.get("level_name") or authorization_detail.get("user_level")
+            devices = authorization_detail.get("authorized_devices")
+            valid_until = authorization_detail.get("valid_until")
+            unit_price = authorization_detail.get("unit_price")
+            unit_label = authorization_detail.get("unit_label") or "周期/台"
+
+            price_text = f"{_fmt_money(unit_price)}点/{unit_label}" if unit_price is not None else "未取到当前价格"
+            expiry_text = valid_until.replace("T", " ")[:19] if valid_until else "永久"
+
+            return (
+                f"代理 {agent_name} 给用户 {username} 授权项目「{project_name}」："
+                f"{level_name}，{devices} 台，当前价格 {price_text}，"
+                f"到期 {expiry_text}，本次扣除 {amount} 点。"
+            )
+
+        return tx.description or f"代理 {agent_name} 发生授权扣点 {amount} 点。"
+
+    return tx.description or f"{TX_TYPE_LABELS.get(tx.tx_type, tx.tx_type)} {amount} 点。"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 代理列表增强
+# ═══════════════════════════════════════════════════════════════
 
 async def get_agents_with_balance_and_projects(
     db: AsyncSession,
@@ -718,32 +880,12 @@ async def get_agents_with_balance_and_projects(
             "user_count": 0,
         })
 
-    proj_user_result = await db.execute(
-        select(
-            User.created_by_agent_id,
-            Authorization.game_project_id,
-            func.count(func.distinct(User.id)).label("cnt"),
-        )
-        .join(Authorization, User.id == Authorization.user_id)
+    user_count_result = await db.execute(
+        select(User.created_by_agent_id, func.count(User.id).label("cnt"))
         .where(
             User.created_by_agent_id.in_(agent_ids),
             User.is_deleted == False,  # noqa: E712
-            Authorization.status == "active",
         )
-        .group_by(User.created_by_agent_id, Authorization.game_project_id)
-    )
-    proj_user_map = {
-        (row.created_by_agent_id, row.game_project_id): row.cnt
-        for row in proj_user_result.all()
-    }
-
-    for agent_id_key, proj_list in project_map.items():
-        for p in proj_list:
-            p["user_count"] = proj_user_map.get((agent_id_key, p["project_id"]), 0)
-
-    user_count_result = await db.execute(
-        select(User.created_by_agent_id, func.count(User.id).label("cnt"))
-        .where(User.created_by_agent_id.in_(agent_ids), User.is_deleted == False)  # noqa: E712
         .group_by(User.created_by_agent_id)
     )
     user_count_map = {row[0]: row[1] for row in user_count_result.all()}

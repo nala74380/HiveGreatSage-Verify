@@ -3,14 +3,9 @@
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.1.0
+ * 版本: V1.2.0
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
- *   支持 Admin / Agent 两类后台身份。
- *
- * 改进内容:
- *   V1.1.0 - 新增代理侧项目目录 / 我的余额路由，并增加 requiresAgent 守卫
- *   V1.0.0 - 初始路由表
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -30,7 +25,6 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/dashboard' },
 
-        // ── 所有登录角色共用 ─────────────────────────────────
         {
           path: 'dashboard',
           name: 'Dashboard',
@@ -62,7 +56,7 @@ const router = createRouter({
           meta: { requiresAuth: true, title: '设备监控' },
         },
 
-        // ── Agent 专属 ──────────────────────────────────────
+        // Agent
         {
           path: 'catalog',
           name: 'AgentCatalog',
@@ -76,7 +70,7 @@ const router = createRouter({
           meta: { requiresAgent: true, title: '我的余额' },
         },
 
-        // ── Admin 兼容共用页 ─────────────────────────────────
+        // Admin shared
         {
           path: 'agents',
           name: 'AgentList',
@@ -90,7 +84,7 @@ const router = createRouter({
           meta: { requiresAdmin: true, title: '登录日志' },
         },
 
-        // ── Admin 专属 ──────────────────────────────────────
+        // Admin
         {
           path: 'projects',
           name: 'GameProjectList',
@@ -102,6 +96,12 @@ const router = createRouter({
           name: 'ProjectPricing',
           component: () => import('@/views/admin/ProjectPricing.vue'),
           meta: { requiresAdmin: true, title: '项目定价' },
+        },
+        {
+          path: 'balance-transactions',
+          name: 'BalanceTransactions',
+          component: () => import('@/views/admin/BalanceTransactions.vue'),
+          meta: { requiresAdmin: true, title: '点数流水' },
         },
         {
           path: 'updates',

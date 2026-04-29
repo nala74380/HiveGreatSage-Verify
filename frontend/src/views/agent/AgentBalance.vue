@@ -3,7 +3,9 @@
     <div class="page-header">
       <div>
         <h2>我的余额</h2>
-        <p class="page-desc">查看代理账号当前点数余额、授信余额、冻结额度与流水记录。</p>
+        <p class="page-desc">
+          查看当前点数余额、授信额度、冻结额度，以及用户项目授权扣点明细。
+        </p>
       </div>
       <el-button :icon="Refresh" @click="reloadAll" :loading="loading">刷新</el-button>
     </div>
@@ -22,7 +24,7 @@
         <div class="stat-card main">
           <div class="stat-label">可用充值点数</div>
           <div class="stat-value">{{ fmt(balance.recharge_balance) }}</div>
-          <div class="stat-sub">优先消耗</div>
+          <div class="stat-sub">授权扣点时优先消耗</div>
         </div>
       </el-col>
 
@@ -30,7 +32,7 @@
         <div class="stat-card credit">
           <div class="stat-label">可用授信点数</div>
           <div class="stat-value">{{ fmt(balance.credit_balance) }}</div>
-          <div class="stat-sub">管理员授信</div>
+          <div class="stat-sub">充值不足时消耗</div>
         </div>
       </el-col>
 
@@ -38,7 +40,7 @@
         <div class="stat-card frozen">
           <div class="stat-label">冻结授信</div>
           <div class="stat-value">{{ fmt(balance.frozen_credit) }}</div>
-          <div class="stat-sub">暂不可用</div>
+          <div class="stat-sub">已冻结，不可用于授权</div>
         </div>
       </el-col>
 
@@ -46,10 +48,18 @@
         <div class="stat-card total">
           <div class="stat-label">总可用点数</div>
           <div class="stat-value">{{ fmt(totalAvailable) }}</div>
-          <div class="stat-sub">充值 + 授信</div>
+          <div class="stat-sub">充值 + 可用授信</div>
         </div>
       </el-col>
     </el-row>
+
+    <el-alert
+      title="说明：给用户授权项目时，会按项目定价、项目内等级、授权设备数和授权周期扣点；试用按周，普通/VIP/SVIP 按月。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="tip-alert"
+    />
 
     <el-card shadow="never" class="table-card">
       <template #header>
@@ -67,7 +77,7 @@
             <el-option label="授信" value="credit" />
             <el-option label="冻结" value="freeze" />
             <el-option label="解冻" value="unfreeze" />
-            <el-option label="消费" value="consume" />
+            <el-option label="授权扣点" value="consume" />
           </el-select>
         </div>
       </template>
@@ -78,12 +88,16 @@
         stripe
         style="width: 100%"
       >
-        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column label="时间" width="165">
+          <template #default="{ row }">
+            {{ formatDatetime(row.created_at) }}
+          </template>
+        </el-table-column>
 
-        <el-table-column label="类型" width="110">
+        <el-table-column label="类型" width="105">
           <template #default="{ row }">
             <el-tag :type="txTagType(row.tx_type)" effect="plain">
-              {{ txTypeLabel(row.tx_type) }}
+              {{ row.tx_type_label || txTypeLabel(row.tx_type) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -96,15 +110,39 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="description" label="说明" min-width="220">
+        <el-table-column label="余额变化" width="150">
           <template #default="{ row }">
-            <span>{{ row.description || '—' }}</span>
+            <span class="balance-change">
+              {{ fmt(row.balance_before) }} → {{ fmt(row.balance_after) }}
+            </span>
           </template>
         </el-table-column>
 
-        <el-table-column label="时间" min-width="160">
+        <el-table-column label="详细说明" min-width="460">
           <template #default="{ row }">
-            {{ formatDatetime(row.created_at) }}
+            <div class="business-text">{{ row.business_text || row.description || '—' }}</div>
+
+            <div v-if="row.tx_type === 'consume'" class="detail-line">
+              <el-tag size="small" effect="plain" type="info">
+                用户：{{ row.related_username || `ID=${row.related_user_id}` }}
+              </el-tag>
+              <el-tag size="small" effect="plain" type="primary">
+                项目：{{ row.related_project_name || `ID=${row.related_project_id}` }}
+              </el-tag>
+              <el-tag v-if="row.authorization_detail" size="small" effect="plain" type="warning">
+                {{ row.authorization_detail.level_name }}
+              </el-tag>
+              <el-tag v-if="row.authorization_detail" size="small" effect="plain" type="success">
+                {{ row.authorization_detail.authorized_devices }} 台
+              </el-tag>
+              <el-tag
+                v-if="row.authorization_detail?.unit_price !== null && row.authorization_detail?.unit_price !== undefined"
+                size="small"
+                effect="plain"
+              >
+                {{ fmt(row.authorization_detail.unit_price) }} 点/{{ row.authorization_detail.unit_label }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -127,27 +165,6 @@
 </template>
 
 <script setup>
-/**
- * 文件位置: src/views/agent/AgentBalance.vue
- * 名称: 代理余额与流水页面
- * 作者: 蜂巢·大圣 (Hive-GreatSage)
- * 时间: 2026-04-29
- * 版本: V1.0.1
- * 功能及相关说明:
- *   代理查看自己的余额和流水。
- *   调用：
- *     GET /api/agents/my/balance
- *     GET /api/agents/my/transactions
- *
- * 改进内容:
- *   V1.0.1 - 增加错误提示，不让余额接口异常直接触发退出登录
- *   V1.0.0 - 新增代理侧余额与流水独立页面
- *
- * 调试信息:
- *   Network 应出现 /api/agents/my/balance 和 /api/agents/my/transactions。
- *   若状态不是 200，页面显示错误，不应直接退出登录。
- */
-
 import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { agentBalanceApi } from '@/api/balance'
@@ -173,34 +190,17 @@ const totalAvailable = computed(() => {
   return Number(balance.value.recharge_balance || 0) + Number(balance.value.credit_balance || 0)
 })
 
-const fmt = (val) => {
-  const n = Number(val || 0)
-  return Number.isInteger(n) ? String(n) : n.toFixed(2)
-}
+const fmt = (val) => Number(val || 0).toFixed(2)
 
 const getErrorMessage = (err, actionName) => {
   const status = err?.response?.status
   const detail = err?.response?.data?.detail || err?.response?.data?.message
 
-  if (status === 401) {
-    return `${actionName}接口返回 401：当前代理登录态未被后端认可。请确认 Chrome 中仍是代理账号登录，并检查后端代理鉴权。`
-  }
-
-  if (status === 403) {
-    return `${actionName}接口返回 403：当前账号无权访问该功能。`
-  }
-
-  if (status === 404) {
-    return `${actionName}接口返回 404：后端尚未注册对应接口，请确认 balance_agent.py 与 main.py 已更新并重启后端。`
-  }
-
-  if (status === 500) {
-    return `${actionName}接口返回 500：后端内部异常，请查看 PyCharm 后端控制台日志。`
-  }
-
-  if (detail) {
-    return `${actionName}失败：${detail}`
-  }
+  if (status === 401) return `${actionName}接口返回 401：当前代理登录态未被后端认可。`
+  if (status === 403) return `${actionName}接口返回 403：当前账号无权访问该功能。`
+  if (status === 404) return `${actionName}接口返回 404：后端尚未注册对应接口。`
+  if (status === 500) return `${actionName}接口返回 500：后端内部异常，请查看 PyCharm 后端控制台日志。`
+  if (detail) return `${actionName}失败：${detail}`
 
   return `${actionName}失败：${err?.message || '未知错误'}`
 }
@@ -221,10 +221,7 @@ const fetchTransactions = async () => {
     const params = {
       page: page.value,
       page_size: pageSize.value,
-    }
-
-    if (txType.value) {
-      params.tx_type = txType.value
+      tx_type: txType.value || undefined,
     }
 
     const res = await agentBalanceApi.myTransactions(params)
@@ -252,7 +249,6 @@ const reloadAll = async () => {
   }
 
   await fetchTransactions()
-
   loading.value = false
 }
 
@@ -262,7 +258,7 @@ const txTypeLabel = (type) => {
     credit: '授信',
     freeze: '冻结',
     unfreeze: '解冻',
-    consume: '消费',
+    consume: '授权扣点',
     refund: '退款',
   }
   return map[type] || type || '未知'
@@ -378,6 +374,25 @@ onMounted(reloadAll)
 .amount-minus {
   color: #ef4444;
   font-weight: 600;
+}
+
+.balance-change {
+  font-size: 12px;
+  color: #475569;
+  font-family: Consolas, monospace;
+}
+
+.business-text {
+  font-size: 13px;
+  color: #1e293b;
+  line-height: 1.7;
+}
+
+.detail-line {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .pager-row {

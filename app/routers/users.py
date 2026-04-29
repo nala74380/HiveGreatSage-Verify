@@ -3,22 +3,30 @@ r"""
 文件名称: users.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.1.0
+版本: V1.2.0
 功能说明:
     用户管理路由。
+
+核心口径:
+    - User 是账号主体。
+    - Authorization 是用户在某项目下的授权记录。
+    - 项目内等级、设备数、到期时间全部归属 Authorization。
 
 接口:
       POST   /api/users/
       GET    /api/users/
+      GET    /api/users/creators/agents/{agent_id}
       GET    /api/users/{user_id}
       PATCH  /api/users/{user_id}
       PATCH  /api/users/{user_id}/password
       POST   /api/users/{user_id}/authorizations
+      PATCH  /api/users/{user_id}/authorizations/{auth_id}
       DELETE /api/users/{user_id}/authorizations/{auth_id}
 
 鉴权:
-    - Admin Token：操作所有用户
-    - Agent Token：操作自己创建的用户
+    - Admin Token：操作所有用户。
+    - Agent Token：操作自己创建的用户。
+    - 创建者详情目前仅 Admin Token 可访问。
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -33,6 +41,8 @@ from app.models.main.models import Admin, Agent
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationResponse,
+    AuthorizationUpdateRequest,
+    CreatorAgentDetailResponse,
     UserCreateRequest,
     UserListResponse,
     UserPasswordUpdateRequest,
@@ -42,10 +52,12 @@ from app.schemas.user import (
 )
 from app.services.user_service import (
     create_user,
+    get_creator_agent_detail,
     get_user,
     grant_authorization,
     list_users,
     revoke_authorization,
+    update_authorization,
     update_user,
     update_user_password,
 )
@@ -87,10 +99,14 @@ async def _resolve_caller(
     )
 
 
+# ═══════════════════════════════════════════════════════════════
+# 用户基础
+# ═══════════════════════════════════════════════════════════════
+
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_endpoint(
     body: UserCreateRequest,
-    caller: tuple = Depends(_resolve_caller),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> UserResponse:
     admin, agent = caller
@@ -104,7 +120,8 @@ async def list_users_endpoint(
     status_filter: str | None = Query(default=None, alias="status"),
     level_filter: str | None = Query(default=None, alias="level"),
     project_id: int | None = Query(default=None, description="按项目过滤"),
-    caller: tuple = Depends(_resolve_caller),
+    creator_agent_id: int | None = Query(default=None, description="按创建代理过滤，仅管理员使用"),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> UserListResponse:
     admin, agent = caller
@@ -117,33 +134,71 @@ async def list_users_endpoint(
         status_filter=status_filter,
         level_filter=level_filter,
         project_id_filter=project_id,
+        creator_agent_id_filter=creator_agent_id,
+    )
+
+
+# 注意：该静态路由必须放在 /{user_id} 动态路由之前。
+@router.get(
+    "/creators/agents/{agent_id}",
+    response_model=CreatorAgentDetailResponse,
+)
+async def creator_agent_detail_endpoint(
+    agent_id: int,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=200, ge=1, le=500),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> CreatorAgentDetailResponse:
+    admin, _agent = caller
+    return await get_creator_agent_detail(
+        agent_id=agent_id,
+        db=db,
+        admin=admin,
+        page=page,
+        page_size=page_size,
     )
 
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user_endpoint(
     user_id: int,
-    caller: tuple = Depends(_resolve_caller),
+    project_id: int | None = Query(default=None, description="只返回指定项目授权明细"),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> UserResponse:
-    return await get_user(user_id=user_id, db=db)
+    admin, agent = caller
+    return await get_user(
+        user_id=user_id,
+        db=db,
+        admin=admin,
+        agent=agent,
+        project_id_filter=project_id,
+    )
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
 async def update_user_endpoint(
     user_id: int,
     body: UserUpdateRequest,
-    caller: tuple = Depends(_resolve_caller),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> UserResponse:
-    return await update_user(user_id=user_id, body=body, db=db)
+    admin, agent = caller
+    return await update_user(
+        user_id=user_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
 
 
 @router.patch("/{user_id}/password", response_model=UserPasswordUpdateResponse)
 async def update_user_password_endpoint(
     user_id: int,
     body: UserPasswordUpdateRequest,
-    caller: tuple = Depends(_resolve_caller),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> UserPasswordUpdateResponse:
     admin, agent = caller
@@ -156,6 +211,10 @@ async def update_user_password_endpoint(
     )
 
 
+# ═══════════════════════════════════════════════════════════════
+# 用户项目授权
+# ═══════════════════════════════════════════════════════════════
+
 @router.post(
     "/{user_id}/authorizations",
     response_model=AuthorizationResponse,
@@ -164,7 +223,7 @@ async def update_user_password_endpoint(
 async def grant_auth_endpoint(
     user_id: int,
     body: AuthorizationCreateRequest,
-    caller: tuple = Depends(_resolve_caller),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationResponse:
     admin, agent = caller
@@ -177,11 +236,43 @@ async def grant_auth_endpoint(
     )
 
 
-@router.delete("/{user_id}/authorizations/{auth_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch(
+    "/{user_id}/authorizations/{auth_id}",
+    response_model=AuthorizationResponse,
+)
+async def update_auth_endpoint(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationUpdateRequest,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationResponse:
+    admin, agent = caller
+    return await update_authorization(
+        user_id=user_id,
+        auth_id=auth_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+
+@router.delete(
+    "/{user_id}/authorizations/{auth_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def revoke_auth_endpoint(
     user_id: int,
     auth_id: int,
-    caller: tuple = Depends(_resolve_caller),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> None:
-    await revoke_authorization(user_id=user_id, auth_id=auth_id, db=db)
+    admin, agent = caller
+    await revoke_authorization(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )

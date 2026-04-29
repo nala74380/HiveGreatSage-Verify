@@ -3,26 +3,14 @@ r"""
 文件名称: user.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.1.0
+版本: V1.2.0
 功能说明:
-    用户管理相关的 Pydantic v2 请求/响应模型。
-    覆盖：
-      - 用户创建
-      - 用户列表/详情
-      - 用户更新
-      - 用户项目授权
-      - 用户密码重置/修改
-      - 用户授权项目明细展示
+    用户管理相关 Pydantic v2 请求/响应模型。
 
-安全边界:
-    - 系统不保存用户明文密码。
-    - 管理员不能查询旧密码明文。
-    - 管理员可以重置密码，并在重置成功响应中一次性看到新密码明文。
-    - 代理可以修改/重置密码，但不能查询旧密码。
-
-改进历史:
-    V1.1.0 - 增加创建者信息、项目授权明细、设备激活统计、密码修改模型
-    V1.0.0 - 初始版本
+核心口径:
+    - 用户是账号主体。
+    - 用户等级、授权设备数、到期时间属于 Authorization，即“用户 × 项目授权”。
+    - User.user_level / User.max_devices / User.expired_at 仅作历史兼容，不再作为新业务主显示口径。
 """
 
 from datetime import datetime
@@ -31,78 +19,37 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-# ── 枚举 ──────────────────────────────────────────────────────
-
 UserLevel = Literal["trial", "normal", "vip", "svip", "tester"]
 UserStatus = Literal["active", "suspended", "expired"]
+AuthorizationStatus = Literal["active", "suspended", "expired"]
 
 
-# ── 请求模型 ──────────────────────────────────────────────────
+# ── 用户请求 ──────────────────────────────────────────────────
 
 class UserCreateRequest(BaseModel):
-    username: str = Field(
-        ...,
-        min_length=3,
-        max_length=64,
-        description="登录用户名，3-64 字符",
-        examples=["user_001"],
-    )
-    password: str = Field(
-        ...,
-        min_length=6,
-        max_length=128,
-        description="初始密码，至少 6 字符",
-    )
-    user_level: UserLevel = Field(
-        default="normal",
-        description="用户级别，tester 只有管理员能创建",
-    )
-    max_devices: int = Field(
-        default=500,
-        ge=0,
-        description="设备绑定上限，0 表示无限制；代理创建用户时不允许 0",
-    )
-    expired_at: datetime | None = Field(
-        default=None,
-        description="账号到期时间，None 表示永久有效；代理创建用户时不允许 None",
-    )
+    username: str = Field(..., min_length=3, max_length=64, description="用户名")
+    password: str = Field(..., min_length=6, max_length=128, description="初始密码")
+
+    # 兼容旧字段：后端会给默认值，新页面不再主动使用。
+    user_level: UserLevel = Field(default="normal", description="兼容旧字段")
+    max_devices: int = Field(default=20, ge=0, description="兼容旧字段")
+    expired_at: datetime | None = Field(default=None, description="兼容旧字段")
 
 
 class UserUpdateRequest(BaseModel):
-    status: UserStatus | None = Field(
-        default=None,
-        description="更新账号状态 active / suspended / expired",
-    )
-    user_level: UserLevel | None = Field(
-        default=None,
-        description="更新用户级别",
-    )
-    max_devices: int | None = Field(
-        default=None,
-        ge=0,
-        description="更新设备绑定上限，0 表示无限制",
-    )
-    expired_at: datetime | None = Field(
-        default=None,
-        description="更新账号到期时间，传 None 表示永久有效",
-    )
+    status: UserStatus | None = Field(default=None, description="账号状态")
+
+    # 兼容旧字段：新页面不再作为主要业务字段使用。
+    user_level: UserLevel | None = Field(default=None, description="兼容旧字段")
+    max_devices: int | None = Field(default=None, ge=0, description="兼容旧字段")
+    expired_at: datetime | None = Field(default=None, description="兼容旧字段")
 
     model_config = {"extra": "forbid"}
 
 
 class UserPasswordUpdateRequest(BaseModel):
-    """用户密码修改/重置请求。"""
-
-    new_password: str | None = Field(
-        default=None,
-        min_length=6,
-        max_length=128,
-        description="新密码；手动设置时必填",
-    )
-    auto_generate: bool = Field(
-        default=False,
-        description="是否自动生成新密码；仅管理员允许使用",
-    )
+    new_password: str | None = Field(default=None, min_length=6, max_length=128)
+    auto_generate: bool = Field(default=False)
 
     @model_validator(mode="after")
     def validate_password_source(self):
@@ -111,60 +58,57 @@ class UserPasswordUpdateRequest(BaseModel):
         return self
 
 
+# ── 授权请求 ──────────────────────────────────────────────────
+
 class AuthorizationCreateRequest(BaseModel):
-    game_project_id: int = Field(
-        ...,
-        description="要授权的项目内部 ID",
-        examples=[1],
-    )
-    valid_until: datetime | None = Field(
-        default=None,
-        description="授权到期时间；代理授权必须提供，管理员可为 None 表示永久",
-    )
+    game_project_id: int = Field(..., description="项目 ID")
+    user_level: UserLevel = Field(..., description="该用户在此项目内的授权等级")
+    authorized_devices: int = Field(..., ge=0, description="该项目授权设备数，0 表示无限制")
+    valid_until: datetime | None = Field(default=None, description="该项目授权到期时间")
+
+
+class AuthorizationUpdateRequest(BaseModel):
+    user_level: UserLevel | None = Field(default=None, description="项目内授权等级")
+    authorized_devices: int | None = Field(default=None, ge=0, description="项目授权设备数")
+    valid_until: datetime | None = Field(default=None, description="项目授权到期时间")
+    status: AuthorizationStatus | None = Field(default=None, description="授权状态")
+
+    model_config = {"extra": "forbid"}
 
 
 # ── 响应模型 ──────────────────────────────────────────────────
 
 class AuthorizationInfo(BaseModel):
-    """嵌入在 UserResponse 中的项目授权明细。"""
-
     id: int
     game_project_id: int
-    game_project_code: str = Field(description="项目代码名，如 game_001")
-    game_project_name: str = Field(description="项目显示名称")
-    project_type: str | None = Field(default=None, description="项目类型 game / verification")
+    game_project_code: str
+    game_project_name: str
+    project_type: str | None = None
 
-    user_level: str = Field(description="该用户当前用户级别")
-    user_level_name: str = Field(description="用户级别中文名")
-
-    authorized_devices: int = Field(description="该项目授权设备数，当前等于用户 max_devices")
-    activated_devices: int = Field(description="该项目已成功登录激活过的去重设备数")
-    inactive_devices: int | None = Field(
-        default=None,
-        description="未激活设备数；authorized_devices 为 0 表示无限制时为 None",
-    )
+    user_level: str
+    user_level_name: str
+    authorized_devices: int
+    activated_devices: int
+    inactive_devices: int | None
 
     valid_from: datetime
     valid_until: datetime | None
     status: str
+    is_expired: bool = False
 
 
 class AuthorizationResponse(BaseModel):
-    """授权接口独立响应。"""
-
     id: int
     user_id: int
     game_project_id: int
     game_project_code: str
     game_project_name: str
+    user_level: str
+    authorized_devices: int
     valid_from: datetime
     valid_until: datetime | None
     status: str
-
-    consumed_points: float = Field(
-        default=0.0,
-        description="本次授权扣除点数；管理员授权为 0",
-    )
+    consumed_points: float = 0.0
 
 
 class UserPasswordUpdateResponse(BaseModel):
@@ -173,49 +117,32 @@ class UserPasswordUpdateResponse(BaseModel):
     message: str
     generated_password: str | None = Field(
         default=None,
-        description="仅管理员自动生成密码时返回；关闭前端弹窗后不再可查",
+        description="仅管理员自动生成密码时返回；关闭前端弹窗后不可再次查询",
     )
 
 
 class UserResponse(BaseModel):
-    """用户详情/列表响应。"""
-
     id: int
     username: str
-    user_level: str
     status: str
-    max_devices: int
     created_at: datetime
     updated_at: datetime | None = None
-    expired_at: datetime | None
 
     created_by_admin: bool
     created_by_agent_id: int | None
-    created_by_type: str = Field(default="unknown", description="admin / agent / unknown")
-    created_by_display: str = Field(default="未知", description="创建者显示名")
+    created_by_type: str = "unknown"
+    created_by_display: str = "未知"
     created_by_agent_username: str | None = None
 
-    authorizations: list[AuthorizationInfo] = Field(
-        default_factory=list,
-        description="项目授权明细；列表接口也返回 active 授权明细",
-    )
+    # 兼容旧字段，前端新页面不再主展示
+    user_level: str | None = None
+    max_devices: int | None = None
+    expired_at: datetime | None = None
 
-    authorization_count: int = Field(
-        default=0,
-        description="项目授权总数",
-    )
-    active_authorization_count: int = Field(
-        default=0,
-        description="当前有效授权数量",
-    )
-    active_project_names: list[str] = Field(
-        default_factory=list,
-        description="当前有效授权的项目名称列表",
-    )
-    device_binding_count: int = Field(
-        default=0,
-        description="用户维度已绑定设备数量",
-    )
+    authorizations: list[AuthorizationInfo] = Field(default_factory=list)
+    authorization_count: int = 0
+    active_authorization_count: int = 0
+    active_project_names: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -225,3 +152,8 @@ class UserListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class CreatorAgentDetailResponse(BaseModel):
+    agent: dict
+    users: list[UserResponse]

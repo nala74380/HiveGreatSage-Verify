@@ -1,12 +1,10 @@
 <template>
   <div class="side-menu">
-    <!-- Logo 区域 -->
     <div class="logo" :class="{ collapsed: appStore.sidebarCollapsed }">
       <span class="logo-icon">🐝</span>
       <span v-if="!appStore.sidebarCollapsed" class="logo-text">蜂巢·大圣</span>
     </div>
 
-    <!-- 导航菜单 -->
     <el-menu
       :default-active="currentPath"
       :collapse="appStore.sidebarCollapsed"
@@ -30,25 +28,6 @@
 </template>
 
 <script setup>
-/**
- * 文件位置: src/components/layout/SideMenu.vue
- * 名称: 左侧导航菜单
- * 作者: 蜂巢·大圣 (Hive-GreatSage)
- * 时间: 2026-04-29
- * 版本: V1.1.0
- * 功能及相关说明:
- *   根据当前登录角色渲染侧边栏菜单。
- *   Admin 显示平台管理菜单。
- *   Agent 显示代理工作台菜单，包括项目目录与我的余额。
- *
- * 改进内容:
- *   V1.1.0 - 新增代理侧「项目目录」「我的余额」入口，补齐代理端价格/余额能力链路
- *   V1.0.0 - 初始侧边栏菜单
- *
- * 调试信息:
- *   若菜单不显示，先检查 Pinia auth.role 是否为 admin / agent。
- */
-
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -67,6 +46,7 @@ import {
   Coin,
   Tickets,
   Wallet,
+  List,
 } from '@element-plus/icons-vue'
 
 const route    = useRoute()
@@ -76,7 +56,6 @@ const appStore = useAppStore()
 const currentPath = computed(() => '/' + route.path.split('/')[1])
 
 const menuItems = computed(() => {
-  // ── Agent 专属菜单 ───────────────────────────────────────
   if (auth.isAgent) {
     return [
       { label: '个人主页', path: '/profile', icon: Avatar },
@@ -88,7 +67,6 @@ const menuItems = computed(() => {
     ]
   }
 
-  // ── Admin 专属菜单 ───────────────────────────────────────
   if (auth.isAdmin) {
     return [
       { label: '总览',     path: '/dashboard',  icon: Odometer },
@@ -96,6 +74,7 @@ const menuItems = computed(() => {
       { label: '代理管理', path: '/agents',     icon: Share },
       { label: '项目管理', path: '/projects',   icon: Grid },
       { label: '项目定价', path: '/pricing',    icon: Coin },
+      { label: '点数流水', path: '/balance-transactions', icon: List },
       { label: '热更新',   path: '/updates',    icon: Upload },
       { label: '设备监控', path: '/devices',    icon: Monitor },
       { label: '登录日志', path: '/login-logs', icon: Document },
@@ -149,7 +128,6 @@ const menuItems = computed(() => {
   border-right: none;
 }
 
-/* 激活项背景 */
 :deep(.el-menu-item.is-active) {
   background-color: #2563eb !important;
   border-radius: 6px;
