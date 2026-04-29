@@ -28,10 +28,24 @@
 </template>
 
 <script setup>
+/**
+ * 文件位置: src/components/layout/SideMenu.vue
+ * 名称: 左侧菜单
+ * 作者: 蜂巢·大圣 (Hive-GreatSage)
+ * 时间: 2026-04-29
+ * 版本: V1.2.0
+ * 功能说明:
+ *   根据管理员 / 代理身份显示不同菜单。
+ *
+ * 本版新增:
+ *   - 管理员：项目准入
+ *   - 管理员：授权申请
+ */
+
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { useAppStore }  from '@/stores/app'
+import { useAppStore } from '@/stores/app'
 import {
   Odometer,
   User,
@@ -49,8 +63,8 @@ import {
   List,
 } from '@element-plus/icons-vue'
 
-const route    = useRoute()
-const auth     = useAuthStore()
+const route = useRoute()
+const auth = useAuthStore()
 const appStore = useAppStore()
 
 const currentPath = computed(() => '/' + route.path.split('/')[1])
@@ -59,7 +73,7 @@ const menuItems = computed(() => {
   if (auth.isAgent) {
     return [
       { label: '个人主页', path: '/profile', icon: Avatar },
-      { label: '总览',     path: '/dashboard', icon: Odometer },
+      { label: '总览', path: '/dashboard', icon: Odometer },
       { label: '用户管理', path: '/users', icon: User },
       { label: '设备监控', path: '/devices', icon: Monitor },
       { label: '项目目录', path: '/catalog', icon: Tickets },
@@ -69,17 +83,19 @@ const menuItems = computed(() => {
 
   if (auth.isAdmin) {
     return [
-      { label: '总览',     path: '/dashboard',  icon: Odometer },
-      { label: '用户管理', path: '/users',      icon: User },
-      { label: '代理管理', path: '/agents',     icon: Share },
-      { label: '项目管理', path: '/projects',   icon: Grid },
-      { label: '项目定价', path: '/pricing',    icon: Coin },
+      { label: '总览', path: '/dashboard', icon: Odometer },
+      { label: '用户管理', path: '/users', icon: User },
+      { label: '代理管理', path: '/agents', icon: Share },
+      { label: '项目管理', path: '/projects', icon: Grid },
+      { label: '项目定价', path: '/pricing', icon: Coin },
+      { label: '项目准入', path: '/project-access-policies', icon: Grid },
+      { label: '授权申请', path: '/project-auth-requests', icon: Tickets },
       { label: '点数流水', path: '/balance-transactions', icon: List },
-      { label: '热更新',   path: '/updates',    icon: Upload },
-      { label: '设备监控', path: '/devices',    icon: Monitor },
+      { label: '热更新', path: '/updates', icon: Upload },
+      { label: '设备监控', path: '/devices', icon: Monitor },
       { label: '登录日志', path: '/login-logs', icon: Document },
-      { label: '系统设置', path: '/settings',   icon: Setting },
-      { label: '使用指南', path: '/guide',      icon: QuestionFilled },
+      { label: '系统设置', path: '/settings', icon: Setting },
+      { label: '使用指南', path: '/guide', icon: QuestionFilled },
     ]
   }
 

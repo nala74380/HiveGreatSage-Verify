@@ -3,18 +3,22 @@
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.2.0
+ * 版本: V1.3.0
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
+ *
+ * 本版新增:
+ *   - 管理员项目准入策略页面
+ *   - 管理员代理项目授权申请审核页面
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
-import AuthLayout      from '@/layouts/AuthLayout.vue'
-import LoginView       from '@/views/auth/LoginView.vue'
-import NotFound        from '@/views/error/NotFound.vue'
-import Forbidden       from '@/views/error/Forbidden.vue'
+import AuthLayout from '@/layouts/AuthLayout.vue'
+import LoginView from '@/views/auth/LoginView.vue'
+import NotFound from '@/views/error/NotFound.vue'
+import Forbidden from '@/views/error/Forbidden.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -96,6 +100,18 @@ const router = createRouter({
           name: 'ProjectPricing',
           component: () => import('@/views/admin/ProjectPricing.vue'),
           meta: { requiresAdmin: true, title: '项目定价' },
+        },
+        {
+          path: 'project-access-policies',
+          name: 'ProjectAccessPolicies',
+          component: () => import('@/views/admin/ProjectAccessPolicies.vue'),
+          meta: { requiresAdmin: true, title: '项目准入' },
+        },
+        {
+          path: 'project-auth-requests',
+          name: 'AgentProjectAuthRequests',
+          component: () => import('@/views/admin/AgentProjectAuthRequests.vue'),
+          meta: { requiresAdmin: true, title: '授权申请' },
         },
         {
           path: 'balance-transactions',

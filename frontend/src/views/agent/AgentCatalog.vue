@@ -4,7 +4,7 @@
       <div>
         <h2>项目目录</h2>
         <p class="page-desc">
-          查看当前平台项目、代理授权状态、用户级别价格与各级别功能差异。
+          查看当前平台项目、代理准入状态、项目授权状态、用户级别价格与功能差异。
         </p>
       </div>
       <el-button :icon="Refresh" @click="fetchCatalog" :loading="loading">刷新</el-button>
@@ -21,7 +21,7 @@
 
     <el-alert
       v-else
-      title="说明：已授权项目可用于创建用户并分配项目授权；未授权项目需联系管理员开通。"
+      title="说明：项目开通本身不扣点；代理给用户授权项目时，才按项目定价、等级、设备数和周期扣点。"
       type="info"
       show-icon
       :closable="false"
@@ -99,7 +99,7 @@
       >
         <el-table-column prop="display_name" label="项目名称" min-width="160" />
 
-        <el-table-column prop="code_name" label="项目代号" min-width="140">
+        <el-table-column prop="code_name" label="项目代号" min-width="130">
           <template #default="{ row }">
             <span class="mono">{{ row.code_name }}</span>
           </template>
@@ -113,12 +113,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="各级别点数价格" min-width="420">
+        <el-table-column label="各级别点数价格" min-width="430">
           <template #default="{ row }">
             <div class="price-list">
-              <template v-if="row.display_prices.length">
+              <template v-if="row.prices?.length">
                 <span
-                  v-for="item in row.display_prices"
+                  v-for="item in row.prices"
                   :key="item.level"
                   class="price-item"
                 >
@@ -131,21 +131,62 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="授权状态" width="120">
+        <el-table-column label="准入状态" width="145">
           <template #default="{ row }">
-            <el-tag v-if="row.is_authorized" type="success" effect="light">
-              已授权
+            <el-tag :type="statusMeta(row).type" effect="light">
+              {{ statusMeta(row).label }}
             </el-tag>
-            <el-tag v-else type="info" effect="plain">
-              未授权
-            </el-tag>
+
+            <div v-if="row.last_request_status === 'rejected' && row.last_review_note" class="reject-note">
+              {{ row.last_review_note }}
+            </div>
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="授权到期" width="155">
+          <template #default="{ row }">
+            <span v-if="row.auth_valid_until">{{ formatDatetime(row.auth_valid_until) }}</span>
+            <span v-else-if="row.is_authorized" class="success-text">永久</span>
+            <span v-else class="text-muted">—</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="145" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="row.is_authorized"
+              v-if="row.action_type === 'auto_open'"
+              size="small"
+              type="success"
+              plain
+              :loading="row._actionLoading"
+              @click="autoOpenProject(row)"
+            >
+              立即开通
+            </el-button>
+
+            <el-button
+              v-else-if="row.action_type === 'apply'"
+              size="small"
+              type="primary"
+              plain
+              :loading="row._actionLoading"
+              @click="openApplyDialog(row)"
+            >
+              {{ row.access_status === 'rejected' ? '重新申请' : '申请授权' }}
+            </el-button>
+
+            <el-button
+              v-else-if="row.action_type === 'view_request'"
+              size="small"
+              type="warning"
+              plain
+              disabled
+            >
+              申请中
+            </el-button>
+
+            <el-button
+              v-else-if="row.is_authorized"
               size="small"
               type="success"
               plain
@@ -157,11 +198,10 @@
             <el-button
               v-else
               size="small"
-              type="primary"
               plain
-              @click="showApplyHint(row)"
+              disabled
             >
-              申请授权
+              暂不可申请
             </el-button>
           </template>
         </el-table-column>
@@ -173,6 +213,49 @@
         :image-size="80"
       />
     </el-card>
+
+    <el-dialog
+      v-model="applyDialog.visible"
+      :title="`申请项目授权 — ${applyDialog.project?.display_name || ''}`"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form label-width="90px">
+        <el-form-item label="项目名称">
+          <span class="readonly-val">{{ applyDialog.project?.display_name }}</span>
+        </el-form-item>
+
+        <el-form-item label="项目代号">
+          <span class="mono">{{ applyDialog.project?.code_name }}</span>
+        </el-form-item>
+
+        <el-form-item label="申请说明">
+          <el-input
+            v-model="applyDialog.reason"
+            type="textarea"
+            :rows="5"
+            maxlength="1000"
+            show-word-limit
+            placeholder="请说明申请开通该项目的原因、预计用户规模、主要使用场景。"
+          />
+        </el-form-item>
+
+        <el-alert
+          title="申请提交后将进入管理员审核；审核通过后该项目会出现在你的已授权项目中。"
+          type="info"
+          show-icon
+          :closable="false"
+          class="small-alert"
+        />
+      </el-form>
+
+      <template #footer>
+        <el-button @click="applyDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="applyDialog.loading" @click="submitApply">
+          提交申请
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -182,205 +265,55 @@
  * 名称: 代理项目目录页面
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.1.0
- * 功能及相关说明:
- *   代理查看项目目录、项目价格、当前代理授权状态、用户级别功能差异。
+ * 版本: V1.2.0
+ * 功能说明:
+ *   代理查看项目目录、项目准入状态、项目授权状态、项目价格、用户级别功能差异。
  *
- * 展示规则:
- *   1. 已授权项目显示“已授权”，不再显示“申请授权”。
- *   2. 代理端不展示 tester 级别价格。
- *   3. 页面不显示“测试用户级别不对代理展示”说明文案。
- *   4. 价格顺序固定为：试用 → 普通 → VIP → SVIP。
- *   5. 新增试用 / 普通 / VIP / SVIP 功能差异说明。
+ * 本版改进:
+ *   - 接入代理项目准入接口。
+ *   - 支持“申请授权”。
+ *   - 支持“立即开通”。
+ *   - 支持“申请中 / 已拒绝 / 暂不可申请 / 已授权”等状态。
+ *   - 不再调用旧的 /api/agents/my/catalog + /api/agents/my-projects 双接口合并。
  */
 
-import { onMounted, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { agentBalanceApi } from '@/api/balance'
-import { agentApi } from '@/api/agent'
+import { agentProjectAccessApi } from '@/api/agent/projectAccess'
 import LevelTag from '@/components/common/LevelTag.vue'
+import { formatDatetime } from '@/utils/format'
 
 const loading = ref(false)
 const projects = ref([])
 const error = ref('')
 
-const DISPLAY_LEVEL_ORDER = ['trial', 'normal', 'vip', 'svip']
+const applyDialog = reactive({
+  visible: false,
+  loading: false,
+  project: null,
+  reason: '',
+})
 
-const LEVEL_ALIASES = {
-  trial: 'trial',
-  '试用': 'trial',
-
-  normal: 'normal',
-  common: 'normal',
-  ordinary: 'normal',
-  '普通': 'normal',
-
-  vip: 'vip',
-  VIP: 'vip',
-
-  svip: 'svip',
-  SVIP: 'svip',
-
-  test: 'test',
-  tester: 'test',
-  testing: 'test',
-  '测试': 'test',
+const statusMap = {
+  authorized: { label: '已授权', type: 'success' },
+  pending: { label: '申请中', type: 'warning' },
+  rejected: { label: '已拒绝', type: 'danger' },
+  auto_open_available: { label: '可立即开通', type: 'success' },
+  apply_available: { label: '可申请', type: 'primary' },
+  unavailable: { label: '暂不可申请', type: 'info' },
 }
 
-const LEVEL_UNIT_LABELS = {
-  trial: '点/周/设备',
-  normal: '点/月/设备',
-  vip: '点/月/设备',
-  svip: '点/月/设备',
-}
-
-const normalizeLevel = (level) => {
-  if (level === null || level === undefined) {
-    return ''
-  }
-
-  const raw = String(level).trim()
-  return LEVEL_ALIASES[raw] || LEVEL_ALIASES[raw.toLowerCase()] || raw.toLowerCase()
-}
-
-const normalizeProjectList = (data) => {
-  if (Array.isArray(data)) {
-    return data
-  }
-
-  if (Array.isArray(data?.projects)) {
-    return data.projects
-  }
-
-  if (Array.isArray(data?.items)) {
-    return data.items
-  }
-
-  return []
-}
-
-const normalizeAuthorizedProjects = (data) => {
-  if (Array.isArray(data)) {
-    return data
-  }
-
-  if (Array.isArray(data?.authorized_projects)) {
-    return data.authorized_projects
-  }
-
-  if (Array.isArray(data?.projects)) {
-    return data.projects
-  }
-
-  if (Array.isArray(data?.items)) {
-    return data.items
-  }
-
-  return []
-}
-
-const projectKeys = (project) => {
-  const keys = []
-
-  const candidates = [
-    project?.id,
-    project?.project_id,
-    project?.game_project_id,
-    project?.code_name,
-    project?.project_code,
-    project?.code,
-  ]
-
-  for (const item of candidates) {
-    if (item !== null && item !== undefined && item !== '') {
-      keys.push(String(item))
-    }
-  }
-
-  return keys
-}
-
-const buildAuthorizedKeySet = (authorizedProjects) => {
-  const set = new Set()
-
-  for (const item of authorizedProjects) {
-    for (const key of projectKeys(item)) {
-      set.add(key)
-    }
-  }
-
-  return set
-}
-
-const isProjectAuthorized = (project, authorizedKeySet) => {
-  return projectKeys(project).some(key => authorizedKeySet.has(key))
-}
-
-const buildDisplayPrices = (rawPrices) => {
-  if (!rawPrices) {
-    return []
-  }
-
-  const priceMap = new Map()
-
-  if (!Array.isArray(rawPrices) && typeof rawPrices === 'object') {
-    for (const [level, points] of Object.entries(rawPrices)) {
-      const normalized = normalizeLevel(level)
-
-      if (normalized === 'test') {
-        continue
-      }
-
-      if (!DISPLAY_LEVEL_ORDER.includes(normalized)) {
-        continue
-      }
-
-      priceMap.set(normalized, points)
-    }
-  }
-
-  if (Array.isArray(rawPrices)) {
-    for (const item of rawPrices) {
-      const normalized = normalizeLevel(item.user_level ?? item.level ?? item.name)
-
-      if (normalized === 'test') {
-        continue
-      }
-
-      if (!DISPLAY_LEVEL_ORDER.includes(normalized)) {
-        continue
-      }
-
-      priceMap.set(
-        normalized,
-        item.points_per_device ?? item.points ?? item.price ?? 0,
-      )
-    }
-  }
-
-  return DISPLAY_LEVEL_ORDER
-    .filter(level => priceMap.has(level))
-    .map(level => ({
-      level,
-      points: priceMap.get(level),
-      unitLabel: LEVEL_UNIT_LABELS[level] || '点/设备',
-    }))
-}
-
-const mergeCatalogWithAuth = (catalogProjects, authorizedProjects) => {
-  const authorizedKeySet = buildAuthorizedKeySet(authorizedProjects)
-
-  return catalogProjects.map(project => ({
-    ...project,
-    is_authorized: isProjectAuthorized(project, authorizedKeySet),
-    display_prices: buildDisplayPrices(project.prices),
-  }))
+const statusMeta = (row) => {
+  return statusMap[row.access_status] || { label: row.access_status || '未知', type: 'info' }
 }
 
 const formatPrice = (item) => {
-  const points = Number(item.points || 0).toFixed(2)
-  return `${points} ${item.unitLabel}`
+  if (item.points === null || item.points === undefined) {
+    return `未定价 ${item.unit_label || ''}`
+  }
+
+  return `${Number(item.points || 0).toFixed(2)} ${item.unit_label || ''}`
 }
 
 const getErrorMessage = (err) => {
@@ -388,7 +321,7 @@ const getErrorMessage = (err) => {
   const detail = err?.response?.data?.detail || err?.response?.data?.message
 
   if (status === 401) {
-    return '项目目录接口返回 401：当前代理登录态未被后端认可。请确认 Chrome 中仍是代理账号登录，并检查后端代理鉴权。'
+    return '项目目录接口返回 401：当前代理登录态未被后端认可。请确认 Chrome 中仍是代理账号登录。'
   }
 
   if (status === 403) {
@@ -396,7 +329,7 @@ const getErrorMessage = (err) => {
   }
 
   if (status === 404) {
-    return '项目目录接口返回 404：后端尚未注册 /api/agents/my/catalog 或 /api/agents/my-projects，请确认后端已更新并重启。'
+    return '项目目录接口返回 404：后端尚未注册 /api/agents/my/project-access/catalog，请确认后端已更新并重启。'
   }
 
   if (status === 500) {
@@ -415,15 +348,10 @@ const fetchCatalog = async () => {
   error.value = ''
 
   try {
-    const [catalogRes, authorizedRes] = await Promise.all([
-      agentBalanceApi.catalog(),
-      agentApi.myProjects(),
-    ])
-
-    const catalogProjects = normalizeProjectList(catalogRes.data)
-    const authorizedProjects = normalizeAuthorizedProjects(authorizedRes.data)
-
-    projects.value = mergeCatalogWithAuth(catalogProjects, authorizedProjects)
+    const res = await agentProjectAccessApi.catalog()
+    projects.value = Array.isArray(res.data)
+      ? res.data.map(item => ({ ...item, _actionLoading: false }))
+      : []
   } catch (err) {
     console.error('[AgentCatalog] 加载项目目录失败:', err)
     projects.value = []
@@ -433,15 +361,74 @@ const fetchCatalog = async () => {
   }
 }
 
-const showApplyHint = async (row) => {
-  await ElMessageBox.alert(
-    `项目「${row.display_name}」当前尚未对你的代理账号开通。请联系管理员为你的代理账号开通该项目授权。`,
-    '申请授权说明',
-    {
-      confirmButtonText: '知道了',
-      type: 'info',
-    },
-  )
+const openApplyDialog = (row) => {
+  applyDialog.project = row
+  applyDialog.reason = ''
+  applyDialog.visible = true
+}
+
+const submitApply = async () => {
+  if (!applyDialog.project) return
+
+  if (!applyDialog.reason.trim()) {
+    ElMessage.warning('请填写申请说明')
+    return
+  }
+
+  applyDialog.loading = true
+
+  try {
+    const res = await agentProjectAccessApi.createRequest({
+      project_id: applyDialog.project.id,
+      request_reason: applyDialog.reason.trim(),
+    })
+
+    if (res.data?.status === 'auto_approved') {
+      ElMessage.success('项目已自动开通')
+    } else {
+      ElMessage.success('申请已提交，等待管理员审核')
+    }
+
+    applyDialog.visible = false
+    await fetchCatalog()
+  } finally {
+    applyDialog.loading = false
+  }
+}
+
+const autoOpenProject = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认立即开通项目「${row.display_name}」？项目开通本身不扣点，后续给用户授权项目时才会按项目价格扣点。`,
+      '立即开通确认',
+      {
+        confirmButtonText: '确认开通',
+        cancelButtonText: '取消',
+        type: 'success',
+      },
+    )
+  } catch {
+    return
+  }
+
+  row._actionLoading = true
+
+  try {
+    const res = await agentProjectAccessApi.createRequest({
+      project_id: row.id,
+      request_reason: '',
+    })
+
+    if (res.data?.status === 'auto_approved') {
+      ElMessage.success('项目已自动开通')
+    } else {
+      ElMessage.success('申请已提交，等待管理员审核')
+    }
+
+    await fetchCatalog()
+  } finally {
+    row._actionLoading = false
+  }
 }
 
 onMounted(fetchCatalog)
@@ -576,5 +563,27 @@ onMounted(fetchCatalog)
 .text-muted {
   color: #94a3b8;
   font-size: 12px;
+}
+
+.success-text {
+  color: #10b981;
+  font-size: 12px;
+}
+
+.reject-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #ef4444;
+  line-height: 1.4;
+}
+
+.readonly-val {
+  font-size: 13px;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.small-alert {
+  border-radius: 8px;
 }
 </style>

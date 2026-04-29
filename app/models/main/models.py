@@ -338,42 +338,88 @@ class AgentProjectAuth(Base):
         UniqueConstraint("agent_id", "project_id", name="uq_agent_project"),
         Index("idx_agent_project_auth_agent", "agent_id"),
         Index("idx_agent_project_auth_project", "project_id"),
+        CheckConstraint(
+            "source IN ('admin_manual', 'request_approved', 'auto_approved')",
+            name="chk_agent_project_auth_source",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
     agent_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("agent.id", ondelete="CASCADE"),
         nullable=False,
     )
+
     project_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("game_project.id", ondelete="CASCADE"),
         nullable=False,
     )
+
     valid_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
+
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         server_default="active",
     )
+
     granted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
     )
 
+    # 新增：项目授权来源
+    # admin_manual      = 管理员手动开通
+    # request_approved = 管理员批准代理申请
+    # auto_approved    = 系统自动开通
+    source: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default="admin_manual",
+        comment="admin_manual/request_approved/auto_approved",
+    )
+
+    # 新增：关联代理项目开通申请
+    request_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("agent_project_auth_request.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联代理项目开通申请 ID",
+    )
+
+    # 新增：批准该项目授权的管理员
+    granted_by_admin_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("admin.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="批准开通该项目的管理员 ID",
+    )
+
+    # 新增：授权原因 / 审核备注 / 自动开通原因
+    granted_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="项目授权原因 / 审核备注 / 自动开通原因",
+    )
+
     agent: Mapped["Agent"] = relationship("Agent", back_populates="project_auths")
+
     project: Mapped["GameProject"] = relationship(
         "GameProject",
         back_populates="agent_project_auths",
     )
 
     def __repr__(self) -> str:
-        return f"<AgentProjectAuth agent={self.agent_id} project={self.project_id}>"
-
+        return (
+            f"<AgentProjectAuth agent={self.agent_id} "
+            f"project={self.project_id} source={self.source}>"
+        )
 
 # ── 授权表：用户 × 项目 ───────────────────────────────────────
 class Authorization(Base):

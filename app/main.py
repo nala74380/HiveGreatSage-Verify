@@ -170,7 +170,7 @@ app.add_middleware(
 
 
 # ── 路由注册 ──────────────────────────────────────────────────
-from app.routers import (  # noqa: E402
+from app.routers import (
     admin,
     agents,
     auth,
@@ -179,6 +179,8 @@ from app.routers import (  # noqa: E402
     device,
     device_admin,
     params,
+    project_access_admin,
+    project_access_agent,
     projects,
     stats,
     update,
@@ -197,6 +199,12 @@ app.include_router(users.router, prefix="/api/users", tags=["用户管理"])
 #   因此代理自查类静态路径必须先注册。
 app.include_router(balance_agent.router, prefix="/api/agents", tags=["代理余额"])
 
+app.include_router(
+    project_access_agent.router,
+    prefix="/api/agents/my/project-access",
+    tags=["代理项目准入"],
+)
+
 app.include_router(agents.router, prefix="/api/agents", tags=["代理管理"])
 app.include_router(device.router, prefix="/api/device", tags=["设备数据"])
 app.include_router(params.router, prefix="/api/params", tags=["脚本参数"])
@@ -209,6 +217,11 @@ app.include_router(device_admin.router, prefix="/admin/api/devices", tags=["设�
 app.include_router(stats.router, prefix="/api/stats", tags=["统计数据"])
 app.include_router(balance_admin.router, prefix="/admin/api", tags=["点数管理"])
 
+app.include_router(
+    project_access_admin.router,
+    prefix="/admin/api/project-access",
+    tags=["项目准入管理"],
+)
 
 # ── 健康检查 ──────────────────────────────────────────────────
 @app.get("/health", tags=["系统"])
