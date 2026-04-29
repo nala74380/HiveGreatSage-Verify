@@ -3,7 +3,7 @@ r"""
 文件名称: project_access_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.0.1
+版本: V1.1.0
 功能说明:
     代理等级驱动的项目准入、申请、自动开通、管理员审核服务层。
 
@@ -14,13 +14,10 @@ r"""
     - hidden 项目默认不展示。
     - invite_only 项目只有指定代理可见。
 
-本版修复:
-    - 修复管理员批准项目申请时 MissingGreenlet 问题。
-    - 原因是 AsyncSession 下访问 expired ORM 字段 req.updated_at 时触发隐式 IO。
-    - 处理方式:
-        1. 修改状态时手动写入 updated_at。
-        2. flush 后显式 await db.refresh(req)。
-        3. _request_to_response() 内先快照字段，避免后续 await 后再次访问 expired 字段。
+重要边界:
+    - Agent.level 继续表示代理组织层级 / 代理树深度。
+    - AgentBusinessProfile.tier_level 表示代理业务等级 Lv.1 - Lv.4。
+    - 项目准入策略必须使用 tier_level，不再使用 Agent.level。
 """
 
 from datetime import datetime, timezone
@@ -38,6 +35,7 @@ from app.models.main.models import (
     GameProject,
     ProjectPrice,
 )
+from app.models.main.agent_profile import AgentBusinessProfile
 from app.models.main.project_access import (
     AgentProjectAccessInvite,
     AgentProjectAuthRequest,
@@ -79,10 +77,6 @@ def _now() -> datetime:
 def _ensure_aware(dt: datetime | None) -> datetime | None:
     """
     统一 datetime 时区。
-
-    PostgreSQL timezone=True 字段有时返回 aware datetime；
-    前端传入的时间也可能带 Z；
-    为避免 offset-naive / offset-aware 比较异常，统一兜底。
     """
     if dt is None:
         return None
@@ -120,14 +114,6 @@ async def _refresh_request_for_response(
 ) -> AgentProjectAuthRequest:
     """
     显式刷新代理项目申请对象，避免 AsyncSession 下访问 expired 字段触发 MissingGreenlet。
-
-    背景:
-        SQLAlchemy AsyncSession 中，server_default / onupdate 字段在 flush 后可能被标记为 expired。
-        如果之后直接访问 req.updated_at，SQLAlchemy 会尝试隐式 IO。
-        隐式 IO 在普通属性访问中不能 await，因此会抛 MissingGreenlet。
-
-    处理:
-        在构造响应前显式 refresh，把可能 expired 的字段主动加载回来。
     """
     await db.refresh(req)
     return req
@@ -145,9 +131,10 @@ async def list_agent_project_catalog(
     """
     代理项目目录。
 
-    返回的是经过项目准入策略过滤后的项目列表。
+    返回经过项目准入策略过滤后的项目列表。
     """
     now = _now()
+    agent_tier_level = await _get_agent_tier_level(agent.id, db)
 
     project_result = await db.execute(
         select(GameProject)
@@ -186,7 +173,7 @@ async def list_agent_project_catalog(
         is_authorized = auth is not None
 
         is_visible = _is_project_visible(
-            agent=agent,
+            tier_level=agent_tier_level,
             policy=policy,
             is_authorized=is_authorized,
             is_invited=project.id in invite_project_ids,
@@ -200,11 +187,14 @@ async def list_agent_project_catalog(
 
         if not is_authorized and not pending_request:
             can_auto_open = _can_auto_open(
-                agent=agent,
+                tier_level=agent_tier_level,
                 policy=policy,
                 available_points=available_points,
             )
-            can_apply = _can_apply(agent=agent, policy=policy)
+            can_apply = _can_apply(
+                tier_level=agent_tier_level,
+                policy=policy,
+            )
 
         if is_authorized:
             access_status = "authorized"
@@ -220,7 +210,7 @@ async def list_agent_project_catalog(
             action_type = "apply"
         elif last_request and last_request.status == "rejected":
             access_status = "rejected"
-            action_type = "apply" if _can_apply(agent=agent, policy=policy) else "none"
+            action_type = "apply" if _can_apply(tier_level=agent_tier_level, policy=policy) else "none"
         else:
             access_status = "unavailable"
             action_type = "none"
@@ -261,11 +251,9 @@ async def create_agent_project_auth_request(
 ) -> AgentProjectAuthRequestResponse:
     """
     代理申请项目开通，或满足条件时自动开通。
-
-    - auto_by_level / auto_by_condition 且满足条件：auto_approved + 写入 agent_project_auth。
-    - 其他可申请项目：pending。
     """
     now = _now()
+    agent_tier_level = await _get_agent_tier_level(agent.id, db)
 
     project = await _get_project_or_404(body.project_id, db)
     policy = await _get_or_create_policy(project.id, db)
@@ -280,20 +268,27 @@ async def create_agent_project_auth_request(
 
     invite_project_ids = await _load_invite_project_ids(agent.id, db)
 
-    is_invited = project.id in invite_project_ids
     visible = _is_project_visible(
-        agent=agent,
+        tier_level=agent_tier_level,
         policy=policy,
         is_authorized=False,
-        is_invited=is_invited,
+        is_invited=project.id in invite_project_ids,
     )
 
     if not visible:
         raise HTTPException(status_code=403, detail="该项目当前不对你的代理账号开放")
 
     available_points = await _get_agent_available_points(agent.id, db)
-    can_auto = _can_auto_open(agent=agent, policy=policy, available_points=available_points)
-    can_apply = _can_apply(agent=agent, policy=policy)
+
+    can_auto = _can_auto_open(
+        tier_level=agent_tier_level,
+        policy=policy,
+        available_points=available_points,
+    )
+    can_apply = _can_apply(
+        tier_level=agent_tier_level,
+        policy=policy,
+    )
 
     if can_auto:
         req = AgentProjectAuthRequest(
@@ -303,7 +298,11 @@ async def create_agent_project_auth_request(
             status="auto_approved",
             reviewed_at=now,
             updated_at=now,
-            auto_approve_reason=_build_auto_approve_reason(agent, policy, available_points),
+            auto_approve_reason=_build_auto_approve_reason(
+                tier_level=agent_tier_level,
+                policy=policy,
+                available_points=available_points,
+            ),
         )
 
         db.add(req)
@@ -584,6 +583,37 @@ async def reject_project_auth_request(
 # 内部读取辅助
 # ═══════════════════════════════════════════════════════════════
 
+async def _get_agent_tier_level(
+    agent_id: int,
+    db: AsyncSession,
+) -> int:
+    """
+    获取代理业务等级。
+
+    注意:
+        不读取 Agent.level。
+        Agent.level 是代理组织层级。
+    """
+    result = await db.execute(
+        select(AgentBusinessProfile).where(AgentBusinessProfile.agent_id == agent_id)
+    )
+    profile = result.scalar_one_or_none()
+
+    if profile:
+        return int(profile.tier_level or 1)
+
+    profile = AgentBusinessProfile(
+        agent_id=agent_id,
+        tier_level=1,
+        risk_status="normal",
+    )
+    db.add(profile)
+    await db.flush()
+    await db.refresh(profile)
+
+    return int(profile.tier_level or 1)
+
+
 async def _load_policy_map(
     project_ids: list[int],
     db: AsyncSession,
@@ -765,7 +795,7 @@ async def _get_or_create_policy(
 
 def _is_project_visible(
     *,
-    agent: Agent,
+    tier_level: int,
     policy: ProjectAccessPolicy,
     is_authorized: bool,
     is_invited: bool,
@@ -783,14 +813,14 @@ def _is_project_visible(
         return is_invited
 
     if policy.visibility_mode == "level_limited":
-        return agent.level >= policy.min_visible_agent_level
+        return tier_level >= policy.min_visible_agent_level
 
     return True
 
 
 def _can_apply(
     *,
-    agent: Agent,
+    tier_level: int,
     policy: ProjectAccessPolicy,
 ) -> bool:
     if not policy.is_active:
@@ -802,12 +832,12 @@ def _can_apply(
     if policy.open_mode == "disabled":
         return False
 
-    return agent.level >= policy.min_apply_agent_level
+    return tier_level >= policy.min_apply_agent_level
 
 
 def _can_auto_open(
     *,
-    agent: Agent,
+    tier_level: int,
     policy: ProjectAccessPolicy,
     available_points: Decimal,
 ) -> bool:
@@ -823,7 +853,7 @@ def _can_auto_open(
     if policy.min_auto_open_agent_level is None:
         return False
 
-    if agent.level < policy.min_auto_open_agent_level:
+    if tier_level < policy.min_auto_open_agent_level:
         return False
 
     if policy.open_mode == "auto_by_condition":
@@ -834,12 +864,13 @@ def _can_auto_open(
 
 
 def _build_auto_approve_reason(
-    agent: Agent,
+    *,
+    tier_level: int,
     policy: ProjectAccessPolicy,
     available_points: Decimal,
 ) -> str:
     return (
-        f"自动开通：代理等级 Lv.{agent.level} 满足最低自动开通等级 "
+        f"自动开通：代理业务等级 Lv.{tier_level} 满足最低自动开通等级 "
         f"Lv.{policy.min_auto_open_agent_level}；"
         f"开通模式={policy.open_mode}；"
         f"当前可用点数={available_points:.2f}。"
@@ -967,14 +998,6 @@ async def _grant_agent_project_auth(
 ) -> AgentProjectAuth:
     """
     写入 / 更新代理项目授权。
-
-    注意:
-        这里使用 ORM 字段赋值，不使用裸 SQL。
-        前提是 AgentProjectAuth ORM 模型已经包含:
-            source
-            request_id
-            granted_by_admin_id
-            granted_reason
     """
     if source not in {"admin_manual", "request_approved", "auto_approved"}:
         raise HTTPException(
@@ -1054,10 +1077,9 @@ async def _request_to_response(
     """
     将 AgentProjectAuthRequest 转为响应对象。
 
-    关键规则:
-        不要在构造响应时直接反复访问可能 expired 的 ORM 字段。
-        先把 req 的字段复制到局部变量。
-        然后再 await db.get(...) 查询关联信息。
+    注意:
+        agent_level 返回代理业务等级 tier_level。
+        不返回 Agent.level，因为 Agent.level 是组织层级。
     """
     request_id = req.id
     agent_id = req.agent_id
@@ -1077,12 +1099,13 @@ async def _request_to_response(
     agent = await db.get(Agent, agent_id)
     project = await db.get(GameProject, project_id)
     admin = await db.get(Admin, reviewed_by_admin_id) if reviewed_by_admin_id else None
+    agent_tier_level = await _get_agent_tier_level(agent_id, db)
 
     return AgentProjectAuthRequestResponse(
         id=request_id,
         agent_id=agent_id,
         agent_username=agent.username if agent else None,
-        agent_level=agent.level if agent else None,
+        agent_level=agent_tier_level,
 
         project_id=project_id,
         project_name=project.display_name if project else None,

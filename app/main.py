@@ -172,6 +172,7 @@ app.add_middleware(
 # ── 路由注册 ──────────────────────────────────────────────────
 from app.routers import (
     admin,
+    agent_profile_admin,
     agents,
     auth,
     balance_admin,
@@ -221,6 +222,12 @@ app.include_router(
     project_access_admin.router,
     prefix="/admin/api/project-access",
     tags=["项目准入管理"],
+)
+
+app.include_router(
+    agent_profile_admin.router,
+    prefix="/admin/api",
+    tags=["代理业务管理"],
 )
 
 # ── 健康检查 ──────────────────────────────────────────────────

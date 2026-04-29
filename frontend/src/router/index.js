@@ -3,13 +3,12 @@
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-29
- * 版本: V1.3.0
+ * 版本: V1.4.0
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
  *
  * 本版新增:
- *   - 管理员项目准入策略页面
- *   - 管理员代理项目授权申请审核页面
+ *   - 管理员代理等级管理页面
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -89,6 +88,12 @@ const router = createRouter({
         },
 
         // Admin
+        {
+          path: 'agent-level-policies',
+          name: 'AgentLevelPolicies',
+          component: () => import('@/views/admin/AgentLevelPolicies.vue'),
+          meta: { requiresAdmin: true, title: '代理等级' },
+        },
         {
           path: 'projects',
           name: 'GameProjectList',
