@@ -2,14 +2,16 @@
  * 文件位置: src/router/index.js
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
- * 时间: 2026-04-29
- * 版本: V1.6.0
+ * 时间: 2026-04-30
+ * 版本: V1.7.0
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
  *
  * 当前业务口径:
  *   - 代理管理是代理相关能力的统一入口。
  *   - 代理详情页用于承载代理统计、下级代理、授权项目、点数、流水、安全操作。
+ *   - 项目管理是项目相关能力的统一入口。
+ *   - 项目详情页用于承载项目基础信息、定价、准入、授权申请、授权代理等项目附属能力。
  *   - 用户数量仅作统计展示。
  */
 
@@ -95,13 +97,21 @@ const router = createRouter({
           meta: { requiresAdmin: true, title: '登录日志' },
         },
 
-        // Admin
+        // Admin: Project
         {
           path: 'projects',
           name: 'GameProjectList',
           component: () => import('@/views/admin/GameProjectList.vue'),
           meta: { requiresAdmin: true, title: '项目管理' },
         },
+        {
+          path: 'projects/:id',
+          name: 'GameProjectDetail',
+          component: () => import('@/views/admin/GameProjectDetail.vue'),
+          meta: { requiresAdmin: true, title: '项目详情' },
+        },
+
+        // Admin: Project legacy transition pages
         {
           path: 'pricing',
           name: 'ProjectPricing',
@@ -120,6 +130,8 @@ const router = createRouter({
           component: () => import('@/views/admin/AgentProjectAuthRequests.vue'),
           meta: { requiresAdmin: true, title: '授权申请' },
         },
+
+        // Admin: Other
         {
           path: 'balance-transactions',
           name: 'BalanceTransactions',

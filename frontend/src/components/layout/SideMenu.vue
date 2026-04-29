@@ -32,15 +32,25 @@
  * 文件位置: src/components/layout/SideMenu.vue
  * 名称: 左侧菜单
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
- * 时间: 2026-04-29
- * 版本: V1.4.0
+ * 时间: 2026-04-30
+ * 版本: V1.5.0
  * 功能说明:
  *   根据管理员 / 代理身份显示不同菜单。
  *
  * 当前业务口径:
  *   - 代理管理是代理相关能力的统一入口。
- *   - 代理业务等级不再作为独立菜单页面展示。
- *   - 等级策略后续如需配置，应融合进代理管理页的弹窗或折叠区域。
+ *   - 项目管理是项目相关能力的统一入口。
+ *   - 项目定价、项目准入、授权申请不再作为左侧独立菜单入口展示。
+ *   - 旧路由暂时保留，方便回退与过渡。
+ *
+ * 后续融合方向:
+ *   项目管理页内应逐步融合：
+ *     1. 项目基础信息
+ *     2. 项目定价
+ *     3. 项目准入
+ *     4. 授权申请
+ *     5. 项目授权代理
+ *     6. 热更新 / 公告监控等项目附属能力
  */
 
 import { computed } from 'vue'
@@ -58,7 +68,6 @@ import {
   Upload,
   Avatar,
   QuestionFilled,
-  Coin,
   Tickets,
   Wallet,
   List,
@@ -68,7 +77,19 @@ const route = useRoute()
 const auth = useAuthStore()
 const appStore = useAppStore()
 
-const currentPath = computed(() => '/' + route.path.split('/')[1])
+const currentPath = computed(() => {
+  const firstSegment = route.path.split('/')[1]
+
+  if (
+    firstSegment === 'pricing' ||
+    firstSegment === 'project-access-policies' ||
+    firstSegment === 'project-auth-requests'
+  ) {
+    return '/projects'
+  }
+
+  return '/' + firstSegment
+})
 
 const menuItems = computed(() => {
   if (auth.isAgent) {
@@ -88,9 +109,6 @@ const menuItems = computed(() => {
       { label: '用户管理', path: '/users', icon: User },
       { label: '代理管理', path: '/agents', icon: Share },
       { label: '项目管理', path: '/projects', icon: Grid },
-      { label: '项目定价', path: '/pricing', icon: Coin },
-      { label: '项目准入', path: '/project-access-policies', icon: Grid },
-      { label: '授权申请', path: '/project-auth-requests', icon: Tickets },
       { label: '点数流水', path: '/balance-transactions', icon: List },
       { label: '热更新', path: '/updates', icon: Upload },
       { label: '设备监控', path: '/devices', icon: Monitor },

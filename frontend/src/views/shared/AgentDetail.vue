@@ -7,7 +7,7 @@
         </div>
         <h2>代理详情</h2>
         <p class="page-desc">
-          详情页用于查看代理主体、业务画像、下级代理、用户统计、项目授权、点数余额和最近流水。
+          详情页用于查看代理主体、业务画像、下级代理、直属用户、项目授权、点数余额和最近流水。
         </p>
       </div>
 
@@ -110,14 +110,14 @@
         <el-col :span="4">
           <div class="stat-card">
             <div class="stat-num">{{ directUserCount }}</div>
-            <div class="stat-label">直属用户数</div>
+            <div class="stat-label">有效直属用户</div>
           </div>
         </el-col>
 
         <el-col :span="4">
           <div class="stat-card">
             <div class="stat-num">{{ scopeUserCount }}</div>
-            <div class="stat-label">权限范围用户</div>
+            <div class="stat-label">有效范围用户</div>
           </div>
         </el-col>
 
@@ -250,13 +250,117 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="直属用户" width="100" align="center" prop="users_count" />
-              <el-table-column label="子树用户" width="100" align="center" prop="subtree_user_count" />
+              <el-table-column label="有效直属用户" width="120" align="center" prop="users_count" />
+              <el-table-column label="有效子树用户" width="120" align="center" prop="subtree_user_count" />
 
               <el-table-column label="下级数量" width="100" align="center">
                 <template #default="{ row }">{{ row.children?.length || 0 }}</template>
               </el-table-column>
             </el-table>
+          </el-tab-pane>
+
+          <el-tab-pane label="直属用户" name="direct-users">
+            <el-alert
+              title="直属用户只统计 created_by_agent_id 等于当前代理 ID 且未软删除的用户；不包含下级代理创建的用户。"
+              type="info"
+              show-icon
+              :closable="false"
+              class="inner-alert"
+            />
+
+            <el-table
+              v-loading="directUsersLoading"
+              :data="directUsers"
+              size="small"
+              stripe
+              empty-text="暂无直属用户"
+            >
+              <el-table-column label="用户名" min-width="160">
+                <template #default="{ row }">
+                  <button
+                    class="link-button"
+                    type="button"
+                    @click="$router.push(`/users/${row.id}`)"
+                  >
+                    {{ row.username }}
+                  </button>
+                  <div class="small-muted">ID: {{ row.id }}</div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }">
+                  <el-tag :type="userStatusType(row.status)" size="small" effect="light">
+                    {{ userStatusText(row.status) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="用户等级" width="100">
+                <template #default="{ row }">
+                  {{ userLevelText(row.level || row.user_level) }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="授权项目" min-width="220">
+                <template #default="{ row }">
+                  <template v-if="getUserAuths(row).length">
+                    <div class="auth-tags">
+                      <el-tag
+                        v-for="auth in getUserAuths(row).slice(0, 3)"
+                        :key="auth.id || auth.authorization_id || auth.project_id"
+                        size="small"
+                        effect="plain"
+                        :type="auth.status === 'active' ? 'success' : 'info'"
+                      >
+                        {{ auth.project_display_name || auth.project_name || auth.display_name || auth.game_name || '项目' }}
+                      </el-tag>
+                      <span v-if="getUserAuths(row).length > 3" class="small-muted">
+                        +{{ getUserAuths(row).length - 3 }}
+                      </span>
+                    </div>
+                  </template>
+                  <span v-else class="muted">暂无授权</span>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="授权数" width="90" align="center">
+                <template #default="{ row }">
+                  {{ getUserAuths(row).length }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="有效授权" width="90" align="center">
+                <template #default="{ row }">
+                  {{ getActiveUserAuthCount(row) }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="创建时间" width="160">
+                <template #default="{ row }">
+                  {{ row.created_at ? formatDatetime(row.created_at) : '—' }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="操作" width="90" fixed="right">
+                <template #default="{ row }">
+                  <el-button text size="small" @click="$router.push(`/users/${row.id}`)">
+                    详情
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <el-pagination
+              v-model:current-page="directUsersPagination.page"
+              v-model:page-size="directUsersPagination.pageSize"
+              :total="directUsersPagination.total"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next"
+              class="pagination"
+              @size-change="loadDirectUsers"
+              @current-change="loadDirectUsers"
+            />
           </el-tab-pane>
 
           <el-tab-pane label="项目授权" name="projects">
@@ -347,28 +451,31 @@
  * 文件位置: src/views/shared/AgentDetail.vue
  * 名称: 代理详情页
  * 作者: 蜂巢·大圣 (HiveGreatSage)
- * 时间: 2026-04-29
- * 版本: V1.0.0
+ * 时间: 2026-04-30
+ * 版本: V1.1.0
  * 功能说明:
  *   管理员查看代理详情：
  *     - 代理基础信息
  *     - 业务画像
  *     - 下级代理统计
+ *     - 直属用户
  *     - 用户统计
  *     - 项目授权
  *     - 点数余额
  *     - 最近流水
  *
  * 当前边界:
- *   - 本页先做详情展示。
- *   - 密码修改、项目授权、点数操作后续统一进入代理编辑抽屉。
+ *   - 本页展示“直属用户”，不混入下级代理用户。
+ *   - 权限范围用户只作为统计展示。
+ *   - 密码修改、项目授权、点数操作由代理管理统一编辑抽屉承担。
  */
 
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
+import { userApi } from '@/api/user'
 import { balanceApi } from '@/api/balance'
 import { projectApi } from '@/api/project'
 import { adminAgentProfileApi } from '@/api/admin/agentProfile'
@@ -377,6 +484,7 @@ import { formatDatetime } from '@/utils/format'
 const route = useRoute()
 
 const loading = ref(false)
+const directUsersLoading = ref(false)
 const activeTab = ref('overview')
 
 const agent = ref(null)
@@ -385,6 +493,13 @@ const subtree = ref(null)
 const balance = ref(null)
 const projectAuths = ref([])
 const transactions = ref([])
+const directUsers = ref([])
+
+const directUsersPagination = reactive({
+  page: 1,
+  pageSize: 20,
+  total: 0,
+})
 
 const agentId = computed(() => Number(route.params.id))
 
@@ -410,6 +525,47 @@ const riskStatusType = (status) => {
   return map[status] || 'info'
 }
 
+const userStatusText = (status) => {
+  const map = {
+    active: '正常',
+    suspended: '停用',
+    expired: '过期',
+  }
+  return map[status] || status || '未知'
+}
+
+const userStatusType = (status) => {
+  const map = {
+    active: 'success',
+    suspended: 'danger',
+    expired: 'warning',
+  }
+  return map[status] || 'info'
+}
+
+const userLevelText = (level) => {
+  const map = {
+    trial: '试用',
+    normal: '普通',
+    vip: 'VIP',
+    svip: 'SVIP',
+    tester: '测试',
+  }
+  return map[level] || level || '—'
+}
+
+const getUserAuths = (row) => {
+  if (Array.isArray(row.authorizations)) return row.authorizations
+  if (Array.isArray(row.auths)) return row.auths
+  if (Array.isArray(row.projects)) return row.projects
+  if (Array.isArray(row.authorized_projects)) return row.authorized_projects
+  return []
+}
+
+const getActiveUserAuthCount = (row) => {
+  return getUserAuths(row).filter(item => item.status === 'active').length
+}
+
 const directChildAgentCount = computed(() => {
   return subtree.value?.root?.children?.length || 0
 })
@@ -429,6 +585,25 @@ const scopeUserCount = computed(() => {
 const childAgentRows = computed(() => {
   return subtree.value?.root?.children || []
 })
+
+const loadDirectUsers = async () => {
+  if (!agentId.value) return
+
+  directUsersLoading.value = true
+
+  try {
+    const res = await userApi.list({
+      creator_agent_id: agentId.value,
+      page: directUsersPagination.page,
+      page_size: directUsersPagination.pageSize,
+    })
+
+    directUsers.value = res.data.users || []
+    directUsersPagination.total = res.data.total || 0
+  } finally {
+    directUsersLoading.value = false
+  }
+}
 
 const loadAll = async () => {
   if (!agentId.value) return
@@ -458,6 +633,9 @@ const loadAll = async () => {
     balance.value = balanceRes.data
     projectAuths.value = Array.isArray(authRes.data) ? authRes.data : []
     transactions.value = txRes.data?.transactions || []
+
+    directUsersPagination.page = 1
+    await loadDirectUsers()
   } catch (error) {
     ElMessage.error('加载代理详情失败')
     throw error
@@ -472,6 +650,7 @@ watch(
   () => route.params.id,
   () => {
     activeTab.value = 'overview'
+    directUsersPagination.page = 1
     loadAll()
   }
 )
@@ -635,6 +814,18 @@ watch(
 
 .link-button:hover {
   text-decoration: underline;
+}
+
+.auth-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 
 .amt-pos {
