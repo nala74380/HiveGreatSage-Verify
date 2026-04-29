@@ -38,19 +38,10 @@
  *   根据管理员 / 代理身份显示不同菜单。
  *
  * 当前业务口径:
- *   - 代理管理是代理相关能力的统一入口。
- *   - 项目管理是项目相关能力的统一入口。
- *   - 项目定价、项目准入、授权申请不再作为左侧独立菜单入口展示。
- *   - 旧路由暂时保留，方便回退与过渡。
- *
- * 后续融合方向:
- *   项目管理页内应逐步融合：
- *     1. 项目基础信息
- *     2. 项目定价
- *     3. 项目准入
- *     4. 授权申请
- *     5. 项目授权代理
- *     6. 热更新 / 公告监控等项目附属能力
+ *   - 项目管理是项目相关能力统一入口。
+ *   - 项目定价、项目准入、授权申请已收敛到项目详情页。
+ *   - 账务中心是平台内部点数资产治理统一入口。
+ *   - 旧“点数流水”不再作为菜单名出现。
  */
 
 import { computed } from 'vue'
@@ -77,19 +68,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const appStore = useAppStore()
 
-const currentPath = computed(() => {
-  const firstSegment = route.path.split('/')[1]
-
-  if (
-    firstSegment === 'pricing' ||
-    firstSegment === 'project-access-policies' ||
-    firstSegment === 'project-auth-requests'
-  ) {
-    return '/projects'
-  }
-
-  return '/' + firstSegment
-})
+const currentPath = computed(() => '/' + route.path.split('/')[1])
 
 const menuItems = computed(() => {
   if (auth.isAgent) {
@@ -109,7 +88,7 @@ const menuItems = computed(() => {
       { label: '用户管理', path: '/users', icon: User },
       { label: '代理管理', path: '/agents', icon: Share },
       { label: '项目管理', path: '/projects', icon: Grid },
-      { label: '点数流水', path: '/balance-transactions', icon: List },
+      { label: '账务中心', path: '/accounting', icon: List },
       { label: '热更新', path: '/updates', icon: Upload },
       { label: '设备监控', path: '/devices', icon: Monitor },
       { label: '登录日志', path: '/login-logs', icon: Document },

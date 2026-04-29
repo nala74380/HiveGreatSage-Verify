@@ -3,16 +3,15 @@
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
  * 时间: 2026-04-30
- * 版本: V1.7.0
+ * 版本: V1.8.0
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
  *
  * 当前业务口径:
- *   - 代理管理是代理相关能力的统一入口。
- *   - 代理详情页用于承载代理统计、下级代理、授权项目、点数、流水、安全操作。
- *   - 项目管理是项目相关能力的统一入口。
- *   - 项目详情页用于承载项目基础信息、定价、准入、授权申请、授权代理等项目附属能力。
- *   - 用户数量仅作统计展示。
+ *   - 项目管理是项目相关能力统一入口。
+ *   - 项目详情页承载定价、准入、授权申请、热更新等项目能力。
+ *   - 账务中心是平台内部点数资产治理统一入口。
+ *   - /balance-transactions 保留为旧入口重定向到 /accounting。
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -131,13 +130,19 @@ const router = createRouter({
           meta: { requiresAdmin: true, title: '授权申请' },
         },
 
-        // Admin: Other
+        // Admin: Accounting
+        {
+          path: 'accounting',
+          name: 'AccountingCenter',
+          component: () => import('@/views/admin/AccountingCenter.vue'),
+          meta: { requiresAdmin: true, title: '账务中心' },
+        },
         {
           path: 'balance-transactions',
-          name: 'BalanceTransactions',
-          component: () => import('@/views/admin/BalanceTransactions.vue'),
-          meta: { requiresAdmin: true, title: '点数流水' },
+          redirect: '/accounting',
         },
+
+        // Admin: Other
         {
           path: 'updates',
           name: 'UpdateManage',

@@ -2,8 +2,8 @@ r"""
 文件位置: app/main.py
 文件名称: main.py
 作者: HiveGreatSage Dev
-日期/时间: 2026-04-16
-版本: v1.0.3
+日期/时间: 2026-04-30
+版本: v1.0.4
 功能说明:
     FastAPI 应用入口。负责：
       1. 应用生命周期管理（lifespan：启动检查 + 关闭清理）
@@ -14,10 +14,12 @@ r"""
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
 
 改进历史:
+    v1.0.4 (2026-04-30) - 注册 accounting 账务中心正式路由
     v1.0.3 (2026-04-29) - 调整 balance_agent 注册顺序，避免 /api/agents/catalog 被 /api/agents/{agent_id} 抢占
     v1.0.2 (2026-04-29) - 拆分 balance_admin / balance_agent 路由，移除 balance.router 双前缀挂载
     v1.0.1 (2026-04-25) - 注册 update_admin 路由（POST /admin/api/updates/，C06）
     v1.0.0 - 初始版本
+
 调试信息:
     启动命令（开发）：uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
     访问 API 文档：http://localhost:8000/docs
@@ -62,7 +64,6 @@ def _setup_logging() -> None:
             encoding="utf-8",
         )
 
-    # 屏蔽 uvicorn 无效 HTTP 请求警告（来自浏览器 HTTPS 探测、Windows 网络健康检查等，不影响功能）
     class _InvalidRequestFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
             return "Invalid HTTP request received" not in record.getMessage()
@@ -71,8 +72,8 @@ def _setup_logging() -> None:
         _logger = logging.getLogger(_name)
         _logger.addFilter(_InvalidRequestFilter())
 
-    # 屏蔽 SQLAlchemy SQL 语句级别输出（默认 INFO 会把所有 SQL 刷屏幕）
     _sa_log_level = getattr(logging, getattr(settings, "SQLALCHEMY_LOG_LEVEL", "WARNING"), logging.WARNING)
+
     for _sa_name in (
         "sqlalchemy",
         "sqlalchemy.engine",
@@ -171,6 +172,7 @@ app.add_middleware(
 
 # ── 路由注册 ──────────────────────────────────────────────────
 from app.routers import (
+    accounting,
     admin,
     agent_profile_admin,
     agents,
@@ -216,7 +218,12 @@ app.include_router(projects.router, prefix="/admin/api", tags=["项目管理"])
 app.include_router(update_admin.router, prefix="/admin/api/updates", tags=["热更新管理"])
 app.include_router(device_admin.router, prefix="/admin/api/devices", tags=["设备监控"])
 app.include_router(stats.router, prefix="/api/stats", tags=["统计数据"])
+
+# 旧点数管理接口：暂时保留兼容。
 app.include_router(balance_admin.router, prefix="/admin/api", tags=["点数管理"])
+
+# 新账务中心接口：后续前端应逐步切换到这里。
+app.include_router(accounting.router, prefix="/admin/api/accounting", tags=["账务中心"])
 
 app.include_router(
     project_access_admin.router,
@@ -230,7 +237,8 @@ app.include_router(
     tags=["代理业务管理"],
 )
 
-# ── 健康检查 ──────────────────────────────────────────────────
+
+# ── 健康检查 ─────────────────────────────────────────────────
 @app.get("/health", tags=["系统"])
 async def health_check():
     """服务健康检查（nginx upstream check / 部署监控使用）。"""
