@@ -2,8 +2,8 @@ r"""
 文件位置: app/services/user_service.py
 文件名称: user_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-29
-版本: V1.4.0
+日期/时间: 2026-04-30
+版本: V1.4.1
 功能说明:
     用户管理服务层。
 
@@ -16,18 +16,10 @@ r"""
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
     - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
 
-本版增强:
-    - 用户列表返回创建者信息。
-    - 用户列表/详情返回项目授权明细。
-    - 项目筛选时，只返回对应项目的授权明细。
-    - 授权明细按项目分开显示：等级、授权设备、已激活、未激活、到期时间。
-    - 支持修改/重置密码。
-    - 代理授权项目时按 Authorization 维度扣点。
-    - 授权扣点时保存 AuthorizationCharge 快照。
-    - 删除用户时自动计算返点。
-    - 新增创建者代理详情聚合能力。
-    - 新增 Admin/Agent 共用用户软删除能力。
-    - 移除代理旧账号数量限制口径。
+本版修复:
+    - 已激活设备数从 DeviceBinding 统计。
+    - LoginLog 只作为登录审计，不再作为设备名额占用依据。
+    - PC 中控登录不会再误占用安卓脚本激活名额。
 
 安全边界:
     - 不查询旧密码明文。
@@ -52,8 +44,8 @@ from app.models.main.models import (
     AgentBalance,
     AgentProjectAuth,
     Authorization,
+    DeviceBinding,
     GameProject,
-    LoginLog,
     User,
 )
 from app.schemas.user import (
@@ -108,7 +100,7 @@ async def create_user(
         username=body.username,
         password_hash=hash_password(body.password),
 
-        # 兼容旧字段，新页面不再主展示
+        # 兼容旧字段，新页面不再主展示。
         user_level=body.user_level,
         max_devices=body.max_devices,
         expired_at=body.expired_at,
@@ -143,10 +135,10 @@ async def list_users(
     查询用户列表。
 
     过滤规则:
-      - status：过滤 User.status
-      - level：过滤 Authorization.user_level
-      - project_id：过滤 Authorization.game_project_id
-      - creator_agent_id：管理员查看指定代理创建的用户
+      - status：过滤 User.status。
+      - level：过滤 Authorization.user_level。
+      - project_id：过滤 Authorization.game_project_id。
+      - creator_agent_id：管理员查看指定代理创建的用户。
     """
     query = select(User).where(User.is_deleted == False)  # noqa: E712
 
@@ -159,7 +151,6 @@ async def list_users(
     if status_filter:
         query = query.where(User.status == status_filter)
 
-    # 用户等级现在归属项目授权，因此 level 过滤走 Authorization.user_level
     if level_filter or project_id_filter:
         auth_subq = select(Authorization.user_id).where(
             Authorization.status == "active",
@@ -184,11 +175,15 @@ async def list_users(
     users = result.scalars().all()
 
     if not users:
-        return UserListResponse(users=[], total=total, page=page, page_size=page_size)
+        return UserListResponse(
+            users=[],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
 
     creator_agent_map = await _load_creator_agent_map(users, db)
 
-    # 项目筛选时，授权明细只返回对应项目；否则返回全部 active 授权
     auth_details_map = await _load_authorization_details_map(
         users=users,
         only_active=True,
@@ -203,7 +198,10 @@ async def list_users(
         .where(Authorization.user_id.in_(user_ids))
         .group_by(Authorization.user_id)
     )
-    auth_total_map = {row.user_id: row.cnt for row in auth_total_result.all()}
+    auth_total_map = {
+        row.user_id: row.cnt
+        for row in auth_total_result.all()
+    }
 
     return UserListResponse(
         users=[
@@ -263,13 +261,14 @@ async def get_user(
         authorizations=authorizations,
         authorization_count=len(authorizations),
         active_authorization_count=len([
-            a for a in authorizations
-            if a.status == "active" and not a.is_expired
+            item
+            for item in authorizations
+            if item.status == "active" and not item.is_expired
         ]),
         active_project_names=[
-            a.game_project_name
-            for a in authorizations
-            if a.status == "active" and not a.is_expired
+            item.game_project_name
+            for item in authorizations
+            if item.status == "active" and not item.is_expired
         ],
         creator_agent_username=creator_agent_username,
     )
@@ -295,7 +294,6 @@ async def update_user(
     if body.status is not None:
         user.status = body.status
 
-    # 兼容旧字段：新页面不再主使用
     if body.user_level is not None:
         if body.user_level == "tester" and admin is None:
             raise HTTPException(
@@ -313,7 +311,12 @@ async def update_user(
     await db.flush()
     await db.refresh(user)
 
-    return await get_user(user_id=user_id, db=db, admin=admin, agent=agent)
+    return await get_user(
+        user_id=user_id,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
 
 
 async def update_user_password(
@@ -429,7 +432,7 @@ async def grant_authorization(
       - 必须设置 valid_until。
       - authorized_devices 必须大于 0。
       - 授权成功前必须完成扣点。
-      - 授权扣点成功后保存 AuthorizationCharge 快照。
+      - 授权扣点成功后保存授权扣点快照。
       - 已 active 授权不允许代理用 POST 覆盖，避免账务补扣复杂化。
     """
     user = await _get_user_or_404(user_id, db)
@@ -456,14 +459,14 @@ async def grant_authorization(
                 detail="代理授权设备数必须大于 0",
             )
 
-        agent_project_auth = await db.execute(
+        agent_project_auth_result = await db.execute(
             select(AgentProjectAuth).where(
                 AgentProjectAuth.agent_id == agent.id,
                 AgentProjectAuth.project_id == body.game_project_id,
                 AgentProjectAuth.status == "active",
             )
         )
-        if not agent_project_auth.scalar_one_or_none():
+        if not agent_project_auth_result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"代理没有项目「{project.display_name}」的授权权限",
@@ -544,7 +547,7 @@ async def update_authorization(
     当前安全策略:
       - 管理员可以修改等级、设备数、到期时间、状态。
       - 代理暂不允许修改已授权项目，避免账务补扣/退款规则未定导致错账。
-      - 管理员修改授权当前不生成 AuthorizationCharge。
+      - 管理员修改授权当前不生成授权扣点快照。
     """
     if admin is None:
         raise HTTPException(
@@ -555,7 +558,11 @@ async def update_authorization(
     user = await _get_user_or_404(user_id, db)
     _assert_can_access_user(user=user, admin=admin, agent=agent)
 
-    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    auth = await _get_authorization_or_404(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+    )
     project = await _get_project_or_404(auth.game_project_id, db)
 
     if body.user_level is not None:
@@ -590,7 +597,11 @@ async def revoke_authorization(
     user = await _get_user_or_404(user_id, db)
     _assert_can_access_user(user=user, admin=admin, agent=agent)
 
-    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    auth = await _get_authorization_or_404(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+    )
     auth.status = "suspended"
     await db.flush()
 
@@ -807,7 +818,7 @@ def _user_to_response(
         created_by_display=created_by_display,
         created_by_agent_username=creator_agent_username,
 
-        # 兼容旧字段
+        # 兼容旧字段。
         user_level=user.user_level,
         max_devices=user.max_devices,
         expired_at=user.expired_at,
@@ -839,15 +850,27 @@ def _authorization_to_response(
     )
 
 
-async def _load_creator_agent_map(users: list[User], db: AsyncSession) -> dict[int, str]:
-    agent_ids = sorted({u.created_by_agent_id for u in users if u.created_by_agent_id})
+async def _load_creator_agent_map(
+    users: list[User],
+    db: AsyncSession,
+) -> dict[int, str]:
+    agent_ids = sorted({
+        user.created_by_agent_id
+        for user in users
+        if user.created_by_agent_id
+    })
+
     if not agent_ids:
         return {}
 
     result = await db.execute(
         select(Agent.id, Agent.username).where(Agent.id.in_(agent_ids))
     )
-    return {row.id: row.username for row in result.all()}
+
+    return {
+        row.id: row.username
+        for row in result.all()
+    }
 
 
 async def _load_project_activation_count_map(
@@ -855,30 +878,43 @@ async def _load_project_activation_count_map(
     db: AsyncSession,
 ) -> dict[tuple[int, int], int]:
     """
-    统计每个用户在每个项目成功登录激活过的去重设备数。
+    统计每个用户在每个项目下真实占用的激活设备数。
 
-    说明:
-      - 该统计用于用户授权明细中的 activated_devices 展示。
-      - LoginLog 是登录激活证据来源。
-      - DeviceBinding 已进入用户 × 项目 × 设备维度，但这里仍以登录成功记录表达“已激活过”。
+    核心口径:
+      - 已激活设备数必须来自 DeviceBinding。
+      - DeviceBinding 是用户 × 项目 × 设备维度。
+      - 只有 status='active' 的设备绑定才占用授权设备名额。
+      - PC 中控登录只写 LoginLog，不创建 DeviceBinding，因此不占用设备名额。
+      - LoginLog 只作为登录审计，不再作为激活设备统计来源。
+
+    修复问题:
+      旧实现按 LoginLog.success + distinct device_fingerprint 统计。
+      这会把 PC 中控登录也误算成已激活设备，导致：
+        用户列表显示已激活 1，
+        但设备详情中没有真实设备。
     """
+    if not user_ids:
+        return {}
+
     result = await db.execute(
         select(
-            LoginLog.user_id,
-            LoginLog.game_project_id,
-            func.count(func.distinct(LoginLog.device_fingerprint)).label("cnt"),
+            DeviceBinding.user_id,
+            DeviceBinding.game_project_id,
+            func.count(func.distinct(DeviceBinding.device_fingerprint)).label("cnt"),
         )
         .where(
-            LoginLog.user_id.in_(user_ids),
-            LoginLog.success == True,  # noqa: E712
-            LoginLog.device_fingerprint.is_not(None),
-            LoginLog.game_project_id.is_not(None),
+            DeviceBinding.user_id.in_(user_ids),
+            DeviceBinding.status == "active",
+            DeviceBinding.game_project_id.is_not(None),
         )
-        .group_by(LoginLog.user_id, LoginLog.game_project_id)
+        .group_by(
+            DeviceBinding.user_id,
+            DeviceBinding.game_project_id,
+        )
     )
 
     return {
-        (row.user_id, row.game_project_id): row.cnt
+        (row.user_id, row.game_project_id): int(row.cnt or 0)
         for row in result.all()
     }
 
@@ -892,7 +928,7 @@ async def _load_authorization_details_map(
     if not users:
         return {}
 
-    user_ids = [u.id for u in users]
+    user_ids = [user.id for user in users]
 
     query = (
         select(Authorization, GameProject)
@@ -916,8 +952,10 @@ async def _load_authorization_details_map(
     data: dict[int, list[AuthorizationInfo]] = {}
 
     for auth, project in rows:
-        authorized_devices = auth.authorized_devices
-        activated_devices = activation_map.get((auth.user_id, auth.game_project_id), 0)
+        authorized_devices = int(auth.authorized_devices or 0)
+        activated_devices = int(
+            activation_map.get((auth.user_id, auth.game_project_id), 0)
+        )
 
         if authorized_devices == 0:
             inactive_devices = None

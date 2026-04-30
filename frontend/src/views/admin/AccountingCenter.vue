@@ -647,11 +647,155 @@
 
         <!-- 对账检查 -->
         <el-tab-pane label="对账检查" name="reconciliation">
-          <div class="placeholder-panel">
-            <div class="placeholder-title">对账检查</div>
-            <div class="placeholder-desc">
-              对账检查用于比对 accounting_wallet 钱包快照与 accounting_ledger_entry 账本累计是否一致。数据库表已预留，后续接入对账运行接口。
-            </div>
+          <el-alert
+            title="对账检查用于比对 accounting_wallet 钱包快照与 accounting_ledger_entry 账本累计是否一致。开发期重构后，建议先初始化一次基线账本，再运行对账。"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="inner-alert"
+          />
+
+          <div class="reconcile-toolbar">
+            <el-form inline :model="reconciliationFilter">
+              <el-form-item label="代理 ID">
+                <el-input-number
+                  v-model="reconciliationFilter.agent_id"
+                  :min="1"
+                  controls-position="right"
+                  placeholder="全部"
+                  style="width:140px"
+                />
+              </el-form-item>
+
+              <el-form-item label="批次状态">
+                <el-select
+                  v-model="reconciliationFilter.status"
+                  clearable
+                  placeholder="全部"
+                  style="width:130px"
+                >
+                  <el-option label="运行中" value="running" />
+                  <el-option label="已完成" value="completed" />
+                  <el-option label="失败" value="failed" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="范围">
+                <el-select
+                  v-model="reconciliationFilter.scope_type"
+                  clearable
+                  placeholder="全部"
+                  style="width:130px"
+                >
+                  <el-option label="全部钱包" value="all" />
+                  <el-option label="单个代理" value="agent" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item>
+                <el-button
+                  type="warning"
+                  :loading="reconciliationActionLoading"
+                  @click="initReconciliationBaseline"
+                >
+                  初始化基线
+                </el-button>
+
+                <el-button
+                  type="primary"
+                  :loading="reconciliationActionLoading"
+                  @click="runReconciliation"
+                >
+                  运行对账
+                </el-button>
+
+                <el-button
+                  :loading="reconciliationLoading"
+                  @click="loadReconciliationRuns"
+                >
+                  刷新批次
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+
+          <el-table
+            v-loading="reconciliationLoading"
+            :data="reconciliationRuns"
+            stripe
+            row-key="id"
+            empty-text="暂无对账批次"
+          >
+            <el-table-column prop="id" label="ID" width="70" />
+
+            <el-table-column label="批次号" min-width="210">
+              <template #default="{ row }">
+                <span class="mono">{{ row.run_no }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="范围" width="110">
+              <template #default="{ row }">
+                <el-tag effect="plain">
+                  {{ row.scope_type === 'agent' ? '单个代理' : '全部钱包' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="代理 ID" width="100">
+              <template #default="{ row }">
+                {{ row.scope_agent_id || '—' }}
+              </template>
+            </el-table-column>
+
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <el-tag :type="reconciliationStatusTag(row.status)" effect="light">
+                  {{ reconciliationStatusLabel(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="检查结果" width="220">
+              <template #default="{ row }">
+                <span>钱包 {{ row.checked_wallets || 0 }} 个</span>
+                <span class="ok-text"> 正常 {{ row.normal_count || 0 }}</span>
+                <span class="bad-text"> 异常 {{ row.abnormal_count || 0 }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="开始时间" width="160">
+              <template #default="{ row }">
+                {{ formatDatetime(row.started_at) }}
+              </template>
+            </el-table-column>
+
+            <el-table-column label="完成时间" width="160">
+              <template #default="{ row }">
+                {{ formatDatetime(row.finished_at) }}
+              </template>
+            </el-table-column>
+
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button text size="small" type="primary" @click="openReconciliationDetail(row)">
+                  详情
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div class="pager-row">
+            <span class="total-text">共 {{ reconciliationPager.total }} 个批次</span>
+            <el-pagination
+              v-model:current-page="reconciliationPager.page"
+              v-model:page-size="reconciliationPager.pageSize"
+              :page-sizes="[20, 50, 100]"
+              layout="sizes, prev, pager, next"
+              :total="reconciliationPager.total"
+              @size-change="loadReconciliationRuns"
+              @current-change="loadReconciliationRuns"
+            />
           </div>
         </el-tab-pane>
 
@@ -740,6 +884,122 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 对账详情弹窗 -->
+    <el-dialog
+      v-model="reconciliationDetail.visible"
+      title="对账批次详情"
+      width="1080px"
+      destroy-on-close
+    >
+      <template v-if="reconciliationDetail.run">
+        <el-descriptions :column="3" border size="small" class="detail-desc">
+          <el-descriptions-item label="批次号">
+            <span class="mono">{{ reconciliationDetail.run.run_no }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="范围">
+            {{ reconciliationDetail.run.scope_type === 'agent' ? '单个代理' : '全部钱包' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            {{ reconciliationStatusLabel(reconciliationDetail.run.status) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="检查钱包">
+            {{ reconciliationDetail.run.checked_wallets || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="正常">
+            {{ reconciliationDetail.run.normal_count || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="异常">
+            {{ reconciliationDetail.run.abnormal_count || 0 }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="detail-toolbar">
+          <el-select
+            v-model="reconciliationDetail.itemStatus"
+            clearable
+            placeholder="全部明细"
+            style="width:160px"
+            @change="loadReconciliationDetail"
+          >
+            <el-option label="正常" value="normal" />
+            <el-option label="异常" value="abnormal" />
+            <el-option label="待复核" value="pending_review" />
+            <el-option label="已修正" value="fixed" />
+          </el-select>
+
+          <el-button :loading="reconciliationDetail.loading" @click="loadReconciliationDetail">
+            刷新明细
+          </el-button>
+        </div>
+
+        <el-table
+          v-loading="reconciliationDetail.loading"
+          :data="reconciliationDetail.items"
+          stripe
+          row-key="id"
+          empty-text="暂无对账明细"
+        >
+          <el-table-column label="代理" width="150">
+            <template #default="{ row }">
+              <div class="main-text">{{ row.agent_username || `ID=${row.agent_id}` }}</div>
+              <div class="sub-text">ID={{ row.agent_id }}</div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="充值余额" min-width="210">
+            <template #default="{ row }">
+              <div>快照：{{ fmtMoney(row.charged_balance_snapshot) }}</div>
+              <div class="sub-text">账本：{{ fmtMoney(row.charged_balance_calculated) }}</div>
+              <div :class="Number(row.charged_diff) === 0 ? 'ok-text' : 'bad-text'">
+                差异：{{ fmtMoney(row.charged_diff) }}
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="授信余额" min-width="210">
+            <template #default="{ row }">
+              <div>快照：{{ fmtMoney(row.credit_balance_snapshot) }}</div>
+              <div class="sub-text">账本：{{ fmtMoney(row.credit_balance_calculated) }}</div>
+              <div :class="Number(row.credit_diff) === 0 ? 'ok-text' : 'bad-text'">
+                差异：{{ fmtMoney(row.credit_diff) }}
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="冻结授信" min-width="210">
+            <template #default="{ row }">
+              <div>快照：{{ fmtMoney(row.frozen_credit_snapshot) }}</div>
+              <div class="sub-text">账本：{{ fmtMoney(row.frozen_credit_calculated) }}</div>
+              <div :class="Number(row.frozen_diff) === 0 ? 'ok-text' : 'bad-text'">
+                差异：{{ fmtMoney(row.frozen_diff) }}
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'normal' ? 'success' : 'danger'" effect="light">
+                {{ reconciliationItemStatusLabel(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="pager-row">
+          <span class="total-text">共 {{ reconciliationDetail.total }} 条明细</span>
+          <el-pagination
+            v-model:current-page="reconciliationDetail.page"
+            v-model:page-size="reconciliationDetail.pageSize"
+            :page-sizes="[50, 100, 200, 500]"
+            layout="sizes, prev, pager, next"
+            :total="reconciliationDetail.total"
+            @size-change="loadReconciliationDetail"
+            @current-change="loadReconciliationDetail"
+          />
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -749,18 +1009,26 @@
  * 名称: 账务中心
  * 作者: 蜂巢·大圣 (HiveGreatSage)
  * 时间: 2026-04-30
- * 版本: V1.0.1
+ * 版本: V1.1.0
  * 功能说明:
  *   平台内部点数资产治理入口。
  *
- * 修复说明:
- *   V1.0.1 移除局部 render/h 组件，改成纯模板稳定版，
- *   避免 Element Plus 组件解析异常导致页面主体空白。
+ * 当前已接入:
+ *   - 账务总览
+ *   - 点数账本
+ *   - 代理钱包
+ *   - 授信管理
+ *   - 授权扣点快照
+ *   - 删除返点记录
+ *   - 初始化开发期账务基线
+ *   - 运行对账
+ *   - 对账批次列表
+ *   - 对账批次详情
  */
 
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { accountingApi } from '@/api/accounting'
 import { formatDatetime } from '@/utils/format'
 
@@ -772,6 +1040,8 @@ const ledgerLoading = ref(false)
 const walletLoading = ref(false)
 const chargeLoading = ref(false)
 const refundLoading = ref(false)
+const reconciliationLoading = ref(false)
+const reconciliationActionLoading = ref(false)
 
 const loadingAny = computed(() => (
   overviewLoading.value
@@ -779,6 +1049,8 @@ const loadingAny = computed(() => (
   || walletLoading.value
   || chargeLoading.value
   || refundLoading.value
+  || reconciliationLoading.value
+  || reconciliationActionLoading.value
 ))
 
 const overview = reactive({
@@ -804,6 +1076,7 @@ const ledgerRows = ref([])
 const walletRows = ref([])
 const chargeRows = ref([])
 const refundRows = ref([])
+const reconciliationRuns = ref([])
 
 const ledgerFilter = reactive({
   entry_type: '',
@@ -826,10 +1099,17 @@ const chargeFilter = reactive({
   refund_status: '',
 })
 
+const reconciliationFilter = reactive({
+  agent_id: null,
+  status: '',
+  scope_type: '',
+})
+
 const ledgerPager = reactive({ page: 1, pageSize: 50, total: 0 })
 const walletPager = reactive({ page: 1, pageSize: 50, total: 0 })
 const chargePager = reactive({ page: 1, pageSize: 50, total: 0 })
 const refundPager = reactive({ page: 1, pageSize: 50, total: 0 })
+const reconciliationPager = reactive({ page: 1, pageSize: 50, total: 0 })
 
 const actionDialog = reactive({
   visible: false,
@@ -840,6 +1120,17 @@ const actionDialog = reactive({
     amount: 10,
     description: '',
   },
+})
+
+const reconciliationDetail = reactive({
+  visible: false,
+  loading: false,
+  run: null,
+  items: [],
+  total: 0,
+  page: 1,
+  pageSize: 100,
+  itemStatus: '',
 })
 
 const fmtMoney = (value) => Number(value || 0).toFixed(2)
@@ -918,6 +1209,34 @@ const entryTypeTag = (type) => {
     reversal: 'info',
   }
   return map[type] || 'info'
+}
+
+const reconciliationStatusLabel = (status) => {
+  const map = {
+    running: '运行中',
+    completed: '已完成',
+    failed: '失败',
+  }
+  return map[status] || status || '—'
+}
+
+const reconciliationStatusTag = (status) => {
+  const map = {
+    running: 'warning',
+    completed: 'success',
+    failed: 'danger',
+  }
+  return map[status] || 'info'
+}
+
+const reconciliationItemStatusLabel = (status) => {
+  const map = {
+    normal: '正常',
+    abnormal: '异常',
+    pending_review: '待复核',
+    fixed: '已修正',
+  }
+  return map[status] || status || '—'
 }
 
 const creditUsePercent = (row) => {
@@ -1046,6 +1365,116 @@ const loadRefunds = async () => {
   }
 }
 
+const loadReconciliationRuns = async () => {
+  reconciliationLoading.value = true
+
+  try {
+    const res = await accountingApi.reconciliationRuns(cleanParams({
+      page: reconciliationPager.page,
+      page_size: reconciliationPager.pageSize,
+      status: reconciliationFilter.status,
+      scope_type: reconciliationFilter.scope_type,
+    }))
+
+    reconciliationRuns.value = res.data.runs || []
+    reconciliationPager.total = res.data.total || 0
+  } finally {
+    reconciliationLoading.value = false
+  }
+}
+
+const initReconciliationBaseline = async () => {
+  const scopeText = reconciliationFilter.agent_id
+    ? `代理 ID=${reconciliationFilter.agent_id}`
+    : '全部钱包'
+
+  await ElMessageBox.confirm(
+    `确认初始化 ${scopeText} 的开发期账务基线？该操作具有幂等保护，重复执行不会重复写入同一钱包基线。`,
+    '初始化账务基线',
+    { type: 'warning' },
+  )
+
+  reconciliationActionLoading.value = true
+
+  try {
+    const res = await accountingApi.initReconciliationBaseline(cleanParams({
+      agent_id: reconciliationFilter.agent_id,
+    }))
+
+    ElMessage.success(
+      `基线初始化完成：新增 ${res.data.created_entries || 0} 条账本记录`,
+    )
+
+    await Promise.all([
+      loadLedger(),
+      loadReconciliationRuns(),
+    ])
+  } finally {
+    reconciliationActionLoading.value = false
+  }
+}
+
+const runReconciliation = async () => {
+  const scopeText = reconciliationFilter.agent_id
+    ? `代理 ID=${reconciliationFilter.agent_id}`
+    : '全部钱包'
+
+  await ElMessageBox.confirm(
+    `确认运行 ${scopeText} 对账？`,
+    '运行账务对账',
+    { type: 'info' },
+  )
+
+  reconciliationActionLoading.value = true
+
+  try {
+    const res = await accountingApi.runReconciliation(cleanParams({
+      agent_id: reconciliationFilter.agent_id,
+    }))
+
+    ElMessage.success(
+      `对账完成：检查 ${res.data.checked_wallets || 0} 个钱包，异常 ${res.data.abnormal_count || 0} 个`,
+    )
+
+    await loadReconciliationRuns()
+  } finally {
+    reconciliationActionLoading.value = false
+  }
+}
+
+const openReconciliationDetail = async (row) => {
+  reconciliationDetail.visible = true
+  reconciliationDetail.run = row
+  reconciliationDetail.items = []
+  reconciliationDetail.total = 0
+  reconciliationDetail.page = 1
+  reconciliationDetail.itemStatus = ''
+  await loadReconciliationDetail()
+}
+
+const loadReconciliationDetail = async () => {
+  if (!reconciliationDetail.run?.id) return
+
+  reconciliationDetail.loading = true
+
+  try {
+    const res = await accountingApi.reconciliationRunDetail(
+      reconciliationDetail.run.id,
+      cleanParams({
+        item_page: reconciliationDetail.page,
+        item_page_size: reconciliationDetail.pageSize,
+        item_status: reconciliationDetail.itemStatus,
+      }),
+    )
+
+    reconciliationDetail.run = res.data.run
+    reconciliationDetail.items = res.data.items || []
+    reconciliationDetail.total = res.data.total || 0
+  } finally {
+    reconciliationDetail.loading = false
+  }
+}
+
 const loadAll = async () => {
   await Promise.all([
     safeLoad(loadOverview, '账务总览加载失败'),
@@ -1053,6 +1482,7 @@ const loadAll = async () => {
     safeLoad(loadWallets, '代理钱包加载失败'),
     safeLoad(loadCharges, '扣点快照加载失败'),
     safeLoad(loadRefunds, '返点记录加载失败'),
+    safeLoad(loadReconciliationRuns, '对账批次加载失败'),
   ])
 }
 
@@ -1074,6 +1504,10 @@ const handleTabChange = async (tabName) => {
       safeLoad(loadCharges, '扣点快照加载失败'),
       safeLoad(loadRefunds, '返点记录加载失败'),
     ])
+  }
+
+  if (tabName === 'reconciliation') {
+    await safeLoad(loadReconciliationRuns, '对账批次加载失败')
   }
 }
 
@@ -1248,7 +1682,8 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 
-.filter-row {
+.filter-row,
+.reconcile-toolbar {
   margin-bottom: 12px;
 }
 
@@ -1271,12 +1706,14 @@ onMounted(() => {
   color: #94a3b8;
 }
 
-.amount-in {
+.amount-in,
+.ok-text {
   color: #059669;
   font-weight: 700;
 }
 
-.amount-out {
+.amount-out,
+.bad-text {
   color: #dc2626;
   font-weight: 700;
 }
@@ -1316,5 +1753,21 @@ onMounted(() => {
   color: #64748b;
   font-size: 13px;
   line-height: 1.7;
+}
+
+.mono {
+  font-family: 'Cascadia Code', monospace;
+  font-size: 12px;
+}
+
+.detail-desc {
+  margin-bottom: 14px;
+}
+
+.detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 </style>

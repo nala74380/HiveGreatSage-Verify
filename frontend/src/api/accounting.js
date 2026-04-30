@@ -3,7 +3,7 @@
  * 名称: 账务中心 API
  * 作者: 蜂巢·大圣 (HiveGreatSage)
  * 时间: 2026-04-30
- * 版本: V1.0.0
+ * 版本: V1.1.0
  * 功能说明:
  *   对接后端正式账务中心接口 /admin/api/accounting。
  *
@@ -17,6 +17,10 @@
  *   - 解冻授信
  *   - 授权扣点快照
  *   - 删除用户返点记录
+ *   - 初始化开发期账务基线
+ *   - 运行账务对账
+ *   - 对账批次列表
+ *   - 对账批次详情
  */
 
 import http from './http'
@@ -60,5 +64,21 @@ export const accountingApi = {
 
   refunds(params = {}) {
     return http.get('/admin/api/accounting/refunds', { params })
+  },
+
+  initReconciliationBaseline(params = {}) {
+    return http.post('/admin/api/accounting/reconciliation/init-baseline', null, { params })
+  },
+
+  runReconciliation(params = {}) {
+    return http.post('/admin/api/accounting/reconciliation/run', null, { params })
+  },
+
+  reconciliationRuns(params = {}) {
+    return http.get('/admin/api/accounting/reconciliation/runs', { params })
+  },
+
+  reconciliationRunDetail(runId, params = {}) {
+    return http.get(`/admin/api/accounting/reconciliation/runs/${runId}`, { params })
   },
 }

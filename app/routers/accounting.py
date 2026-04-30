@@ -3,7 +3,7 @@ r"""
 文件名称: accounting.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-04-30
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     账务中心正式路由。
 
@@ -20,21 +20,13 @@ r"""
     - 解冻授信
     - 授权扣点快照
     - 删除返点记录
-
-兼容说明:
-    旧接口仍保留:
-      /admin/api/balance-transactions
-      /admin/api/agents/{agent_id}/balance
-      /admin/api/agents/{agent_id}/recharge
-      /admin/api/agents/{agent_id}/credit
-      /admin/api/agents/{agent_id}/freeze
-      /admin/api/agents/{agent_id}/unfreeze
-
-    新前端应逐步改用:
-      /admin/api/accounting/*
+    - 初始化开发期账务基线
+    - 运行对账
+    - 对账批次列表
+    - 对账批次详情
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +39,12 @@ from app.services.accounting_query_service import (
     list_accounting_wallets,
     list_authorization_charge_snapshots,
     list_refund_records,
+)
+from app.services.accounting_reconciliation_service import (
+    get_reconciliation_run_detail,
+    initialize_reconciliation_baseline,
+    list_reconciliation_runs,
+    run_reconciliation,
 )
 from app.services.accounting_service import (
     credit_agent,
@@ -129,7 +127,6 @@ async def wallet_detail(
     if wallet:
         return wallet
 
-    # 如果尚无钱包，走写服务的 get_or_create 兼容逻辑创建空钱包并返回。
     return await get_agent_balance(agent_id, db)
 
 
@@ -236,4 +233,66 @@ async def refunds(
         agent_id=agent_id,
         user_id=user_id,
         project_id=project_id,
+    )
+
+
+@router.post("/reconciliation/init-baseline", summary="初始化开发期账务基线")
+async def reconciliation_init_baseline(
+    agent_id: int | None = Query(default=None, description="只初始化指定代理；不填则初始化全部钱包"),
+    current_admin: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    return await initialize_reconciliation_baseline(
+        db=db,
+        admin_id=current_admin.id,
+        agent_id=agent_id,
+    )
+
+
+@router.post("/reconciliation/run", summary="运行账务对账")
+async def reconciliation_run(
+    agent_id: int | None = Query(default=None, description="只对账指定代理；不填则对账全部钱包"),
+    current_admin: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    return await run_reconciliation(
+        db=db,
+        admin_id=current_admin.id,
+        agent_id=agent_id,
+    )
+
+
+@router.get("/reconciliation/runs", summary="对账批次列表")
+async def reconciliation_runs(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    status: str | None = Query(default=None, description="running/completed/failed"),
+    scope_type: str | None = Query(default=None, description="all/agent"),
+    _: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    return await list_reconciliation_runs(
+        db=db,
+        page=page,
+        page_size=page_size,
+        status=status,
+        scope_type=scope_type,
+    )
+
+
+@router.get("/reconciliation/runs/{run_id}", summary="对账批次详情")
+async def reconciliation_run_detail(
+    run_id: int,
+    item_page: int = Query(default=1, ge=1),
+    item_page_size: int = Query(default=100, ge=1, le=500),
+    item_status: str | None = Query(default=None, description="normal/abnormal/pending_review/fixed"),
+    _: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    return await get_reconciliation_run_detail(
+        db=db,
+        run_id=run_id,
+        item_page=item_page,
+        item_page_size=item_page_size,
+        item_status=item_status,
     )
