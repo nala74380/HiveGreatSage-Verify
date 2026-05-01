@@ -16,7 +16,7 @@
     </div>
 
     <el-alert
-      title="当前阶段 D 模式“公网中转 / 隧道”是主部署方式；A/B/C 模式作为附属模式保留。"
+      title="当前阶段 D 模式“公网中转 / 隧道”是主部署方式；A/B/C 模式作为附属模式保留。点击模式只切换编辑页面，保存后才真正生效。"
       type="info"
       show-icon
       :closable="false"
@@ -33,22 +33,27 @@
               <el-descriptions-item label="平台名称">
                 蜂巢·大圣 (HiveGreatSage)
               </el-descriptions-item>
+
               <el-descriptions-item label="子系统">
                 HiveGreatSage-Verify
               </el-descriptions-item>
-              <el-descriptions-item label="当前主部署模式">
+
+              <el-descriptions-item label="当前生效部署模式">
                 <el-tag type="success" effect="plain">
-                  {{ deploymentModeLabel(networkForm.deployment_mode) }}
+                  {{ deploymentModeLabel(savedMode || networkForm.deployment_mode) }}
                 </el-tag>
               </el-descriptions-item>
+
               <el-descriptions-item label="网络配置版本">
                 <span class="mono">v{{ networkForm.config_version || 1 }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="当前登录身份">
                 <el-tag :type="authStore.isAdmin ? 'danger' : 'warning'" effect="light" size="small">
                   {{ authStore.isAdmin ? '管理员' : `代理 Lv.${authStore.userInfo?.level ?? '?'}` }}
                 </el-tag>
               </el-descriptions-item>
+
               <el-descriptions-item label="当前显示时区">
                 <span class="mono">{{ settings.timezone }}</span>
               </el-descriptions-item>
@@ -60,6 +65,7 @@
         <el-tab-pane label="显示设置" name="display">
           <div class="panel">
             <div class="panel-title">显示设置</div>
+
             <el-form label-width="140px" class="settings-form">
               <el-form-item label="显示时区">
                 <el-select v-model="settings.timezone" style="width:320px" @change="onTimezoneChange">
@@ -70,18 +76,22 @@
                     <el-option label="UTC+7 曼谷 / 河内" value="Asia/Bangkok" />
                     <el-option label="UTC+5:30 孟买" value="Asia/Kolkata" />
                   </el-option-group>
+
                   <el-option-group label="欧洲">
                     <el-option label="UTC+0 伦敦（冬令时）" value="Europe/London" />
                     <el-option label="UTC+1 柏林 / 巴黎（冬令时）" value="Europe/Berlin" />
                   </el-option-group>
+
                   <el-option-group label="美洲">
                     <el-option label="UTC-5 纽约（冬令时）" value="America/New_York" />
                     <el-option label="UTC-8 洛杉矶（冬令时）" value="America/Los_Angeles" />
                   </el-option-group>
+
                   <el-option-group label="通用">
                     <el-option label="UTC+0 世界协调时" value="UTC" />
                   </el-option-group>
                 </el-select>
+
                 <span class="setting-note">当前时间：{{ currentTimePreview }}</span>
               </el-form-item>
 
@@ -96,47 +106,94 @@
 
         <!-- 网络设置 -->
         <el-tab-pane label="网络设置" name="network">
-          <div class="panel">
+          <div class="panel" v-loading="networkLoading">
             <div class="section-head">
               <div>
-                <div class="panel-title">公网入口与中转模式</div>
+                <div class="panel-title">网络设置：ABCD 部署模式</div>
                 <div class="panel-desc">
-                  当前主线是 D 模式：家庭服务器部署 Verify，公网云服务器提供稳定入口，家庭服务器主动连出建立中转 / 隧道。
+                  网络设置负责公网入口、反向代理、中转隧道、客户端连接策略和网络诊断。当前推荐 D 模式：家庭无公网 IP，公网云服务器作为稳定入口，家庭服务器主动连出。
                 </div>
               </div>
-              <el-button type="primary" :loading="savingNetwork" @click="saveNetworkSettings">
-                保存网络设置
-              </el-button>
+            </div>
+
+            <div class="mode-status-bar">
+              <div>
+                <span class="status-label">当前生效模式：</span>
+                <el-tag type="success" effect="plain">
+                  {{ deploymentModeLabel(savedMode) }}
+                </el-tag>
+              </div>
+
+              <div>
+                <span class="status-label">正在编辑模式：</span>
+                <el-tag :type="modeChanged ? 'warning' : 'info'" effect="plain">
+                  {{ deploymentModeLabel(editingMode) }}
+                </el-tag>
+              </div>
+
+              <div>
+                <span class="status-label">配置版本：</span>
+                <span class="mono">v{{ networkForm.config_version || 1 }}</span>
+              </div>
             </div>
 
             <el-alert
-              title="保存网络设置不会立即改变当前后台浏览器的请求地址；它主要用于客户端配置下发、热更新地址生成和网络诊断。"
+              v-if="modeChanged"
+              title="当前只是切换到该模式的编辑页面，尚未保存。客户端不会收到这些配置，直到点击底部“保存网络设置”。"
               type="warning"
               show-icon
               :closable="false"
               class="inner-alert"
             />
 
-            <el-form label-width="170px" class="settings-form wide" v-loading="networkLoading">
-              <el-form-item label="主部署模式">
-                <el-radio-group v-model="networkForm.deployment_mode">
-                  <el-radio-button label="relay_tunnel">D 公网中转 / 隧道</el-radio-button>
-                  <el-radio-button label="cloud_direct">A 云服务器直部署</el-radio-button>
-                  <el-radio-button label="home_direct">B 家庭宽带直连</el-radio-button>
-                  <el-radio-button label="reverse_proxy">C 公网反向代理</el-radio-button>
-                </el-radio-group>
-                <div class="setting-desc">
-                  当前建议使用 D 模式。A/B/C 保留为附属模式，便于后续切换部署形态。
-                </div>
-              </el-form-item>
+            <div class="mode-grid">
+              <button
+                v-for="mode in modeOptions"
+                :key="mode.value"
+                type="button"
+                :class="['mode-card', editingMode === mode.value ? 'active' : '']"
+                @click="editingMode = mode.value"
+              >
+                <div class="mode-code">{{ mode.code }}</div>
+                <div class="mode-name">{{ mode.name }}</div>
+                <div class="mode-desc">{{ mode.desc }}</div>
+                <el-tag
+                  v-if="mode.value === savedMode"
+                  size="small"
+                  type="success"
+                  effect="plain"
+                  class="mode-tag"
+                >
+                  当前生效
+                </el-tag>
+                <el-tag
+                  v-if="mode.value === 'relay_tunnel'"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  class="mode-tag"
+                >
+                  当前主线
+                </el-tag>
+              </button>
+            </div>
 
-              <el-divider content-position="left">公网入口配置</el-divider>
+            <component
+              :is="activeModeComponent"
+              :network-form="networkForm"
+              :url-test-loading="urlTestLoading"
+              :url-test-results="urlTestResults"
+              @test-url="testUrl"
+            />
 
+            <el-divider content-position="left">通用公网入口配置</el-divider>
+
+            <el-form label-width="170px" class="settings-form wide">
               <el-form-item label="对外 API 地址">
                 <div class="input-with-action">
                   <el-input
                     v-model="networkForm.public_api_base_url"
-                    placeholder="如：https://api.example.com"
+                    placeholder="如：https://api.example.com 或 http://1.2.3.4:8000"
                     style="width:460px"
                   />
                   <el-button
@@ -146,7 +203,9 @@
                     测试
                   </el-button>
                 </div>
-                <div class="setting-desc">PC 中控、安卓脚本和外部服务最终访问的公网 API 入口。</div>
+                <div class="setting-desc">
+                  PC 中控、安卓脚本和外部服务最终访问的公网 API 入口。D 模式下通常是云服务器入口，不是家庭服务器内网地址。
+                </div>
                 <UrlTestResult :result="urlTestResults.public_api_base_url" />
               </el-form-item>
 
@@ -154,7 +213,7 @@
                 <div class="input-with-action">
                   <el-input
                     v-model="networkForm.public_admin_base_url"
-                    placeholder="如：https://admin.example.com"
+                    placeholder="如：https://admin.example.com 或 https://api.example.com"
                     style="width:460px"
                   />
                   <el-button
@@ -181,7 +240,9 @@
                     测试
                   </el-button>
                 </div>
-                <div class="setting-desc">热更新大文件建议优先放公网云服务器 / CDN / 对象存储，避免全部走家庭隧道。</div>
+                <div class="setting-desc">
+                  热更新大文件建议优先放公网云服务器 / CDN / 对象存储。D 模式下不建议长期全部走家庭隧道。
+                </div>
                 <UrlTestResult :result="urlTestResults.public_update_base_url" />
               </el-form-item>
 
@@ -201,83 +262,11 @@
                 </div>
                 <UrlTestResult :result="urlTestResults.health_check_url" />
               </el-form-item>
+            </el-form>
 
-              <el-divider content-position="left">D 模式：公网中转 / 隧道</el-divider>
+            <el-divider content-position="left">反向代理与真实 IP</el-divider>
 
-              <el-form-item label="启用中转 / 隧道">
-                <el-switch
-                  v-model="networkForm.relay_enabled"
-                  inline-prompt
-                  active-text="启用"
-                  inactive-text="关闭"
-                />
-              </el-form-item>
-
-              <el-form-item label="中转模式">
-                <el-select v-model="networkForm.relay_mode" style="width:260px">
-                  <el-option label="FRP（现阶段推荐）" value="frp" />
-                  <el-option label="WireGuard / VPN" value="wireguard" />
-                  <el-option label="Cloudflared Tunnel" value="cloudflared" />
-                  <el-option label="自建 Gateway" value="custom_gateway" />
-                  <el-option label="手动配置" value="manual" />
-                </el-select>
-              </el-form-item>
-
-              <el-form-item label="中转公网地址">
-                <div class="input-with-action">
-                  <el-input
-                    v-model="networkForm.relay_url"
-                    placeholder="如：https://relay.example.com 或 https://api.example.com"
-                    style="width:460px"
-                  />
-                  <el-button
-                    :loading="urlTestLoading.relay_url"
-                    @click="testUrl('中转公网地址', networkForm.relay_url, 'relay_url')"
-                  >
-                    测试
-                  </el-button>
-                </div>
-                <UrlTestResult :result="urlTestResults.relay_url" />
-              </el-form-item>
-
-              <el-form-item label="中转健康检查">
-                <div class="input-with-action">
-                  <el-input
-                    v-model="networkForm.relay_health_url"
-                    placeholder="如：https://relay.example.com/health"
-                    style="width:460px"
-                  />
-                  <el-button
-                    :loading="urlTestLoading.relay_health_url"
-                    @click="testUrl('中转健康检查', networkForm.relay_health_url, 'relay_health_url')"
-                  >
-                    测试
-                  </el-button>
-                </div>
-                <UrlTestResult :result="urlTestResults.relay_health_url" />
-              </el-form-item>
-
-              <el-form-item label="家庭节点 ID">
-                <el-input v-model="networkForm.home_node_id" style="width:260px" />
-              </el-form-item>
-
-              <el-form-item label="家庭节点名称">
-                <el-input v-model="networkForm.home_node_name" style="width:260px" />
-              </el-form-item>
-
-              <el-form-item label="家庭本地 Verify">
-                <el-input
-                  v-model="networkForm.home_local_verify_url"
-                  placeholder="如：http://127.0.0.1:8000"
-                  style="width:460px"
-                />
-                <div class="setting-desc danger">
-                  仅管理员可见，不会下发给 PC 中控或安卓脚本。
-                </div>
-              </el-form-item>
-
-              <el-divider content-position="left">反向代理与真实 IP</el-divider>
-
+            <el-form label-width="170px" class="settings-form wide">
               <el-form-item label="启用反向代理">
                 <el-switch
                   v-model="networkForm.reverse_proxy_enabled"
@@ -285,6 +274,9 @@
                   active-text="启用"
                   inactive-text="关闭"
                 />
+                <div class="setting-desc">
+                  A/B/D 正式运行都建议使用 Nginx / Caddy 作为公网入口层。测试期可以不用，但不推荐长期裸露 Uvicorn。
+                </div>
               </el-form-item>
 
               <el-form-item label="反向代理地址">
@@ -321,7 +313,7 @@
                   <el-option label="不使用" value="none" />
                 </el-select>
                 <div class="setting-desc">
-                  该设置会影响登录日志真实 IP、后续风控和限流判断。
+                  该设置会影响登录日志真实 IP、后续风控和限流判断。只有来自可信代理的 Header 才应该被信任。
                 </div>
               </el-form-item>
 
@@ -344,6 +336,36 @@
                 />
               </el-form-item>
             </el-form>
+
+            <div class="network-save-footer">
+              <div class="save-footer-info">
+                <div>
+                  <span class="status-label">当前生效：</span>
+                  <strong>{{ deploymentModeLabel(savedMode) }}</strong>
+                </div>
+                <div>
+                  <span class="status-label">准备保存：</span>
+                  <strong :class="{ changed: modeChanged }">{{ deploymentModeLabel(editingMode) }}</strong>
+                </div>
+                <div>
+                  <span class="status-label">配置版本：</span>
+                  <span class="mono">v{{ networkForm.config_version || 1 }}</span>
+                </div>
+              </div>
+
+              <div class="save-footer-actions">
+                <el-button @click="resetEditingMode">
+                  回到生效模式
+                </el-button>
+                <el-button
+                  type="primary"
+                  :loading="savingNetwork"
+                  @click="saveNetworkSettings"
+                >
+                  保存网络设置
+                </el-button>
+              </div>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -357,9 +379,6 @@
                   PC 中控和安卓脚本后续可通过 /api/client/network-config 拉取这些配置，并使用版本号和备用地址进行回退。
                 </div>
               </div>
-              <el-button type="primary" :loading="savingNetwork" @click="saveNetworkSettings">
-                保存客户端连接
-              </el-button>
             </div>
 
             <el-form label-width="170px" class="settings-form wide" v-loading="networkLoading">
@@ -494,6 +513,12 @@
                   inactive-text="禁止"
                 />
               </el-form-item>
+
+              <el-form-item>
+                <el-button type="primary" :loading="savingNetwork" @click="saveNetworkSettings">
+                  保存客户端连接
+                </el-button>
+              </el-form-item>
             </el-form>
           </div>
         </el-tab-pane>
@@ -519,6 +544,7 @@
                   {{ diagnostics.status || '未知' }}
                 </el-tag>
               </el-descriptions-item>
+
               <el-descriptions-item label="服务器时间">
                 <span class="mono">{{ diagnostics.server_time || '—' }}</span>
               </el-descriptions-item>
@@ -526,6 +552,7 @@
               <el-descriptions-item label="运行环境">
                 <span class="mono">{{ diagnostics.environment || '—' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="后端时区">
                 <span class="mono">{{ diagnostics.backend_timezone || '—' }}</span>
               </el-descriptions-item>
@@ -551,6 +578,7 @@
               <el-descriptions-item label="部署模式">
                 {{ deploymentModeLabel(diagnostics.deployment_mode) }}
               </el-descriptions-item>
+
               <el-descriptions-item label="网络设置已加载">
                 {{ diagnostics.network_settings_loaded ? '是' : '否' }}
               </el-descriptions-item>
@@ -558,18 +586,23 @@
               <el-descriptions-item label="公网 API 地址">
                 <span class="mono">{{ diagnostics.public_api_base_url || '未配置' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="管理后台地址">
                 <span class="mono">{{ diagnostics.public_admin_base_url || '未配置' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="热更新地址">
                 <span class="mono">{{ diagnostics.public_update_base_url || '未配置' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="中转模式">
                 {{ diagnostics.relay_enabled ? '启用' : '关闭' }} / {{ diagnostics.relay_mode || '—' }}
               </el-descriptions-item>
+
               <el-descriptions-item label="中转地址">
                 <span class="mono">{{ diagnostics.relay_url || '未配置' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="中转健康检查">
                 <span class="mono">{{ diagnostics.relay_health_url || '未配置' }}</span>
               </el-descriptions-item>
@@ -578,6 +611,7 @@
                 {{ diagnostics.reverse_proxy_enabled ? '启用' : '关闭' }}
                 <span class="mono">{{ diagnostics.reverse_proxy_url || '' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="真实 IP Header">
                 <span class="mono">{{ diagnostics.real_ip_header || '—' }}</span>
               </el-descriptions-item>
@@ -585,6 +619,7 @@
               <el-descriptions-item label="请求来源 IP">
                 <span class="mono">{{ diagnostics.request_remote_addr || '—' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="当前选中的真实 IP">
                 <span class="mono">{{ diagnostics.selected_real_ip_value || '—' }}</span>
               </el-descriptions-item>
@@ -592,19 +627,22 @@
               <el-descriptions-item label="X-Forwarded-For">
                 <span class="mono">{{ diagnostics.x_forwarded_for || '—' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="X-Real-IP">
                 <span class="mono">{{ diagnostics.x_real_ip || '—' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="CF-Connecting-IP">
                 <span class="mono">{{ diagnostics.cf_connecting_ip || '—' }}</span>
               </el-descriptions-item>
+
               <el-descriptions-item label="可信代理校验">
                 {{ diagnostics.trusted_proxy_enabled ? '启用' : '关闭' }}
               </el-descriptions-item>
             </el-descriptions>
 
             <el-alert
-              title="注意：Header 展示用于诊断真实 IP 传递情况。是否真正信任这些 Header，还需要配合可信代理 IP 规则，后续会继续完善。"
+              title="注意：Header 展示用于诊断真实 IP 传递情况。是否真正信任这些 Header，还需要配合可信代理 IP 规则。"
               type="warning"
               show-icon
               :closable="false"
@@ -679,6 +717,10 @@
                 <span class="mono">v{{ networkForm.config_version || 1 }}</span>
               </div>
               <div class="about-row">
+                <span class="about-label">当前生效模式</span>
+                <span>{{ deploymentModeLabel(savedMode) }}</span>
+              </div>
+              <div class="about-row">
                 <span class="about-label">当前登录身份</span>
                 <el-tag :type="authStore.isAdmin ? 'danger' : 'warning'" effect="light" size="small">
                   {{ authStore.isAdmin ? '管理员' : `代理 Lv.${authStore.userInfo?.level ?? '?'}` }}
@@ -697,15 +739,18 @@
  * 文件位置: src/views/admin/SettingsView.vue
  * 名称: 系统设置
  * 作者: 蜂巢·大圣 (HiveGreatSage)
- * 时间: 2026-04-30
- * 版本: V2.1.0
+ * 时间: 2026-05-01
+ * 版本: V2.2.0
  * 功能说明:
  *   平台级系统设置入口。
  *
  * 本版重点:
- *   1. 增加 URL 连通性测试。
- *   2. 增强运行诊断。
- *   3. 展示数据库 / Redis / 请求 Header / 真实 IP 诊断信息。
+ *   1. 网络设置改为 ABCD 模式化页面。
+ *   2. 点击模式只切换编辑态，不立即写入后端。
+ *   3. 保存按钮移动到底部，保存后才真正切换 deployment_mode。
+ *   4. A 模式说明有域名 / 无域名公网 IP 两种配置。
+ *   5. B 模式说明家庭宽带直连与 Nginx/Caddy 的关系。
+ *   6. D 模式明确家庭无公网 IP，当前策略为 relay_only，不做真正直连。
  */
 
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
@@ -745,6 +790,275 @@ const UrlTestResult = defineComponent({
   },
 })
 
+const CloudDirectModePanel = defineComponent({
+  name: 'CloudDirectModePanel',
+  props: {
+    networkForm: { type: Object, required: true },
+    urlTestLoading: { type: Object, required: true },
+    urlTestResults: { type: Object, required: true },
+  },
+  emits: ['test-url'],
+  setup(props, { emit }) {
+    return () => h('div', { class: 'mode-panel' }, [
+      h('div', { class: 'mode-panel-title' }, 'A 模式：云服务器直接部署'),
+      h('div', { class: 'mode-flow' }, [
+        'PC 中控 / 安卓脚本 / 管理后台',
+        h('span', ' → '),
+        '云服务器公网入口',
+        h('span', ' → '),
+        'Nginx / Caddy',
+        h('span', ' → '),
+        'Verify 后端',
+        h('span', ' → '),
+        'PostgreSQL / Redis',
+      ]),
+      h('div', { class: 'mode-text' }, [
+        h('p', 'A 模式表示 Verify 主服务、数据库、Redis 都部署在云服务器上。它是中后期正式运行最稳定、链路最短的模式。'),
+        h('p', 'A 模式需要区分“有域名”和“无域名公网 IP”两种情况：'),
+      ]),
+      h('div', { class: 'mode-two-cols' }, [
+        h('div', { class: 'mode-info-box' }, [
+          h('h4', 'A1：有域名，推荐正式部署'),
+          h('p', '推荐结构：域名 HTTPS → Nginx / Caddy → 127.0.0.1:8000 → Verify。'),
+          h('p', '示例：public_api_base_url = https://api.example.com'),
+          h('p', '优点：支持 HTTPS、证书、访问日志、限流、静态资源、后续扩展。'),
+        ]),
+        h('div', { class: 'mode-info-box warning' }, [
+          h('h4', 'A2：无域名，仅公网 IP'),
+          h('p', '可以临时使用 http://公网IP:8000 或 http://公网IP。'),
+          h('p', '仅建议开发、内测、临时验证使用。'),
+          h('p', '正式运行不建议裸露 Uvicorn 端口，仍建议使用 Nginx / Caddy 做入口。'),
+        ]),
+      ]),
+      h('div', { class: 'mode-risk' }, [
+        h('strong', '风险提示：'),
+        h('span', ' PostgreSQL / Redis 不允许暴露公网；无域名无 HTTPS 的方式不适合正式生产；热更新大文件后期建议迁移到对象存储或 CDN。'),
+      ]),
+    ])
+  },
+})
+
+const HomeDirectModePanel = defineComponent({
+  name: 'HomeDirectModePanel',
+  props: {
+    networkForm: { type: Object, required: true },
+    urlTestLoading: { type: Object, required: true },
+    urlTestResults: { type: Object, required: true },
+  },
+  emits: ['test-url'],
+  setup() {
+    return () => h('div', { class: 'mode-panel' }, [
+      h('div', { class: 'mode-panel-title' }, 'B 模式：家庭宽带直连'),
+      h('div', { class: 'mode-flow' }, [
+        'PC 中控 / 安卓脚本 / 管理后台',
+        h('span', ' → '),
+        '家庭公网 IP / DDNS',
+        h('span', ' → '),
+        '路由器端口映射',
+        h('span', ' → '),
+        '家庭服务器 Nginx / Caddy',
+        h('span', ' → '),
+        'Verify',
+      ]),
+      h('div', { class: 'mode-text' }, [
+        h('p', 'B 模式要求家庭宽带具备真正可访问的公网 IPv4，或者公网 IPv6。'),
+        h('p', '如果路由器 WAN IP 与外网查询 IP 不一致，大概率是 CGNAT，B 模式不可用，应使用 D 模式。'),
+      ]),
+      h('div', { class: 'mode-two-cols' }, [
+        h('div', { class: 'mode-info-box' }, [
+          h('h4', '是否需要 Nginx / Caddy？'),
+          h('p', '技术上可以不用，例如公网IP:8000 → 路由器端口映射 → Verify。'),
+          h('p', '但实际强烈建议使用 Nginx / Caddy，统一 80/443、HTTPS、日志、反代和后续静态资源。'),
+        ]),
+        h('div', { class: 'mode-info-box warning' }, [
+          h('h4', '使用前置检查'),
+          h('p', '1. 家庭宽带是否有公网 IP / IPv6？'),
+          h('p', '2. 是否完成路由器端口映射？'),
+          h('p', '3. 是否配置 DDNS？'),
+          h('p', '4. 是否能稳定访问 /health？'),
+        ]),
+      ]),
+      h('div', { class: 'mode-risk' }, [
+        h('strong', '风险提示：'),
+        h('span', ' 家庭断电、宽带重拨、IP 变化、运营商封端口都会导致服务不可用。家庭无公网 IP 时不要选择 B。'),
+      ]),
+    ])
+  },
+})
+
+const ReverseProxyModePanel = defineComponent({
+  name: 'ReverseProxyModePanel',
+  props: {
+    networkForm: { type: Object, required: true },
+    urlTestLoading: { type: Object, required: true },
+    urlTestResults: { type: Object, required: true },
+  },
+  emits: ['test-url'],
+  setup() {
+    return () => h('div', { class: 'mode-panel' }, [
+      h('div', { class: 'mode-panel-title' }, 'C 模式：公网服务器反向代理'),
+      h('div', { class: 'mode-flow' }, [
+        'PC 中控 / 安卓脚本 / 管理后台',
+        h('span', ' → '),
+        '云服务器 Nginx / Caddy',
+        h('span', ' → '),
+        '家庭服务器源站',
+        h('span', ' → '),
+        'Verify',
+      ]),
+      h('div', { class: 'mode-text' }, [
+        h('p', 'C 模式表示客户端只访问云服务器，云服务器再反向代理到家庭服务器 Verify。'),
+        h('p', '它的关键前提是：云服务器必须能够访问家庭服务器源站。'),
+      ]),
+      h('div', { class: 'mode-two-cols' }, [
+        h('div', { class: 'mode-info-box' }, [
+          h('h4', 'C 模式成立条件'),
+          h('p', '1. 家庭服务器有公网 IP / DDNS；或'),
+          h('p', '2. 云服务器和家庭服务器处于同一 VPN / WireGuard / Tailscale / ZeroTier 网络；或'),
+          h('p', '3. 家庭服务器已经暴露出云服务器可访问的源站地址。'),
+        ]),
+        h('div', { class: 'mode-info-box danger' }, [
+          h('h4', '重要边界'),
+          h('p', '普通 Nginx / Caddy 反向代理不能穿透 CGNAT。'),
+          h('p', '如果家庭无公网 IP，且没有 VPN / 隧道，C 模式不能单独成立。'),
+          h('p', '这种情况应使用 D 模式。'),
+        ]),
+      ]),
+      h('div', { class: 'mode-risk' }, [
+        h('strong', '风险提示：'),
+        h('span', ' 云服务器到家庭源站不可达时，公网入口会出现 502 / 504；真实 IP Header 必须正确配置。'),
+      ]),
+    ])
+  },
+})
+
+const RelayTunnelModePanel = defineComponent({
+  name: 'RelayTunnelModePanel',
+  props: {
+    networkForm: { type: Object, required: true },
+    urlTestLoading: { type: Object, required: true },
+    urlTestResults: { type: Object, required: true },
+  },
+  emits: ['test-url'],
+  setup(props, { emit }) {
+    return () => h('div', { class: 'mode-panel' }, [
+      h('div', { class: 'mode-panel-title' }, 'D 模式：公网中转 / 隧道模式（当前主线）'),
+      h('div', { class: 'mode-flow' }, [
+        'PC 中控 / 安卓脚本 / 管理后台',
+        h('span', ' → '),
+        '公网云服务器',
+        h('span', ' → '),
+        '中转 / 隧道',
+        h('span', ' ← '),
+        '家庭服务器主动连出',
+        h('span', ' → '),
+        '家庭 Verify',
+      ]),
+      h('div', { class: 'mode-text' }, [
+        h('p', 'D 模式已确认前提：家庭无公网 IP。外部客户端不能主动访问家庭服务器，因此必须由家庭服务器主动连接公网云服务器。'),
+        h('p', '当前阶段建议固定为 relay_only：PC 中控 / 安卓脚本永远访问公网云服务器入口，公网云服务器再通过隧道访问家庭 Verify。'),
+        h('p', '在家庭无公网 IP 的前提下，客户端不能真正直连家庭 Verify。所谓“直连”只能是直连公网云服务器入口，链路内部仍然经过中转 / 隧道。'),
+      ]),
+      h('div', { class: 'mode-two-cols' }, [
+        h('div', { class: 'mode-info-box' }, [
+          h('h4', '推荐落地：FRP + 云 Nginx'),
+          h('p', '客户端 → https://api.example.com → 云 Nginx / Caddy → frps/frpc → 家庭 Verify。'),
+          h('p', '适合当前阶段快速落地，家庭服务器不需要公网 IP。'),
+        ]),
+        h('div', { class: 'mode-info-box' }, [
+          h('h4', '中期方案：WireGuard + 云 Nginx'),
+          h('p', '云服务器和家庭服务器组成虚拟内网，云 Nginx 反代到家庭节点虚拟 IP。'),
+          h('p', '更适合中期稳定运行，但初始配置比 FRP 更复杂。'),
+        ]),
+      ]),
+      h('el-form', { labelWidth: '170px', class: 'settings-form wide inline-form' }, {
+        default: () => [
+          h('el-divider', { contentPosition: 'left' }, () => 'D 模式：中转 / 家庭节点配置'),
+          h('el-form-item', { label: '启用中转 / 隧道' }, () => [
+            h('el-switch', {
+              modelValue: props.networkForm.relay_enabled,
+              'onUpdate:modelValue': (v) => { props.networkForm.relay_enabled = v },
+              inlinePrompt: true,
+              activeText: '启用',
+              inactiveText: '关闭',
+            }),
+          ]),
+          h('el-form-item', { label: '中转模式' }, () => [
+            h('el-select', {
+              modelValue: props.networkForm.relay_mode,
+              'onUpdate:modelValue': (v) => { props.networkForm.relay_mode = v },
+              style: 'width:260px',
+            }, () => [
+              h('el-option', { label: 'FRP（现阶段推荐）', value: 'frp' }),
+              h('el-option', { label: 'WireGuard / VPN', value: 'wireguard' }),
+              h('el-option', { label: 'Cloudflared Tunnel', value: 'cloudflared' }),
+              h('el-option', { label: '自建 Gateway', value: 'custom_gateway' }),
+              h('el-option', { label: '手动配置', value: 'manual' }),
+            ]),
+          ]),
+          h('el-form-item', { label: '中转公网地址' }, () => [
+            h('div', { class: 'input-with-action' }, [
+              h('el-input', {
+                modelValue: props.networkForm.relay_url,
+                'onUpdate:modelValue': (v) => { props.networkForm.relay_url = v },
+                placeholder: '如：https://relay.example.com 或 https://api.example.com',
+                style: 'width:460px',
+              }),
+              h('el-button', {
+                loading: props.urlTestLoading.relay_url,
+                onClick: () => emit('test-url', '中转公网地址', props.networkForm.relay_url, 'relay_url'),
+              }, () => '测试'),
+            ]),
+            h(UrlTestResult, { result: props.urlTestResults.relay_url }),
+          ]),
+          h('el-form-item', { label: '中转健康检查' }, () => [
+            h('div', { class: 'input-with-action' }, [
+              h('el-input', {
+                modelValue: props.networkForm.relay_health_url,
+                'onUpdate:modelValue': (v) => { props.networkForm.relay_health_url = v },
+                placeholder: '如：https://relay.example.com/health',
+                style: 'width:460px',
+              }),
+              h('el-button', {
+                loading: props.urlTestLoading.relay_health_url,
+                onClick: () => emit('test-url', '中转健康检查', props.networkForm.relay_health_url, 'relay_health_url'),
+              }, () => '测试'),
+            ]),
+            h(UrlTestResult, { result: props.urlTestResults.relay_health_url }),
+          ]),
+          h('el-form-item', { label: '家庭节点 ID' }, () => [
+            h('el-input', {
+              modelValue: props.networkForm.home_node_id,
+              'onUpdate:modelValue': (v) => { props.networkForm.home_node_id = v },
+              style: 'width:260px',
+            }),
+          ]),
+          h('el-form-item', { label: '家庭节点名称' }, () => [
+            h('el-input', {
+              modelValue: props.networkForm.home_node_name,
+              'onUpdate:modelValue': (v) => { props.networkForm.home_node_name = v },
+              style: 'width:260px',
+            }),
+          ]),
+          h('el-form-item', { label: '家庭本地 Verify' }, () => [
+            h('el-input', {
+              modelValue: props.networkForm.home_local_verify_url,
+              'onUpdate:modelValue': (v) => { props.networkForm.home_local_verify_url = v },
+              placeholder: '如：http://127.0.0.1:8000',
+              style: 'width:460px',
+            }),
+            h('div', { class: 'setting-desc danger' }, '仅管理员可见，不会下发给 PC 中控或安卓脚本。'),
+          ]),
+        ],
+      }),
+      h('div', { class: 'mode-risk' }, [
+        h('strong', '当前策略：'),
+        h('span', ' 家庭无公网 IP 时，不做客户端真正直连家庭 Verify。D 模式当前应按 relay_only 运行，公网云服务器入口必须长期保留。'),
+      ]),
+    ])
+  },
+})
+
 const settings = useSettingsStore()
 const authStore = useAuthStore()
 
@@ -756,6 +1070,9 @@ const savingNetwork = ref(false)
 const diagnosticsLoading = ref(false)
 
 const loadingAny = computed(() => networkLoading.value || savingNetwork.value || diagnosticsLoading.value)
+
+const savedMode = ref('relay_tunnel')
+const editingMode = ref('relay_tunnel')
 
 const networkForm = reactive({
   deployment_mode: 'relay_tunnel',
@@ -835,6 +1152,46 @@ const urlTestResults = reactive({})
 const now = ref(new Date())
 let timer = null
 
+const modeOptions = [
+  {
+    value: 'cloud_direct',
+    code: 'A',
+    name: '云服务器直接部署',
+    desc: 'Verify、数据库、Redis 部署在云服务器。支持有域名或仅公网 IP 两种入口。',
+  },
+  {
+    value: 'home_direct',
+    code: 'B',
+    name: '家庭宽带直连',
+    desc: '家庭宽带必须有公网 IP / IPv6，并完成端口映射或 DDNS。',
+  },
+  {
+    value: 'reverse_proxy',
+    code: 'C',
+    name: '公网服务器反向代理',
+    desc: '客户端访问云服务器，云服务器主动访问家庭源站。不能单独穿透 CGNAT。',
+  },
+  {
+    value: 'relay_tunnel',
+    code: 'D',
+    name: '公网中转 / 隧道',
+    desc: '家庭无公网 IP 时的主线方案。家庭服务器主动连出，公网云服务器作为入口。',
+  },
+]
+
+const modeChanged = computed(() => savedMode.value !== editingMode.value)
+
+const activeModeComponent = computed(() => {
+  const map = {
+    cloud_direct: CloudDirectModePanel,
+    home_direct: HomeDirectModePanel,
+    reverse_proxy: ReverseProxyModePanel,
+    relay_tunnel: RelayTunnelModePanel,
+  }
+
+  return map[editingMode.value] || RelayTunnelModePanel
+})
+
 const currentTimePreview = computed(() => {
   return now.value.toLocaleString('zh-CN', {
     timeZone: settings.timezone,
@@ -876,6 +1233,9 @@ const loadNetworkSettings = async () => {
     const res = await systemSettingsApi.getNetworkSettings()
     Object.assign(networkForm, res.data || {})
 
+    savedMode.value = networkForm.deployment_mode || 'relay_tunnel'
+    editingMode.value = savedMode.value
+
     backupApiUrlsText.value = joinLines(networkForm.backup_api_urls)
     trustedProxyIpsText.value = joinLines(networkForm.trusted_proxy_ips)
   } finally {
@@ -886,16 +1246,21 @@ const loadNetworkSettings = async () => {
 const buildNetworkPayload = () => {
   return {
     ...networkForm,
+    deployment_mode: editingMode.value,
     backup_api_urls: splitLines(backupApiUrlsText.value),
     trusted_proxy_ips: splitLines(trustedProxyIpsText.value),
   }
 }
 
 const saveNetworkSettings = async () => {
+  const message = modeChanged.value
+    ? `确认保存网络设置，并将当前生效模式从「${deploymentModeLabel(savedMode.value)}」切换为「${deploymentModeLabel(editingMode.value)}」？`
+    : '确认保存系统网络设置？保存后会更新客户端网络配置版本，但不会立即改变当前后台浏览器的请求地址。'
+
   await ElMessageBox.confirm(
-    '确认保存系统网络设置？保存后会更新客户端网络配置版本，但不会立即改变当前后台浏览器的请求地址。',
+    message,
     '保存网络设置',
-    { type: 'warning' },
+    { type: modeChanged.value ? 'warning' : 'info' },
   )
 
   savingNetwork.value = true
@@ -905,6 +1270,10 @@ const saveNetworkSettings = async () => {
     const res = await systemSettingsApi.updateNetworkSettings(payload)
 
     Object.assign(networkForm, res.data || {})
+
+    savedMode.value = networkForm.deployment_mode || editingMode.value
+    editingMode.value = savedMode.value
+
     backupApiUrlsText.value = joinLines(networkForm.backup_api_urls)
     trustedProxyIpsText.value = joinLines(networkForm.trusted_proxy_ips)
 
@@ -912,6 +1281,11 @@ const saveNetworkSettings = async () => {
   } finally {
     savingNetwork.value = false
   }
+}
+
+const resetEditingMode = () => {
+  editingMode.value = savedMode.value
+  ElMessage.info('已回到当前生效模式的编辑页面')
 }
 
 const testUrl = async (targetName, url, resultKey) => {
@@ -1074,6 +1448,10 @@ onUnmounted(() => {
   max-width: 980px;
 }
 
+.inline-form {
+  margin-top: 12px;
+}
+
 .input-with-action {
   display: flex;
   align-items: center;
@@ -1096,6 +1474,207 @@ onUnmounted(() => {
 
 .setting-desc.danger {
   color: #dc2626;
+}
+
+.mode-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.status-label {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mode-card {
+  position: relative;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px 14px 16px;
+  cursor: pointer;
+  transition: all .15s ease;
+  min-height: 130px;
+}
+
+.mode-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, .08);
+}
+
+.mode-card.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, .12);
+}
+
+.mode-code {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.mode-name {
+  color: #1e293b;
+  font-size: 14px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.mode-desc {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mode-tag {
+  margin-top: 8px;
+  margin-right: 6px;
+}
+
+.mode-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.mode-panel-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 10px;
+}
+
+.mode-flow {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+
+.mode-flow span {
+  color: #93c5fd;
+}
+
+.mode-text {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.mode-text p {
+  margin: 6px 0;
+}
+
+.mode-two-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.mode-info-box {
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.mode-info-box.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.mode-info-box.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.mode-info-box h4 {
+  margin: 0 0 8px;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.mode-info-box p {
+  margin: 4px 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mode-risk {
+  border-left: 4px solid #f59e0b;
+  background: #fffbeb;
+  padding: 10px 12px;
+  color: #78350f;
+  font-size: 12px;
+  line-height: 1.7;
+  border-radius: 8px;
+}
+
+.network-save-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin-top: 22px;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(8px);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 -4px 16px rgba(15, 23, 42, .08);
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.save-footer-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  color: #334155;
+  font-size: 13px;
+}
+
+.save-footer-info .changed {
+  color: #d97706;
+}
+
+.save-footer-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .url-test-result {
@@ -1191,5 +1770,20 @@ onUnmounted(() => {
   color: #475569;
   font-size: 13px;
   font-weight: 700;
+}
+
+@media (max-width: 1200px) {
+  .mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mode-two-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .network-save-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

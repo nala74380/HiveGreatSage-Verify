@@ -2,8 +2,8 @@ r"""
 文件位置: app/services/system_setting_service.py
 文件名称: system_setting_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-30
-版本: V1.1.0
+日期/时间: 2026-05-01
+版本: V1.2.0
 功能说明:
     系统设置服务层。
 
@@ -15,9 +15,17 @@ r"""
     - URL 连通性测试
     - 运行诊断
 
+本版改进:
+    V1.2.0:
+        - 增加 D 模式连接策略字段。
+        - 默认 route_strategy = relay_only。
+        - 默认 direct_enabled = false。
+        - 客户端 network-config 下发 route_strategy / direct_* 字段。
+
 设计边界:
     - 本服务只管理运行期业务配置。
     - 不管理 DATABASE_URL / REDIS_URL / SECRET_KEY / JWT 密钥等部署级配置。
+    - D 模式当前默认用于家庭无公网 IP 场景，因此不默认开启直连。
 """
 
 import asyncio
@@ -67,6 +75,17 @@ NETWORK_DEFAULTS: dict[str, tuple[Any, str, str]] = {
     "home_node_id": ("home-main-001", "string", "家庭服务器节点 ID"),
     "home_node_name": ("家庭主节点", "string", "家庭服务器节点名称"),
     "home_local_verify_url": ("http://127.0.0.1:8000", "string", "家庭本地 Verify 地址"),
+
+    # D 模式连接策略。
+    # 当前前提：家庭无公网 IP，因此默认 relay_only。
+    "route_strategy": ("relay_only", "string", "D 模式路由策略"),
+    "direct_enabled": (False, "bool", "是否启用直连候选地址"),
+    "direct_candidate_urls": ([], "json", "直连候选 API 地址列表"),
+    "direct_health_url": ("", "string", "直连健康检查地址"),
+    "direct_min_success_count": (2, "int", "直连切换前最小连续成功次数"),
+    "direct_failback_threshold": (2, "int", "直连失败回退中转的阈值"),
+    "relay_keepalive_after_direct": (True, "bool", "直连后是否保持中转作为控制面"),
+    "preferred_route": ("relay", "string", "优先线路：relay/direct/auto"),
 
     "client_config_enabled": (True, "bool", "是否启用客户端网络配置下发"),
     "config_version": (1, "int", "客户端网络配置版本号"),
@@ -261,16 +280,28 @@ async def get_client_network_config(db: AsyncSession) -> ClientNetworkConfigResp
     return ClientNetworkConfigResponse(
         config_version=network.config_version,
         deployment_mode=network.deployment_mode,
+
         primary_api_url=primary_api_url,
         pc_client_api_url=network.pc_client_api_url or primary_api_url,
         android_client_api_url=network.android_client_api_url or primary_api_url,
         backup_api_urls=network.backup_api_urls,
+
         timeout_seconds=network.client_timeout_seconds,
         retry_count=network.client_retry_count,
         heartbeat_interval_seconds=network.heartbeat_interval_seconds,
+
         relay_enabled=network.relay_enabled,
         relay_mode=network.relay_mode,
         relay_url=network.relay_url,
+
+        route_strategy=network.route_strategy,
+        direct_enabled=network.direct_enabled,
+        direct_candidate_urls=network.direct_candidate_urls,
+        direct_health_url=network.direct_health_url,
+        direct_min_success_count=network.direct_min_success_count,
+        direct_failback_threshold=network.direct_failback_threshold,
+        relay_keepalive_after_direct=network.relay_keepalive_after_direct,
+        preferred_route=network.preferred_route,
     )
 
 
@@ -446,6 +477,7 @@ async def get_runtime_diagnostics(
 
         network_settings_loaded=True,
         deployment_mode=network.deployment_mode,
+
         public_api_base_url=network.public_api_base_url,
         public_admin_base_url=network.public_admin_base_url,
         public_update_base_url=network.public_update_base_url,
@@ -454,6 +486,12 @@ async def get_runtime_diagnostics(
         relay_mode=network.relay_mode,
         relay_url=network.relay_url,
         relay_health_url=network.relay_health_url,
+
+        route_strategy=network.route_strategy,
+        direct_enabled=network.direct_enabled,
+        direct_candidate_urls=network.direct_candidate_urls,
+        direct_health_url=network.direct_health_url,
+        preferred_route=network.preferred_route,
 
         reverse_proxy_enabled=network.reverse_proxy_enabled,
         reverse_proxy_url=network.reverse_proxy_url,
