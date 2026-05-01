@@ -3,7 +3,7 @@ r"""
 文件名称: main.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-30
-版本: v1.0.4
+版本: v1.0.5
 功能说明:
     FastAPI 应用入口。负责：
       1. 应用生命周期管理（lifespan：启动检查 + 关闭清理）
@@ -14,6 +14,7 @@ r"""
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
 
 改进历史:
+    v1.0.5 (2026-04-30) - 注册 system_settings 系统设置路由与客户端 network-config 路由
     v1.0.4 (2026-04-30) - 注册 accounting 账务中心正式路由
     v1.0.3 (2026-04-29) - 调整 balance_agent 注册顺序，避免 /api/agents/catalog 被 /api/agents/{agent_id} 抢占
     v1.0.2 (2026-04-29) - 拆分 balance_admin / balance_agent 路由，移除 balance.router 双前缀挂载
@@ -186,6 +187,7 @@ from app.routers import (
     project_access_agent,
     projects,
     stats,
+    system_settings,
     update,
     update_admin,
     users,
@@ -193,6 +195,9 @@ from app.routers import (
 
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(users.router, prefix="/api/users", tags=["用户管理"])
+
+# 客户端公开配置接口：PC 中控 / 安卓脚本后续可拉取。
+app.include_router(system_settings.client_router, prefix="/api/client", tags=["客户端配置"])
 
 # 注意：
 # balance_agent 必须在 agents.router 之前注册。
@@ -218,6 +223,9 @@ app.include_router(projects.router, prefix="/admin/api", tags=["项目管理"])
 app.include_router(update_admin.router, prefix="/admin/api/updates", tags=["热更新管理"])
 app.include_router(device_admin.router, prefix="/admin/api/devices", tags=["设备监控"])
 app.include_router(stats.router, prefix="/api/stats", tags=["统计数据"])
+
+# 系统设置。
+app.include_router(system_settings.admin_router, prefix="/admin/api/system-settings", tags=["系统设置"])
 
 # 旧点数管理接口：暂时保留兼容。
 app.include_router(balance_admin.router, prefix="/admin/api", tags=["点数管理"])
