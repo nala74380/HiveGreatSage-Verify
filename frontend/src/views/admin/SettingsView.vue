@@ -29,6 +29,7 @@
         <el-tab-pane label="基础信息" name="basic">
           <div class="panel">
             <div class="panel-title">平台基础信息</div>
+
             <el-descriptions :column="2" border size="small">
               <el-descriptions-item label="平台名称">
                 蜂巢·大圣 (HiveGreatSage)
@@ -157,6 +158,7 @@
                 <div class="mode-code">{{ mode.code }}</div>
                 <div class="mode-name">{{ mode.name }}</div>
                 <div class="mode-desc">{{ mode.desc }}</div>
+
                 <el-tag
                   v-if="mode.value === savedMode"
                   size="small"
@@ -166,6 +168,7 @@
                 >
                   当前生效
                 </el-tag>
+
                 <el-tag
                   v-if="mode.value === 'relay_tunnel'"
                   size="small"
@@ -178,13 +181,372 @@
               </button>
             </div>
 
-            <component
-              :is="activeModeComponent"
-              :network-form="networkForm"
-              :url-test-loading="urlTestLoading"
-              :url-test-results="urlTestResults"
-              @test-url="testUrl"
-            />
+            <!-- A 模式 -->
+            <div v-if="editingMode === 'cloud_direct'" class="mode-panel">
+              <div class="mode-panel-title">A 模式：云服务器直接部署</div>
+
+              <div class="mode-flow">
+                PC 中控 / 安卓脚本 / 管理后台
+                <span> → </span>
+                云服务器公网入口
+                <span> → </span>
+                Nginx / Caddy
+                <span> → </span>
+                Verify 后端
+                <span> → </span>
+                PostgreSQL / Redis
+              </div>
+
+              <div class="mode-text">
+                <p>A 模式表示 Verify 主服务、数据库、Redis 都部署在云服务器上。它是中后期正式运行最稳定、链路最短的模式。</p>
+                <p>A 模式需要区分“有域名”和“无域名公网 IP”两种情况。</p>
+              </div>
+
+              <div class="mode-two-cols">
+                <div class="mode-info-box">
+                  <h4>A1：有域名，推荐正式部署</h4>
+                  <p>推荐结构：域名 HTTPS → Nginx / Caddy → 127.0.0.1:8000 → Verify。</p>
+                  <p>示例：public_api_base_url = https://api.example.com</p>
+                  <p>优点：支持 HTTPS、证书、访问日志、限流、静态资源、后续扩展。</p>
+                </div>
+
+                <div class="mode-info-box warning">
+                  <h4>A2：无域名，仅公网 IP</h4>
+                  <p>可以临时使用 http://公网IP:8000 或 http://公网IP。</p>
+                  <p>仅建议开发、内测、临时验证使用。</p>
+                  <p>正式运行不建议裸露 Uvicorn 端口，仍建议使用 Nginx / Caddy 做入口。</p>
+                </div>
+              </div>
+
+              <div class="mode-risk">
+                <strong>风险提示：</strong>
+                PostgreSQL / Redis 不允许暴露公网；无域名无 HTTPS 的方式不适合正式生产；热更新大文件后期建议迁移到对象存储或 CDN。
+              </div>
+            </div>
+
+            <!-- B 模式 -->
+            <div v-if="editingMode === 'home_direct'" class="mode-panel">
+              <div class="mode-panel-title">B 模式：家庭宽带直连</div>
+
+              <div class="mode-flow">
+                PC 中控 / 安卓脚本 / 管理后台
+                <span> → </span>
+                家庭公网 IP / DDNS
+                <span> → </span>
+                路由器端口映射
+                <span> → </span>
+                家庭服务器 Nginx / Caddy
+                <span> → </span>
+                Verify
+              </div>
+
+              <div class="mode-text">
+                <p>B 模式要求家庭宽带具备真正可访问的公网 IPv4，或者公网 IPv6。</p>
+                <p>如果路由器 WAN IP 与外网查询 IP 不一致，大概率是 CGNAT，B 模式不可用，应使用 D 模式。</p>
+              </div>
+
+              <div class="mode-two-cols">
+                <div class="mode-info-box">
+                  <h4>是否需要 Nginx / Caddy？</h4>
+                  <p>技术上可以不用，例如公网IP:8000 → 路由器端口映射 → Verify。</p>
+                  <p>但实际强烈建议使用 Nginx / Caddy，统一 80/443、HTTPS、日志、反代和后续静态资源。</p>
+                </div>
+
+                <div class="mode-info-box warning">
+                  <h4>使用前置检查</h4>
+                  <p>1. 家庭宽带是否有公网 IP / IPv6？</p>
+                  <p>2. 是否完成路由器端口映射？</p>
+                  <p>3. 是否配置 DDNS？</p>
+                  <p>4. 是否能稳定访问 /health？</p>
+                </div>
+              </div>
+
+              <div class="mode-risk">
+                <strong>风险提示：</strong>
+                家庭断电、宽带重拨、IP 变化、运营商封端口都会导致服务不可用。家庭无公网 IP 时不要选择 B。
+              </div>
+            </div>
+
+            <!-- C 模式 -->
+            <div v-if="editingMode === 'reverse_proxy'" class="mode-panel">
+              <div class="mode-panel-title">C 模式：公网服务器反向代理</div>
+
+              <div class="mode-flow">
+                PC 中控 / 安卓脚本 / 管理后台
+                <span> → </span>
+                云服务器 Nginx / Caddy
+                <span> → </span>
+                家庭服务器源站
+                <span> → </span>
+                Verify
+              </div>
+
+              <div class="mode-text">
+                <p>C 模式表示客户端只访问云服务器，云服务器再反向代理到家庭服务器 Verify。</p>
+                <p>它的关键前提是：云服务器必须能够访问家庭服务器源站。</p>
+              </div>
+
+              <div class="mode-two-cols">
+                <div class="mode-info-box">
+                  <h4>C 模式成立条件</h4>
+                  <p>1. 家庭服务器有公网 IP / DDNS；或</p>
+                  <p>2. 云服务器和家庭服务器处于同一 VPN / WireGuard / Tailscale / ZeroTier 网络；或</p>
+                  <p>3. 家庭服务器已经暴露出云服务器可访问的源站地址。</p>
+                </div>
+
+                <div class="mode-info-box danger">
+                  <h4>重要边界</h4>
+                  <p>普通 Nginx / Caddy 反向代理不能穿透 CGNAT。</p>
+                  <p>如果家庭无公网 IP，且没有 VPN / 隧道，C 模式不能单独成立。</p>
+                  <p>这种情况应使用 D 模式。</p>
+                </div>
+              </div>
+
+              <div class="mode-risk">
+                <strong>风险提示：</strong>
+                云服务器到家庭源站不可达时，公网入口会出现 502 / 504；真实 IP Header 必须正确配置。
+              </div>
+            </div>
+
+            <!-- D 模式 -->
+            <div v-if="editingMode === 'relay_tunnel'" class="mode-panel">
+              <div class="mode-panel-title">D 模式：公网中转 / 隧道模式（当前主线）</div>
+
+              <div class="mode-flow">
+                PC 中控 / 安卓脚本 / 管理后台
+                <span> → </span>
+                公网云服务器
+                <span> → </span>
+                中转 / 隧道
+                <span> ← </span>
+                家庭服务器主动连出
+                <span> → </span>
+                家庭 Verify
+              </div>
+
+              <div class="mode-text">
+                <p>D 模式已确认前提：家庭无公网 IP。外部客户端不能主动访问家庭服务器，因此必须由家庭服务器主动连接公网云服务器。</p>
+                <p>当前阶段建议固定为 relay_only：PC 中控 / 安卓脚本永远访问公网云服务器入口，公网云服务器再通过隧道访问家庭 Verify。</p>
+                <p>在家庭无公网 IP 的前提下，客户端不能真正直连家庭 Verify。所谓“直连”只能是直连公网云服务器入口，链路内部仍然经过中转 / 隧道。</p>
+              </div>
+
+              <div class="mode-two-cols">
+                <div class="mode-info-box">
+                  <h4>推荐落地：FRP + 云 Nginx</h4>
+                  <p>客户端 → https://api.example.com → 云 Nginx / Caddy → frps/frpc → 家庭 Verify。</p>
+                  <p>适合当前阶段快速落地，家庭服务器不需要公网 IP。</p>
+                </div>
+
+                <div class="mode-info-box">
+                  <h4>中期方案：WireGuard + 云 Nginx</h4>
+                  <p>云服务器和家庭服务器组成虚拟内网，云 Nginx 反代到家庭节点虚拟 IP。</p>
+                  <p>更适合中期稳定运行，但初始配置比 FRP 更复杂。</p>
+                </div>
+              </div>
+
+              <el-divider content-position="left">D 模式：中转 / 家庭节点配置</el-divider>
+
+              <el-form label-width="180px" class="settings-form wide">
+                <el-form-item label="启用中转 / 隧道">
+                  <el-switch
+                    v-model="networkForm.relay_enabled"
+                    inline-prompt
+                    active-text="启用"
+                    inactive-text="关闭"
+                  />
+                </el-form-item>
+
+                <el-form-item label="中转模式">
+                  <el-select v-model="networkForm.relay_mode" style="width:260px">
+                    <el-option label="FRP（现阶段推荐）" value="frp" />
+                    <el-option label="WireGuard / VPN" value="wireguard" />
+                    <el-option label="Cloudflared Tunnel" value="cloudflared" />
+                    <el-option label="自建 Gateway" value="custom_gateway" />
+                    <el-option label="手动配置" value="manual" />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="中转公网地址">
+                  <div class="input-with-action">
+                    <el-input
+                      v-model="networkForm.relay_url"
+                      placeholder="如：https://relay.example.com 或 https://api.example.com"
+                      style="width:460px"
+                    />
+                    <el-button
+                      :loading="urlTestLoading.relay_url"
+                      @click="testUrl('中转公网地址', networkForm.relay_url, 'relay_url')"
+                    >
+                      测试
+                    </el-button>
+                  </div>
+                  <UrlTestResult :result="urlTestResults.relay_url" />
+                </el-form-item>
+
+                <el-form-item label="中转健康检查">
+                  <div class="input-with-action">
+                    <el-input
+                      v-model="networkForm.relay_health_url"
+                      placeholder="如：https://relay.example.com/health"
+                      style="width:460px"
+                    />
+                    <el-button
+                      :loading="urlTestLoading.relay_health_url"
+                      @click="testUrl('中转健康检查', networkForm.relay_health_url, 'relay_health_url')"
+                    >
+                      测试
+                    </el-button>
+                  </div>
+                  <UrlTestResult :result="urlTestResults.relay_health_url" />
+                </el-form-item>
+
+                <el-form-item label="家庭节点 ID">
+                  <el-input v-model="networkForm.home_node_id" style="width:260px" />
+                </el-form-item>
+
+                <el-form-item label="家庭节点名称">
+                  <el-input v-model="networkForm.home_node_name" style="width:260px" />
+                </el-form-item>
+
+                <el-form-item label="家庭本地 Verify">
+                  <el-input
+                    v-model="networkForm.home_local_verify_url"
+                    placeholder="如：http://127.0.0.1:8000"
+                    style="width:460px"
+                  />
+                  <div class="setting-desc danger">
+                    仅管理员可见，不会下发给 PC 中控或安卓脚本。
+                  </div>
+                </el-form-item>
+
+                <el-divider content-position="left">D 模式：连接策略</el-divider>
+
+                <el-form-item label="路由策略">
+                  <el-select v-model="networkForm.route_strategy" style="width:340px">
+                    <el-option label="relay_only：仅走公网中转 / 隧道（当前推荐）" value="relay_only" />
+                    <el-option label="auto_direct_with_relay_fallback：直连优先，失败回中转" value="auto_direct_with_relay_fallback" disabled />
+                    <el-option label="direct_only：仅直连（当前不推荐）" value="direct_only" disabled />
+                    <el-option label="manual：手动控制" value="manual" />
+                  </el-select>
+                  <div class="setting-desc">
+                    家庭无公网 IP 时应使用 relay_only。自动直连仅在未来有公网 IPv6、DDNS 或 VPN/Mesh 时再启用。
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="优先线路">
+                  <el-select v-model="networkForm.preferred_route" style="width:220px">
+                    <el-option label="relay：中转优先" value="relay" />
+                    <el-option label="direct：直连优先" value="direct" disabled />
+                    <el-option label="auto：自动选择" value="auto" disabled />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="启用直连候选">
+                  <el-switch
+                    v-model="networkForm.direct_enabled"
+                    inline-prompt
+                    active-text="启用"
+                    inactive-text="关闭"
+                    :disabled="networkForm.route_strategy === 'relay_only'"
+                  />
+                  <div class="setting-desc">
+                    当前 D 模式前提是家庭无公网 IP，因此默认关闭。若未来有公网 IPv6 / VPN / Mesh，可再打开。
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="直连候选地址">
+                  <el-input
+                    v-model="directCandidateUrlsText"
+                    type="textarea"
+                    :rows="4"
+                    :disabled="!networkForm.direct_enabled"
+                    placeholder="一行一个直连候选地址，例如：&#10;https://home-ddns.example.com&#10;https://[IPv6地址]"
+                    style="width:520px"
+                  />
+
+                  <div class="setting-desc">
+                    当前阶段不建议填写。家庭无公网 IP 时，这些地址通常不可用。
+                  </div>
+
+                  <div class="backup-test-list" v-if="splitLines(directCandidateUrlsText).length">
+                    <div
+                      v-for="(url, index) in splitLines(directCandidateUrlsText)"
+                      :key="`${url}-${index}`"
+                      class="backup-test-item"
+                    >
+                      <span class="mono">{{ url }}</span>
+                      <el-button
+                        size="small"
+                        :loading="urlTestLoading[`direct_${index}`]"
+                        @click="testUrl(`直连候选 ${index + 1}`, url, `direct_${index}`)"
+                      >
+                        测试
+                      </el-button>
+                      <UrlTestResult :result="urlTestResults[`direct_${index}`]" compact />
+                    </div>
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="直连健康检查">
+                  <div class="input-with-action">
+                    <el-input
+                      v-model="networkForm.direct_health_url"
+                      :disabled="!networkForm.direct_enabled"
+                      placeholder="如：https://home-ddns.example.com/health"
+                      style="width:460px"
+                    />
+                    <el-button
+                      :disabled="!networkForm.direct_enabled"
+                      :loading="urlTestLoading.direct_health_url"
+                      @click="testUrl('直连健康检查', networkForm.direct_health_url, 'direct_health_url')"
+                    >
+                      测试
+                    </el-button>
+                  </div>
+                  <UrlTestResult :result="urlTestResults.direct_health_url" />
+                </el-form-item>
+
+                <el-form-item label="直连连续成功次数">
+                  <el-input-number
+                    v-model="networkForm.direct_min_success_count"
+                    :min="1"
+                    :max="10"
+                    :disabled="!networkForm.direct_enabled"
+                    controls-position="right"
+                    style="width:160px"
+                  />
+                </el-form-item>
+
+                <el-form-item label="失败回退阈值">
+                  <el-input-number
+                    v-model="networkForm.direct_failback_threshold"
+                    :min="1"
+                    :max="10"
+                    :disabled="!networkForm.direct_enabled"
+                    controls-position="right"
+                    style="width:160px"
+                  />
+                </el-form-item>
+
+                <el-form-item label="直连后保留中转">
+                  <el-switch
+                    v-model="networkForm.relay_keepalive_after_direct"
+                    inline-prompt
+                    active-text="保留"
+                    inactive-text="关闭"
+                    :disabled="!networkForm.direct_enabled"
+                  />
+                  <div class="setting-desc">
+                    即使未来直连可用，也建议保留中转作为控制面和回退线路。
+                  </div>
+                </el-form-item>
+              </el-form>
+
+              <div class="mode-risk">
+                <strong>当前策略：</strong>
+                家庭无公网 IP 时，不做客户端真正直连家庭 Verify。D 模式当前应按 relay_only 运行，公网云服务器入口必须长期保留。
+              </div>
+            </div>
 
             <el-divider content-position="left">通用公网入口配置</el-divider>
 
@@ -350,6 +712,10 @@
                 <div>
                   <span class="status-label">配置版本：</span>
                   <span class="mono">v{{ networkForm.config_version || 1 }}</span>
+                </div>
+                <div>
+                  <span class="status-label">D 策略：</span>
+                  <span class="mono">{{ networkForm.route_strategy || 'relay_only' }}</span>
                 </div>
               </div>
 
@@ -607,6 +973,28 @@
                 <span class="mono">{{ diagnostics.relay_health_url || '未配置' }}</span>
               </el-descriptions-item>
 
+              <el-descriptions-item label="D 路由策略">
+                <span class="mono">{{ diagnostics.route_strategy || 'relay_only' }}</span>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="D 优先线路">
+                <span class="mono">{{ diagnostics.preferred_route || 'relay' }}</span>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="直连候选启用">
+                {{ diagnostics.direct_enabled ? '启用' : '关闭' }}
+              </el-descriptions-item>
+
+              <el-descriptions-item label="直连健康检查">
+                <span class="mono">{{ diagnostics.direct_health_url || '未配置' }}</span>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="直连候选地址" :span="2">
+                <span class="mono">
+                  {{ Array.isArray(diagnostics.direct_candidate_urls) && diagnostics.direct_candidate_urls.length ? diagnostics.direct_candidate_urls.join('，') : '未配置' }}
+                </span>
+              </el-descriptions-item>
+
               <el-descriptions-item label="反向代理">
                 {{ diagnostics.reverse_proxy_enabled ? '启用' : '关闭' }}
                 <span class="mono">{{ diagnostics.reverse_proxy_url || '' }}</span>
@@ -695,31 +1083,43 @@
         <el-tab-pane label="关于系统" name="about">
           <div class="panel">
             <div class="panel-title">关于系统</div>
+
             <div class="about-info">
               <div class="about-row">
                 <span class="about-label">平台名称</span>
                 <span>蜂巢·大圣 (HiveGreatSage)</span>
               </div>
+
               <div class="about-row">
                 <span class="about-label">后端版本</span>
                 <span class="mono">HiveGreatSage-Verify v0.1.0</span>
               </div>
+
               <div class="about-row">
                 <span class="about-label">后端时区</span>
                 <span class="mono">{{ backendTimezone }} (UTC+8，数据库以 UTC 存储)</span>
               </div>
+
               <div class="about-row">
                 <span class="about-label">前端展示时区</span>
                 <span class="mono">{{ settings.timezone }}</span>
               </div>
+
               <div class="about-row">
                 <span class="about-label">网络配置版本</span>
                 <span class="mono">v{{ networkForm.config_version || 1 }}</span>
               </div>
+
               <div class="about-row">
                 <span class="about-label">当前生效模式</span>
                 <span>{{ deploymentModeLabel(savedMode) }}</span>
               </div>
+
+              <div class="about-row">
+                <span class="about-label">D 模式策略</span>
+                <span class="mono">{{ networkForm.route_strategy || 'relay_only' }}</span>
+              </div>
+
               <div class="about-row">
                 <span class="about-label">当前登录身份</span>
                 <el-tag :type="authStore.isAdmin ? 'danger' : 'warning'" effect="light" size="small">
@@ -740,17 +1140,14 @@
  * 名称: 系统设置
  * 作者: 蜂巢·大圣 (HiveGreatSage)
  * 时间: 2026-05-01
- * 版本: V2.2.0
+ * 版本: V2.3.0
  * 功能说明:
  *   平台级系统设置入口。
  *
  * 本版重点:
- *   1. 网络设置改为 ABCD 模式化页面。
- *   2. 点击模式只切换编辑态，不立即写入后端。
- *   3. 保存按钮移动到底部，保存后才真正切换 deployment_mode。
- *   4. A 模式说明有域名 / 无域名公网 IP 两种配置。
- *   5. B 模式说明家庭宽带直连与 Nginx/Caddy 的关系。
- *   6. D 模式明确家庭无公网 IP，当前策略为 relay_only，不做真正直连。
+ *   1. D 模式连接策略字段前端落地。
+ *   2. route_strategy / direct_enabled / direct_candidate_urls / preferred_route 可展示和保存。
+ *   3. 运行诊断展示 D 模式路由策略。
  */
 
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
@@ -787,275 +1184,6 @@ const UrlTestResult = defineComponent({
 
       return h('div', { class: cls }, text)
     }
-  },
-})
-
-const CloudDirectModePanel = defineComponent({
-  name: 'CloudDirectModePanel',
-  props: {
-    networkForm: { type: Object, required: true },
-    urlTestLoading: { type: Object, required: true },
-    urlTestResults: { type: Object, required: true },
-  },
-  emits: ['test-url'],
-  setup(props, { emit }) {
-    return () => h('div', { class: 'mode-panel' }, [
-      h('div', { class: 'mode-panel-title' }, 'A 模式：云服务器直接部署'),
-      h('div', { class: 'mode-flow' }, [
-        'PC 中控 / 安卓脚本 / 管理后台',
-        h('span', ' → '),
-        '云服务器公网入口',
-        h('span', ' → '),
-        'Nginx / Caddy',
-        h('span', ' → '),
-        'Verify 后端',
-        h('span', ' → '),
-        'PostgreSQL / Redis',
-      ]),
-      h('div', { class: 'mode-text' }, [
-        h('p', 'A 模式表示 Verify 主服务、数据库、Redis 都部署在云服务器上。它是中后期正式运行最稳定、链路最短的模式。'),
-        h('p', 'A 模式需要区分“有域名”和“无域名公网 IP”两种情况：'),
-      ]),
-      h('div', { class: 'mode-two-cols' }, [
-        h('div', { class: 'mode-info-box' }, [
-          h('h4', 'A1：有域名，推荐正式部署'),
-          h('p', '推荐结构：域名 HTTPS → Nginx / Caddy → 127.0.0.1:8000 → Verify。'),
-          h('p', '示例：public_api_base_url = https://api.example.com'),
-          h('p', '优点：支持 HTTPS、证书、访问日志、限流、静态资源、后续扩展。'),
-        ]),
-        h('div', { class: 'mode-info-box warning' }, [
-          h('h4', 'A2：无域名，仅公网 IP'),
-          h('p', '可以临时使用 http://公网IP:8000 或 http://公网IP。'),
-          h('p', '仅建议开发、内测、临时验证使用。'),
-          h('p', '正式运行不建议裸露 Uvicorn 端口，仍建议使用 Nginx / Caddy 做入口。'),
-        ]),
-      ]),
-      h('div', { class: 'mode-risk' }, [
-        h('strong', '风险提示：'),
-        h('span', ' PostgreSQL / Redis 不允许暴露公网；无域名无 HTTPS 的方式不适合正式生产；热更新大文件后期建议迁移到对象存储或 CDN。'),
-      ]),
-    ])
-  },
-})
-
-const HomeDirectModePanel = defineComponent({
-  name: 'HomeDirectModePanel',
-  props: {
-    networkForm: { type: Object, required: true },
-    urlTestLoading: { type: Object, required: true },
-    urlTestResults: { type: Object, required: true },
-  },
-  emits: ['test-url'],
-  setup() {
-    return () => h('div', { class: 'mode-panel' }, [
-      h('div', { class: 'mode-panel-title' }, 'B 模式：家庭宽带直连'),
-      h('div', { class: 'mode-flow' }, [
-        'PC 中控 / 安卓脚本 / 管理后台',
-        h('span', ' → '),
-        '家庭公网 IP / DDNS',
-        h('span', ' → '),
-        '路由器端口映射',
-        h('span', ' → '),
-        '家庭服务器 Nginx / Caddy',
-        h('span', ' → '),
-        'Verify',
-      ]),
-      h('div', { class: 'mode-text' }, [
-        h('p', 'B 模式要求家庭宽带具备真正可访问的公网 IPv4，或者公网 IPv6。'),
-        h('p', '如果路由器 WAN IP 与外网查询 IP 不一致，大概率是 CGNAT，B 模式不可用，应使用 D 模式。'),
-      ]),
-      h('div', { class: 'mode-two-cols' }, [
-        h('div', { class: 'mode-info-box' }, [
-          h('h4', '是否需要 Nginx / Caddy？'),
-          h('p', '技术上可以不用，例如公网IP:8000 → 路由器端口映射 → Verify。'),
-          h('p', '但实际强烈建议使用 Nginx / Caddy，统一 80/443、HTTPS、日志、反代和后续静态资源。'),
-        ]),
-        h('div', { class: 'mode-info-box warning' }, [
-          h('h4', '使用前置检查'),
-          h('p', '1. 家庭宽带是否有公网 IP / IPv6？'),
-          h('p', '2. 是否完成路由器端口映射？'),
-          h('p', '3. 是否配置 DDNS？'),
-          h('p', '4. 是否能稳定访问 /health？'),
-        ]),
-      ]),
-      h('div', { class: 'mode-risk' }, [
-        h('strong', '风险提示：'),
-        h('span', ' 家庭断电、宽带重拨、IP 变化、运营商封端口都会导致服务不可用。家庭无公网 IP 时不要选择 B。'),
-      ]),
-    ])
-  },
-})
-
-const ReverseProxyModePanel = defineComponent({
-  name: 'ReverseProxyModePanel',
-  props: {
-    networkForm: { type: Object, required: true },
-    urlTestLoading: { type: Object, required: true },
-    urlTestResults: { type: Object, required: true },
-  },
-  emits: ['test-url'],
-  setup() {
-    return () => h('div', { class: 'mode-panel' }, [
-      h('div', { class: 'mode-panel-title' }, 'C 模式：公网服务器反向代理'),
-      h('div', { class: 'mode-flow' }, [
-        'PC 中控 / 安卓脚本 / 管理后台',
-        h('span', ' → '),
-        '云服务器 Nginx / Caddy',
-        h('span', ' → '),
-        '家庭服务器源站',
-        h('span', ' → '),
-        'Verify',
-      ]),
-      h('div', { class: 'mode-text' }, [
-        h('p', 'C 模式表示客户端只访问云服务器，云服务器再反向代理到家庭服务器 Verify。'),
-        h('p', '它的关键前提是：云服务器必须能够访问家庭服务器源站。'),
-      ]),
-      h('div', { class: 'mode-two-cols' }, [
-        h('div', { class: 'mode-info-box' }, [
-          h('h4', 'C 模式成立条件'),
-          h('p', '1. 家庭服务器有公网 IP / DDNS；或'),
-          h('p', '2. 云服务器和家庭服务器处于同一 VPN / WireGuard / Tailscale / ZeroTier 网络；或'),
-          h('p', '3. 家庭服务器已经暴露出云服务器可访问的源站地址。'),
-        ]),
-        h('div', { class: 'mode-info-box danger' }, [
-          h('h4', '重要边界'),
-          h('p', '普通 Nginx / Caddy 反向代理不能穿透 CGNAT。'),
-          h('p', '如果家庭无公网 IP，且没有 VPN / 隧道，C 模式不能单独成立。'),
-          h('p', '这种情况应使用 D 模式。'),
-        ]),
-      ]),
-      h('div', { class: 'mode-risk' }, [
-        h('strong', '风险提示：'),
-        h('span', ' 云服务器到家庭源站不可达时，公网入口会出现 502 / 504；真实 IP Header 必须正确配置。'),
-      ]),
-    ])
-  },
-})
-
-const RelayTunnelModePanel = defineComponent({
-  name: 'RelayTunnelModePanel',
-  props: {
-    networkForm: { type: Object, required: true },
-    urlTestLoading: { type: Object, required: true },
-    urlTestResults: { type: Object, required: true },
-  },
-  emits: ['test-url'],
-  setup(props, { emit }) {
-    return () => h('div', { class: 'mode-panel' }, [
-      h('div', { class: 'mode-panel-title' }, 'D 模式：公网中转 / 隧道模式（当前主线）'),
-      h('div', { class: 'mode-flow' }, [
-        'PC 中控 / 安卓脚本 / 管理后台',
-        h('span', ' → '),
-        '公网云服务器',
-        h('span', ' → '),
-        '中转 / 隧道',
-        h('span', ' ← '),
-        '家庭服务器主动连出',
-        h('span', ' → '),
-        '家庭 Verify',
-      ]),
-      h('div', { class: 'mode-text' }, [
-        h('p', 'D 模式已确认前提：家庭无公网 IP。外部客户端不能主动访问家庭服务器，因此必须由家庭服务器主动连接公网云服务器。'),
-        h('p', '当前阶段建议固定为 relay_only：PC 中控 / 安卓脚本永远访问公网云服务器入口，公网云服务器再通过隧道访问家庭 Verify。'),
-        h('p', '在家庭无公网 IP 的前提下，客户端不能真正直连家庭 Verify。所谓“直连”只能是直连公网云服务器入口，链路内部仍然经过中转 / 隧道。'),
-      ]),
-      h('div', { class: 'mode-two-cols' }, [
-        h('div', { class: 'mode-info-box' }, [
-          h('h4', '推荐落地：FRP + 云 Nginx'),
-          h('p', '客户端 → https://api.example.com → 云 Nginx / Caddy → frps/frpc → 家庭 Verify。'),
-          h('p', '适合当前阶段快速落地，家庭服务器不需要公网 IP。'),
-        ]),
-        h('div', { class: 'mode-info-box' }, [
-          h('h4', '中期方案：WireGuard + 云 Nginx'),
-          h('p', '云服务器和家庭服务器组成虚拟内网，云 Nginx 反代到家庭节点虚拟 IP。'),
-          h('p', '更适合中期稳定运行，但初始配置比 FRP 更复杂。'),
-        ]),
-      ]),
-      h('el-form', { labelWidth: '170px', class: 'settings-form wide inline-form' }, {
-        default: () => [
-          h('el-divider', { contentPosition: 'left' }, () => 'D 模式：中转 / 家庭节点配置'),
-          h('el-form-item', { label: '启用中转 / 隧道' }, () => [
-            h('el-switch', {
-              modelValue: props.networkForm.relay_enabled,
-              'onUpdate:modelValue': (v) => { props.networkForm.relay_enabled = v },
-              inlinePrompt: true,
-              activeText: '启用',
-              inactiveText: '关闭',
-            }),
-          ]),
-          h('el-form-item', { label: '中转模式' }, () => [
-            h('el-select', {
-              modelValue: props.networkForm.relay_mode,
-              'onUpdate:modelValue': (v) => { props.networkForm.relay_mode = v },
-              style: 'width:260px',
-            }, () => [
-              h('el-option', { label: 'FRP（现阶段推荐）', value: 'frp' }),
-              h('el-option', { label: 'WireGuard / VPN', value: 'wireguard' }),
-              h('el-option', { label: 'Cloudflared Tunnel', value: 'cloudflared' }),
-              h('el-option', { label: '自建 Gateway', value: 'custom_gateway' }),
-              h('el-option', { label: '手动配置', value: 'manual' }),
-            ]),
-          ]),
-          h('el-form-item', { label: '中转公网地址' }, () => [
-            h('div', { class: 'input-with-action' }, [
-              h('el-input', {
-                modelValue: props.networkForm.relay_url,
-                'onUpdate:modelValue': (v) => { props.networkForm.relay_url = v },
-                placeholder: '如：https://relay.example.com 或 https://api.example.com',
-                style: 'width:460px',
-              }),
-              h('el-button', {
-                loading: props.urlTestLoading.relay_url,
-                onClick: () => emit('test-url', '中转公网地址', props.networkForm.relay_url, 'relay_url'),
-              }, () => '测试'),
-            ]),
-            h(UrlTestResult, { result: props.urlTestResults.relay_url }),
-          ]),
-          h('el-form-item', { label: '中转健康检查' }, () => [
-            h('div', { class: 'input-with-action' }, [
-              h('el-input', {
-                modelValue: props.networkForm.relay_health_url,
-                'onUpdate:modelValue': (v) => { props.networkForm.relay_health_url = v },
-                placeholder: '如：https://relay.example.com/health',
-                style: 'width:460px',
-              }),
-              h('el-button', {
-                loading: props.urlTestLoading.relay_health_url,
-                onClick: () => emit('test-url', '中转健康检查', props.networkForm.relay_health_url, 'relay_health_url'),
-              }, () => '测试'),
-            ]),
-            h(UrlTestResult, { result: props.urlTestResults.relay_health_url }),
-          ]),
-          h('el-form-item', { label: '家庭节点 ID' }, () => [
-            h('el-input', {
-              modelValue: props.networkForm.home_node_id,
-              'onUpdate:modelValue': (v) => { props.networkForm.home_node_id = v },
-              style: 'width:260px',
-            }),
-          ]),
-          h('el-form-item', { label: '家庭节点名称' }, () => [
-            h('el-input', {
-              modelValue: props.networkForm.home_node_name,
-              'onUpdate:modelValue': (v) => { props.networkForm.home_node_name = v },
-              style: 'width:260px',
-            }),
-          ]),
-          h('el-form-item', { label: '家庭本地 Verify' }, () => [
-            h('el-input', {
-              modelValue: props.networkForm.home_local_verify_url,
-              'onUpdate:modelValue': (v) => { props.networkForm.home_local_verify_url = v },
-              placeholder: '如：http://127.0.0.1:8000',
-              style: 'width:460px',
-            }),
-            h('div', { class: 'setting-desc danger' }, '仅管理员可见，不会下发给 PC 中控或安卓脚本。'),
-          ]),
-        ],
-      }),
-      h('div', { class: 'mode-risk' }, [
-        h('strong', '当前策略：'),
-        h('span', ' 家庭无公网 IP 时，不做客户端真正直连家庭 Verify。D 模式当前应按 relay_only 运行，公网云服务器入口必须长期保留。'),
-      ]),
-    ])
   },
 })
 
@@ -1097,6 +1225,15 @@ const networkForm = reactive({
   home_node_name: '家庭主节点',
   home_local_verify_url: 'http://127.0.0.1:8000',
 
+  route_strategy: 'relay_only',
+  direct_enabled: false,
+  direct_candidate_urls: [],
+  direct_health_url: '',
+  direct_min_success_count: 2,
+  direct_failback_threshold: 2,
+  relay_keepalive_after_direct: true,
+  preferred_route: 'relay',
+
   client_config_enabled: true,
   config_version: 1,
   pc_client_api_url: '',
@@ -1131,6 +1268,12 @@ const diagnostics = reactive({
   relay_url: '',
   relay_health_url: '',
 
+  route_strategy: '',
+  direct_enabled: false,
+  direct_candidate_urls: [],
+  direct_health_url: '',
+  preferred_route: '',
+
   reverse_proxy_enabled: false,
   reverse_proxy_url: '',
   real_ip_header: '',
@@ -1145,6 +1288,7 @@ const diagnostics = reactive({
 
 const backupApiUrlsText = ref('')
 const trustedProxyIpsText = ref('')
+const directCandidateUrlsText = ref('')
 
 const urlTestLoading = reactive({})
 const urlTestResults = reactive({})
@@ -1181,17 +1325,6 @@ const modeOptions = [
 
 const modeChanged = computed(() => savedMode.value !== editingMode.value)
 
-const activeModeComponent = computed(() => {
-  const map = {
-    cloud_direct: CloudDirectModePanel,
-    home_direct: HomeDirectModePanel,
-    reverse_proxy: ReverseProxyModePanel,
-    relay_tunnel: RelayTunnelModePanel,
-  }
-
-  return map[editingMode.value] || RelayTunnelModePanel
-})
-
 const currentTimePreview = computed(() => {
   return now.value.toLocaleString('zh-CN', {
     timeZone: settings.timezone,
@@ -1226,6 +1359,13 @@ const joinLines = (items) => {
   return Array.isArray(items) ? items.join('\n') : ''
 }
 
+const normalizeDModeForRelayOnly = () => {
+  if (networkForm.route_strategy === 'relay_only') {
+    networkForm.direct_enabled = false
+    networkForm.preferred_route = 'relay'
+  }
+}
+
 const loadNetworkSettings = async () => {
   networkLoading.value = true
 
@@ -1238,17 +1378,23 @@ const loadNetworkSettings = async () => {
 
     backupApiUrlsText.value = joinLines(networkForm.backup_api_urls)
     trustedProxyIpsText.value = joinLines(networkForm.trusted_proxy_ips)
+    directCandidateUrlsText.value = joinLines(networkForm.direct_candidate_urls)
+
+    normalizeDModeForRelayOnly()
   } finally {
     networkLoading.value = false
   }
 }
 
 const buildNetworkPayload = () => {
+  normalizeDModeForRelayOnly()
+
   return {
     ...networkForm,
     deployment_mode: editingMode.value,
     backup_api_urls: splitLines(backupApiUrlsText.value),
     trusted_proxy_ips: splitLines(trustedProxyIpsText.value),
+    direct_candidate_urls: splitLines(directCandidateUrlsText.value),
   }
 }
 
@@ -1276,6 +1422,9 @@ const saveNetworkSettings = async () => {
 
     backupApiUrlsText.value = joinLines(networkForm.backup_api_urls)
     trustedProxyIpsText.value = joinLines(networkForm.trusted_proxy_ips)
+    directCandidateUrlsText.value = joinLines(networkForm.direct_candidate_urls)
+
+    normalizeDModeForRelayOnly()
 
     ElMessage.success(`网络设置已保存，配置版本 v${networkForm.config_version}`)
   } finally {
@@ -1446,10 +1595,6 @@ onUnmounted(() => {
 
 .settings-form.wide {
   max-width: 980px;
-}
-
-.inline-form {
-  margin-top: 12px;
 }
 
 .input-with-action {
