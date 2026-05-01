@@ -3,7 +3,7 @@ r"""
 文件名称: system_setting.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-04-30
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     系统设置相关 Pydantic Schema。
 
@@ -11,6 +11,8 @@ r"""
     - NetworkSettingsResponse
     - NetworkSettingsUpdateRequest
     - ClientNetworkConfigResponse
+    - RuntimeDiagnosticsResponse
+    - UrlTestRequest / UrlTestResponse
 
 说明:
     网络设置以 D 模式 relay_tunnel 为当前默认主模式。
@@ -161,12 +163,57 @@ class ClientNetworkConfigResponse(BaseModel):
     relay_url: str
 
 
+class UrlTestRequest(BaseModel):
+    target_name: str = Field(default="目标地址", max_length=64)
+    url: str
+    timeout_seconds: int = Field(default=10, ge=3, le=120)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        return _validate_url_or_empty(value, "url")
+
+
+class UrlTestResponse(BaseModel):
+    target_name: str
+    url: str
+    success: bool
+    status_code: int | None = None
+    elapsed_ms: int | None = None
+    final_url: str | None = None
+    error: str | None = None
+    checked_at: str
+
+
 class RuntimeDiagnosticsResponse(BaseModel):
     status: str
     server_time: str
+    environment: str
+    backend_timezone: str
+
+    database_status: str
+    database_error: str | None = None
+    redis_status: str
+    redis_error: str | None = None
+
     network_settings_loaded: bool
     deployment_mode: str
     public_api_base_url: str
+    public_admin_base_url: str
+    public_update_base_url: str
+
     relay_enabled: bool
     relay_mode: str
     relay_url: str
+    relay_health_url: str
+
+    reverse_proxy_enabled: bool
+    reverse_proxy_url: str
+    real_ip_header: str
+    trusted_proxy_enabled: bool
+
+    request_remote_addr: str | None = None
+    x_forwarded_for: str | None = None
+    x_real_ip: str | None = None
+    cf_connecting_ip: str | None = None
+    selected_real_ip_value: str | None = None

@@ -3,7 +3,7 @@ r"""
 文件名称: system_setting_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-04-30
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     系统设置服务层。
 
@@ -12,26 +12,36 @@ r"""
     - 保存网络设置
     - 初始化默认网络设置
     - 生成客户端网络配置
-    - 简单运行诊断
+    - URL 连通性测试
+    - 运行诊断
 
 设计边界:
     - 本服务只管理运行期业务配置。
     - 不管理 DATABASE_URL / REDIS_URL / SECRET_KEY / JWT 密钥等部署级配置。
 """
 
+import asyncio
 import json
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+import redis.asyncio as aioredis
+from fastapi import Request
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.main.system_setting import SystemSetting
 from app.schemas.system_setting import (
     ClientNetworkConfigResponse,
     NetworkSettingsResponse,
     NetworkSettingsUpdateRequest,
     RuntimeDiagnosticsResponse,
+    UrlTestRequest,
+    UrlTestResponse,
 )
 
 
@@ -240,40 +250,219 @@ async def get_client_network_config(db: AsyncSession) -> ClientNetworkConfigResp
       - origin_server_url
       - 数据库 / Redis / 密钥
     """
-    settings = await get_network_settings(db)
+    network = await get_network_settings(db)
 
     primary_api_url = (
-        settings.pc_client_api_url
-        or settings.public_api_base_url
-        or settings.relay_url
+        network.pc_client_api_url
+        or network.public_api_base_url
+        or network.relay_url
     )
 
     return ClientNetworkConfigResponse(
-        config_version=settings.config_version,
-        deployment_mode=settings.deployment_mode,
+        config_version=network.config_version,
+        deployment_mode=network.deployment_mode,
         primary_api_url=primary_api_url,
-        pc_client_api_url=settings.pc_client_api_url or primary_api_url,
-        android_client_api_url=settings.android_client_api_url or primary_api_url,
-        backup_api_urls=settings.backup_api_urls,
-        timeout_seconds=settings.client_timeout_seconds,
-        retry_count=settings.client_retry_count,
-        heartbeat_interval_seconds=settings.heartbeat_interval_seconds,
-        relay_enabled=settings.relay_enabled,
-        relay_mode=settings.relay_mode,
-        relay_url=settings.relay_url,
+        pc_client_api_url=network.pc_client_api_url or primary_api_url,
+        android_client_api_url=network.android_client_api_url or primary_api_url,
+        backup_api_urls=network.backup_api_urls,
+        timeout_seconds=network.client_timeout_seconds,
+        retry_count=network.client_retry_count,
+        heartbeat_interval_seconds=network.heartbeat_interval_seconds,
+        relay_enabled=network.relay_enabled,
+        relay_mode=network.relay_mode,
+        relay_url=network.relay_url,
     )
 
 
-async def get_runtime_diagnostics(db: AsyncSession) -> RuntimeDiagnosticsResponse:
-    settings = await get_network_settings(db)
+def _test_url_sync(
+    *,
+    target_name: str,
+    url: str,
+    timeout_seconds: int,
+) -> UrlTestResponse:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    started = time.perf_counter()
+
+    request = urllib.request.Request(
+        url=url,
+        method="GET",
+        headers={
+            "User-Agent": "HiveGreatSage-Verify-Network-Diagnostics/1.0",
+            "Accept": "*/*",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            status_code = int(response.status)
+
+            return UrlTestResponse(
+                target_name=target_name,
+                url=url,
+                success=200 <= status_code < 400,
+                status_code=status_code,
+                elapsed_ms=elapsed_ms,
+                final_url=response.geturl(),
+                error=None,
+                checked_at=checked_at,
+            )
+
+    except urllib.error.HTTPError as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        status_code = int(exc.code)
+
+        return UrlTestResponse(
+            target_name=target_name,
+            url=url,
+            success=False,
+            status_code=status_code,
+            elapsed_ms=elapsed_ms,
+            final_url=exc.geturl(),
+            error=str(exc.reason),
+            checked_at=checked_at,
+        )
+
+    except urllib.error.URLError as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+        return UrlTestResponse(
+            target_name=target_name,
+            url=url,
+            success=False,
+            status_code=None,
+            elapsed_ms=elapsed_ms,
+            final_url=None,
+            error=str(exc.reason),
+            checked_at=checked_at,
+        )
+
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+        return UrlTestResponse(
+            target_name=target_name,
+            url=url,
+            success=False,
+            status_code=None,
+            elapsed_ms=elapsed_ms,
+            final_url=None,
+            error=str(exc),
+            checked_at=checked_at,
+        )
+
+
+async def test_url_connectivity(body: UrlTestRequest) -> UrlTestResponse:
+    """
+    测试 URL 连通性。
+
+    说明:
+      - 使用标准库 urllib，避免引入新依赖。
+      - 在后台线程执行，避免阻塞事件循环。
+      - 只做连通性诊断，不写入配置。
+    """
+    return await asyncio.to_thread(
+        _test_url_sync,
+        target_name=body.target_name,
+        url=body.url,
+        timeout_seconds=body.timeout_seconds,
+    )
+
+
+async def _check_database(db: AsyncSession) -> tuple[str, str | None]:
+    try:
+        await db.execute(text("SELECT 1"))
+        return "ok", None
+    except Exception as exc:
+        return "error", str(exc)
+
+
+async def _check_redis(redis: aioredis.Redis) -> tuple[str, str | None]:
+    try:
+        await redis.ping()
+        return "ok", None
+    except Exception as exc:
+        return "error", str(exc)
+
+
+def _selected_real_ip_value(
+    *,
+    real_ip_header: str,
+    x_forwarded_for: str | None,
+    x_real_ip: str | None,
+    cf_connecting_ip: str | None,
+    request_remote_addr: str | None,
+) -> str | None:
+    if real_ip_header == "X-Forwarded-For":
+        return x_forwarded_for or request_remote_addr
+
+    if real_ip_header == "X-Real-IP":
+        return x_real_ip or request_remote_addr
+
+    if real_ip_header == "CF-Connecting-IP":
+        return cf_connecting_ip or request_remote_addr
+
+    return request_remote_addr
+
+
+async def get_runtime_diagnostics(
+    *,
+    db: AsyncSession,
+    redis: aioredis.Redis,
+    request: Request,
+) -> RuntimeDiagnosticsResponse:
+    network = await get_network_settings(db)
+
+    database_status, database_error = await _check_database(db)
+    redis_status, redis_error = await _check_redis(redis)
+
+    request_remote_addr = request.client.host if request.client else None
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    x_real_ip = request.headers.get("x-real-ip")
+    cf_connecting_ip = request.headers.get("cf-connecting-ip")
+
+    selected_ip = _selected_real_ip_value(
+        real_ip_header=network.real_ip_header,
+        x_forwarded_for=x_forwarded_for,
+        x_real_ip=x_real_ip,
+        cf_connecting_ip=cf_connecting_ip,
+        request_remote_addr=request_remote_addr,
+    )
+
+    global_status = "ok"
+    if database_status != "ok" or redis_status != "ok":
+        global_status = "degraded"
 
     return RuntimeDiagnosticsResponse(
-        status="ok",
+        status=global_status,
         server_time=datetime.now(timezone.utc).isoformat(),
+        environment=settings.ENVIRONMENT,
+        backend_timezone=settings.TIMEZONE,
+
+        database_status=database_status,
+        database_error=database_error,
+        redis_status=redis_status,
+        redis_error=redis_error,
+
         network_settings_loaded=True,
-        deployment_mode=settings.deployment_mode,
-        public_api_base_url=settings.public_api_base_url,
-        relay_enabled=settings.relay_enabled,
-        relay_mode=settings.relay_mode,
-        relay_url=settings.relay_url,
+        deployment_mode=network.deployment_mode,
+        public_api_base_url=network.public_api_base_url,
+        public_admin_base_url=network.public_admin_base_url,
+        public_update_base_url=network.public_update_base_url,
+
+        relay_enabled=network.relay_enabled,
+        relay_mode=network.relay_mode,
+        relay_url=network.relay_url,
+        relay_health_url=network.relay_health_url,
+
+        reverse_proxy_enabled=network.reverse_proxy_enabled,
+        reverse_proxy_url=network.reverse_proxy_url,
+        real_ip_header=network.real_ip_header,
+        trusted_proxy_enabled=network.trusted_proxy_enabled,
+
+        request_remote_addr=request_remote_addr,
+        x_forwarded_for=x_forwarded_for,
+        x_real_ip=x_real_ip,
+        cf_connecting_ip=cf_connecting_ip,
+        selected_real_ip_value=selected_ip,
     )

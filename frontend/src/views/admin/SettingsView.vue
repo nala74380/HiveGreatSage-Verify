@@ -133,37 +133,73 @@
               <el-divider content-position="left">公网入口配置</el-divider>
 
               <el-form-item label="对外 API 地址">
-                <el-input
-                  v-model="networkForm.public_api_base_url"
-                  placeholder="如：https://api.example.com"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.public_api_base_url"
+                    placeholder="如：https://api.example.com"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.public_api_base_url"
+                    @click="testUrl('对外 API 地址', networkForm.public_api_base_url, 'public_api_base_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
                 <div class="setting-desc">PC 中控、安卓脚本和外部服务最终访问的公网 API 入口。</div>
+                <UrlTestResult :result="urlTestResults.public_api_base_url" />
               </el-form-item>
 
               <el-form-item label="管理后台地址">
-                <el-input
-                  v-model="networkForm.public_admin_base_url"
-                  placeholder="如：https://admin.example.com"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.public_admin_base_url"
+                    placeholder="如：https://admin.example.com"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.public_admin_base_url"
+                    @click="testUrl('管理后台地址', networkForm.public_admin_base_url, 'public_admin_base_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
+                <UrlTestResult :result="urlTestResults.public_admin_base_url" />
               </el-form-item>
 
               <el-form-item label="热更新资源地址">
-                <el-input
-                  v-model="networkForm.public_update_base_url"
-                  placeholder="如：https://cdn.example.com/updates"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.public_update_base_url"
+                    placeholder="如：https://cdn.example.com/updates"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.public_update_base_url"
+                    @click="testUrl('热更新资源地址', networkForm.public_update_base_url, 'public_update_base_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
                 <div class="setting-desc">热更新大文件建议优先放公网云服务器 / CDN / 对象存储，避免全部走家庭隧道。</div>
+                <UrlTestResult :result="urlTestResults.public_update_base_url" />
               </el-form-item>
 
               <el-form-item label="健康检查地址">
-                <el-input
-                  v-model="networkForm.health_check_url"
-                  placeholder="如：https://api.example.com/health"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.health_check_url"
+                    placeholder="如：https://api.example.com/health"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.health_check_url"
+                    @click="testUrl('健康检查地址', networkForm.health_check_url, 'health_check_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
+                <UrlTestResult :result="urlTestResults.health_check_url" />
               </el-form-item>
 
               <el-divider content-position="left">D 模式：公网中转 / 隧道</el-divider>
@@ -188,19 +224,37 @@
               </el-form-item>
 
               <el-form-item label="中转公网地址">
-                <el-input
-                  v-model="networkForm.relay_url"
-                  placeholder="如：https://relay.example.com 或 https://api.example.com"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.relay_url"
+                    placeholder="如：https://relay.example.com 或 https://api.example.com"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.relay_url"
+                    @click="testUrl('中转公网地址', networkForm.relay_url, 'relay_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
+                <UrlTestResult :result="urlTestResults.relay_url" />
               </el-form-item>
 
               <el-form-item label="中转健康检查">
-                <el-input
-                  v-model="networkForm.relay_health_url"
-                  placeholder="如：https://relay.example.com/health"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.relay_health_url"
+                    placeholder="如：https://relay.example.com/health"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.relay_health_url"
+                    @click="testUrl('中转健康检查', networkForm.relay_health_url, 'relay_health_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
+                <UrlTestResult :result="urlTestResults.relay_health_url" />
               </el-form-item>
 
               <el-form-item label="家庭节点 ID">
@@ -234,11 +288,20 @@
               </el-form-item>
 
               <el-form-item label="反向代理地址">
-                <el-input
-                  v-model="networkForm.reverse_proxy_url"
-                  placeholder="如：https://api.example.com"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.reverse_proxy_url"
+                    placeholder="如：https://api.example.com"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.reverse_proxy_url"
+                    @click="testUrl('反向代理地址', networkForm.reverse_proxy_url, 'reverse_proxy_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
+                <UrlTestResult :result="urlTestResults.reverse_proxy_url" />
               </el-form-item>
 
               <el-form-item label="强制 HTTPS">
@@ -321,19 +384,37 @@
               </el-form-item>
 
               <el-form-item label="PC 中控 API 地址">
-                <el-input
-                  v-model="networkForm.pc_client_api_url"
-                  placeholder="为空时使用对外 API 地址"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.pc_client_api_url"
+                    placeholder="为空时使用对外 API 地址"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.pc_client_api_url"
+                    @click="testUrl('PC 中控 API 地址', networkForm.pc_client_api_url || networkForm.public_api_base_url, 'pc_client_api_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
+                <UrlTestResult :result="urlTestResults.pc_client_api_url" />
               </el-form-item>
 
               <el-form-item label="安卓脚本 API 地址">
-                <el-input
-                  v-model="networkForm.android_client_api_url"
-                  placeholder="为空时使用对外 API 地址"
-                  style="width:460px"
-                />
+                <div class="input-with-action">
+                  <el-input
+                    v-model="networkForm.android_client_api_url"
+                    placeholder="为空时使用对外 API 地址"
+                    style="width:460px"
+                  />
+                  <el-button
+                    :loading="urlTestLoading.android_client_api_url"
+                    @click="testUrl('安卓脚本 API 地址', networkForm.android_client_api_url || networkForm.public_api_base_url, 'android_client_api_url')"
+                  >
+                    测试
+                  </el-button>
+                </div>
+                <UrlTestResult :result="urlTestResults.android_client_api_url" />
               </el-form-item>
 
               <el-form-item label="备用 API 地址">
@@ -344,6 +425,24 @@
                   placeholder="一行一个备用地址，例如：&#10;https://api-bak1.example.com&#10;https://api-bak2.example.com"
                   style="width:460px"
                 />
+
+                <div class="backup-test-list" v-if="splitLines(backupApiUrlsText).length">
+                  <div
+                    v-for="(url, index) in splitLines(backupApiUrlsText)"
+                    :key="`${url}-${index}`"
+                    class="backup-test-item"
+                  >
+                    <span class="mono">{{ url }}</span>
+                    <el-button
+                      size="small"
+                      :loading="urlTestLoading[`backup_${index}`]"
+                      @click="testUrl(`备用 API ${index + 1}`, url, `backup_${index}`)"
+                    >
+                      测试
+                    </el-button>
+                    <UrlTestResult :result="urlTestResults[`backup_${index}`]" compact />
+                  </div>
+                </div>
               </el-form-item>
 
               <el-form-item label="请求超时">
@@ -406,7 +505,7 @@
               <div>
                 <div class="panel-title">运行诊断</div>
                 <div class="panel-desc">
-                  当前先提供基础诊断；后续会扩展公网入口、中转服务、家庭节点和请求 Header 诊断。
+                  D 模式链路较长，诊断需要分层观察：本机服务、数据库、Redis、公网入口、中转层、请求 Header。
                 </div>
               </div>
               <el-button :loading="diagnosticsLoading" @click="loadDiagnostics">
@@ -415,30 +514,102 @@
             </div>
 
             <el-descriptions :column="2" border size="small" v-loading="diagnosticsLoading">
-              <el-descriptions-item label="状态">
-                <el-tag :type="diagnostics.status === 'ok' ? 'success' : 'danger'">
+              <el-descriptions-item label="总体状态">
+                <el-tag :type="diagnostics.status === 'ok' ? 'success' : 'warning'">
                   {{ diagnostics.status || '未知' }}
                 </el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="服务器时间">
                 <span class="mono">{{ diagnostics.server_time || '—' }}</span>
               </el-descriptions-item>
-              <el-descriptions-item label="网络设置已加载">
-                {{ diagnostics.network_settings_loaded ? '是' : '否' }}
+
+              <el-descriptions-item label="运行环境">
+                <span class="mono">{{ diagnostics.environment || '—' }}</span>
               </el-descriptions-item>
+              <el-descriptions-item label="后端时区">
+                <span class="mono">{{ diagnostics.backend_timezone || '—' }}</span>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="数据库状态">
+                <el-tag :type="diagnostics.database_status === 'ok' ? 'success' : 'danger'">
+                  {{ diagnostics.database_status || '未知' }}
+                </el-tag>
+                <div v-if="diagnostics.database_error" class="diag-error">
+                  {{ diagnostics.database_error }}
+                </div>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="Redis 状态">
+                <el-tag :type="diagnostics.redis_status === 'ok' ? 'success' : 'danger'">
+                  {{ diagnostics.redis_status || '未知' }}
+                </el-tag>
+                <div v-if="diagnostics.redis_error" class="diag-error">
+                  {{ diagnostics.redis_error }}
+                </div>
+              </el-descriptions-item>
+
               <el-descriptions-item label="部署模式">
                 {{ deploymentModeLabel(diagnostics.deployment_mode) }}
               </el-descriptions-item>
+              <el-descriptions-item label="网络设置已加载">
+                {{ diagnostics.network_settings_loaded ? '是' : '否' }}
+              </el-descriptions-item>
+
               <el-descriptions-item label="公网 API 地址">
                 <span class="mono">{{ diagnostics.public_api_base_url || '未配置' }}</span>
               </el-descriptions-item>
-              <el-descriptions-item label="中转状态">
+              <el-descriptions-item label="管理后台地址">
+                <span class="mono">{{ diagnostics.public_admin_base_url || '未配置' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="热更新地址">
+                <span class="mono">{{ diagnostics.public_update_base_url || '未配置' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="中转模式">
                 {{ diagnostics.relay_enabled ? '启用' : '关闭' }} / {{ diagnostics.relay_mode || '—' }}
               </el-descriptions-item>
-              <el-descriptions-item label="中转地址" :span="2">
+              <el-descriptions-item label="中转地址">
                 <span class="mono">{{ diagnostics.relay_url || '未配置' }}</span>
               </el-descriptions-item>
+              <el-descriptions-item label="中转健康检查">
+                <span class="mono">{{ diagnostics.relay_health_url || '未配置' }}</span>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="反向代理">
+                {{ diagnostics.reverse_proxy_enabled ? '启用' : '关闭' }}
+                <span class="mono">{{ diagnostics.reverse_proxy_url || '' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="真实 IP Header">
+                <span class="mono">{{ diagnostics.real_ip_header || '—' }}</span>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="请求来源 IP">
+                <span class="mono">{{ diagnostics.request_remote_addr || '—' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="当前选中的真实 IP">
+                <span class="mono">{{ diagnostics.selected_real_ip_value || '—' }}</span>
+              </el-descriptions-item>
+
+              <el-descriptions-item label="X-Forwarded-For">
+                <span class="mono">{{ diagnostics.x_forwarded_for || '—' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="X-Real-IP">
+                <span class="mono">{{ diagnostics.x_real_ip || '—' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="CF-Connecting-IP">
+                <span class="mono">{{ diagnostics.cf_connecting_ip || '—' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="可信代理校验">
+                {{ diagnostics.trusted_proxy_enabled ? '启用' : '关闭' }}
+              </el-descriptions-item>
             </el-descriptions>
+
+            <el-alert
+              title="注意：Header 展示用于诊断真实 IP 传递情况。是否真正信任这些 Header，还需要配合可信代理 IP 规则，后续会继续完善。"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="inner-alert diagnostics-tip"
+            />
           </div>
         </el-tab-pane>
 
@@ -527,23 +698,52 @@
  * 名称: 系统设置
  * 作者: 蜂巢·大圣 (HiveGreatSage)
  * 时间: 2026-04-30
- * 版本: V2.0.0
+ * 版本: V2.1.0
  * 功能说明:
  *   平台级系统设置入口。
  *
  * 本版重点:
- *   1. 从单页卡片升级为 Tabs 结构。
- *   2. D 模式：公网中转 / 隧道模式作为主部署模式。
- *   3. 网络设置支持前台编辑保存。
- *   4. 客户端连接策略支持保存。
- *   5. 运行诊断初步接入。
+ *   1. 增加 URL 连通性测试。
+ *   2. 增强运行诊断。
+ *   3. 展示数据库 / Redis / 请求 Header / 真实 IP 诊断信息。
  */
 
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
 import { systemSettingsApi } from '@/api/systemSettings'
+
+const UrlTestResult = defineComponent({
+  name: 'UrlTestResult',
+  props: {
+    result: {
+      type: Object,
+      default: null,
+    },
+    compact: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  setup(props) {
+    return () => {
+      if (!props.result) return null
+
+      const cls = [
+        'url-test-result',
+        props.result.success ? 'success' : 'fail',
+        props.compact ? 'compact' : '',
+      ]
+
+      const text = props.result.success
+        ? `连通 · HTTP ${props.result.status_code} · ${props.result.elapsed_ms}ms`
+        : `失败 · ${props.result.error || props.result.status_code || '未知错误'} · ${props.result.elapsed_ms ?? '-'}ms`
+
+      return h('div', { class: cls }, text)
+    }
+  },
+})
 
 const settings = useSettingsStore()
 const authStore = useAuthStore()
@@ -595,16 +795,42 @@ const networkForm = reactive({
 const diagnostics = reactive({
   status: '',
   server_time: '',
+  environment: '',
+  backend_timezone: '',
+
+  database_status: '',
+  database_error: '',
+  redis_status: '',
+  redis_error: '',
+
   network_settings_loaded: false,
   deployment_mode: '',
   public_api_base_url: '',
+  public_admin_base_url: '',
+  public_update_base_url: '',
+
   relay_enabled: false,
   relay_mode: '',
   relay_url: '',
+  relay_health_url: '',
+
+  reverse_proxy_enabled: false,
+  reverse_proxy_url: '',
+  real_ip_header: '',
+  trusted_proxy_enabled: false,
+
+  request_remote_addr: '',
+  x_forwarded_for: '',
+  x_real_ip: '',
+  cf_connecting_ip: '',
+  selected_real_ip_value: '',
 })
 
 const backupApiUrlsText = ref('')
 const trustedProxyIpsText = ref('')
+
+const urlTestLoading = reactive({})
+const urlTestResults = reactive({})
 
 const now = ref(new Date())
 let timer = null
@@ -685,6 +911,38 @@ const saveNetworkSettings = async () => {
     ElMessage.success(`网络设置已保存，配置版本 v${networkForm.config_version}`)
   } finally {
     savingNetwork.value = false
+  }
+}
+
+const testUrl = async (targetName, url, resultKey) => {
+  const finalUrl = String(url || '').trim()
+
+  if (!finalUrl) {
+    ElMessage.warning('请先填写要测试的地址')
+    return
+  }
+
+  urlTestLoading[resultKey] = true
+
+  try {
+    const res = await systemSettingsApi.testUrl({
+      target_name: targetName,
+      url: finalUrl,
+      timeout_seconds: networkForm.client_timeout_seconds || 15,
+    })
+
+    urlTestResults[resultKey] = res.data
+
+    if (res.data.success) {
+      ElMessage.success(`${targetName} 连通成功`)
+    } else {
+      ElMessage.warning(`${targetName} 连通失败`)
+    }
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(`${targetName} 测试失败`)
+  } finally {
+    urlTestLoading[resultKey] = false
   }
 }
 
@@ -803,6 +1061,10 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
+.diagnostics-tip {
+  margin-top: 16px;
+}
+
 .settings-form {
   max-width: 760px;
   padding-top: 8px;
@@ -810,6 +1072,12 @@ onUnmounted(() => {
 
 .settings-form.wide {
   max-width: 980px;
+}
+
+.input-with-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .setting-note {
@@ -828,6 +1096,47 @@ onUnmounted(() => {
 
 .setting-desc.danger {
   color: #dc2626;
+}
+
+.url-test-result {
+  margin-top: 5px;
+  font-size: 12px;
+  font-family: 'Cascadia Code', monospace;
+}
+
+.url-test-result.success {
+  color: #059669;
+}
+
+.url-test-result.fail {
+  color: #dc2626;
+}
+
+.url-test-result.compact {
+  margin-top: 0;
+  min-width: 220px;
+}
+
+.backup-test-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backup-test-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.diag-error {
+  margin-top: 4px;
+  color: #dc2626;
+  font-size: 12px;
+  word-break: break-all;
 }
 
 .placeholder-panel {
@@ -875,6 +1184,7 @@ onUnmounted(() => {
 .mono {
   font-family: 'Cascadia Code', monospace;
   font-size: 12px;
+  word-break: break-all;
 }
 
 :deep(.el-divider__text) {
