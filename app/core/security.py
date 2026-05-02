@@ -8,7 +8,7 @@ r"""
     安全模块，提供两类功能：
       1. 密码哈希：使用 bcrypt，verify_password / hash_password
       2. JWT 管理：
-         - Access Token（15分钟，含 sub/level/project/jti）
+         - Access Token（15分钟，含 sub/authorization_level/project_code/jti）
          - Refresh Token（不透明字符串，存 Redis，7天）
          - 校验 AT：decode_access_token
          - Admin Token（8小时，type=admin）：create_admin_token / decode_admin_token
@@ -53,7 +53,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(
     user_id: int,
-    user_level: str,
+    authorization_level: str,
     game_project_code: str,
 ) -> tuple[str, str]:
     """
@@ -61,8 +61,8 @@ def create_access_token(
 
     Payload 字段（与 API鉴权方案.md 对齐）：
         sub     : str(user_id)
-        level   : user_level（'trial'/'normal'/'vip'/'svip'/'tester'）
-        project : game_project.code_name
+        authorization_level : Authorization.user_level
+        project_code        : game_project.code_name
         jti     : UUID v4，用于黑名单校验
         iat     : 签发时间
         exp     : 过期时间
@@ -76,8 +76,8 @@ def create_access_token(
 
     payload: dict[str, Any] = {
         "sub": str(user_id),
-        "level": user_level,
-        "project": game_project_code,
+        "authorization_level": authorization_level,
+        "project_code": game_project_code,
         "jti": jti,
         "iat": now,
         "exp": expire,

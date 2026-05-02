@@ -15,7 +15,7 @@ r"""
     已知问题: 无
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -209,8 +209,7 @@ async def unbind_device(
     )
     binding = result.scalar_one_or_none()
     if not binding:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="设备绑定记录不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="设备绑定记录不存在")
     binding.status = "unbound"
     await db.commit()
 
@@ -227,8 +226,7 @@ async def delete_user(
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
     user.is_deleted = True
     await db.commit()
 
@@ -243,8 +241,7 @@ async def delete_agent(
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="代理不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
     agent.status = "suspended"
     await db.commit()
 
@@ -259,7 +256,6 @@ async def delete_project(
     result = await db.execute(select(GameProject).where(GameProject.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="项目不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
     project.is_active = False
     await db.commit()

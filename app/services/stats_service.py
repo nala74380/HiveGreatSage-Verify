@@ -104,7 +104,6 @@ async def get_user_project_stats(
     return UserProjectStatsResponse(
         user_id=user_id,
         username=user.username if user else str(user_id),
-        user_level=user.user_level if user else "",
         project_stats=project_stats,
         total_projects=len(project_stats),
         active_projects=active_projects,
@@ -153,21 +152,7 @@ async def get_agent_project_summary(
             project_summaries=[],
         )
 
-    # 按项目聚合授权数
-    auth_agg_result = await db.execute(
-        select(
-            Authorization.game_project_id,
-            func.count(Authorization.id).label("auth_count"),
-            func.sum(
-                (Authorization.status == "active").cast(db.bind.dialect.BOOLEAN)
-                if hasattr(db, 'bind') else Authorization.status
-            ).label("active_auth_count"),
-        )
-        .where(Authorization.user_id.in_(user_ids))
-        .group_by(Authorization.game_project_id)
-    )
-
-    # 简化版：分两次查
+    # 按项目聚合授权数（分两次查询，清晰可靠）
     auth_total_result = await db.execute(
         select(
             Authorization.game_project_id,
@@ -274,8 +259,8 @@ async def get_platform_summary(db: AsyncSession) -> PlatformSummaryResponse:
 
     # 按级别分布
     level_result = await db.execute(
-        select(User.user_level, func.count(User.id))
-        .group_by(User.user_level)
+        select(Authorization.user_level, func.count(Authorization.id))
+        .group_by(Authorization.user_level)
     )
     level_dist = {row[0]: row[1] for row in level_result.all()}
 
@@ -287,5 +272,5 @@ async def get_platform_summary(db: AsyncSession) -> PlatformSummaryResponse:
         total_devices_bound=total_devices,
         total_devices_online=0,   # 路由层从 Redis 注入
         total_authorizations=total_auth,
-        level_distribution=level_dist,
+        authorization_level_distribution=level_dist,
     )

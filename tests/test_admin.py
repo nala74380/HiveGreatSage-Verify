@@ -48,26 +48,24 @@ class TestUserManagement:
         r = await client.post("/api/users/", json={
             "username": f"normal_{suffix}",
             "password": "Pass@2026!",
-            "user_level": "normal",
         }, headers=admin_headers)
         assert r.status_code == 201
         data = r.json()
-        assert data["user_level"] == "normal"
+        assert "user_level" not in data
         assert data["created_by_admin"] is True
 
-    async def test_create_tester_by_admin(self, client, admin_headers):
+    async def test_create_user_rejects_old_level_field(self, client, admin_headers):
         suffix = uuid.uuid4().hex[:8]
         r = await client.post("/api/users/", json={
             "username": f"tester_{suffix}",
             "password": "Pass@2026!",
             "user_level": "tester",
         }, headers=admin_headers)
-        assert r.status_code == 201
-        assert r.json()["user_level"] == "tester"
+        assert r.status_code == 422
 
     async def test_duplicate_username_fails(self, client, admin_headers):
         suffix = uuid.uuid4().hex[:8]
-        body = {"username": f"dup_{suffix}", "password": "P@2026!", "user_level": "normal"}
+        body = {"username": f"dup_{suffix}", "password": "P@2026!"}
         r1 = await client.post("/api/users/", json=body, headers=admin_headers)
         assert r1.status_code == 201
         r2 = await client.post("/api/users/", json=body, headers=admin_headers)
@@ -85,7 +83,6 @@ class TestUserManagement:
         r = await client.post("/api/users/", json={
             "username": f"detail_{suffix}",
             "password": "P@2026!",
-            "user_level": "vip",
         }, headers=admin_headers)
         user_id = r.json()["id"]
 
@@ -93,14 +90,13 @@ class TestUserManagement:
         assert r.status_code == 200
         data = r.json()
         assert data["id"] == user_id
-        assert data["user_level"] == "vip"
+        assert "user_level" not in data
 
     async def test_update_user_status(self, client, admin_headers):
         suffix = uuid.uuid4().hex[:8]
         r = await client.post("/api/users/", json={
             "username": f"upd_{suffix}",
             "password": "P@2026!",
-            "user_level": "normal",
         }, headers=admin_headers)
         user_id = r.json()["id"]
 
@@ -115,7 +111,6 @@ class TestUserManagement:
         r = await client.post("/api/users/", json={
             "username": f"authtest_{suffix}",
             "password": "P@2026!",
-            "user_level": "normal",
         }, headers=admin_headers)
         user_id = r.json()["id"]
 
@@ -201,7 +196,6 @@ class TestAgentManagement:
         r = await client.post("/api/users/", json={
             "username": f"aguser_{suffix}",
             "password": "User@2026!",
-            "user_level": "normal",
         }, headers=agent_headers)
         assert r.status_code == 201
         data = r.json()

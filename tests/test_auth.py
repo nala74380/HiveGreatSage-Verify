@@ -11,7 +11,7 @@ r"""
       1. 授权创建请求必须显式传入 Authorization.user_level。
       2. 授权创建请求必须显式传入 Authorization.authorized_devices。
       3. 登录响应中的 user_level 当前仍来自 Authorization.user_level。
-      4. Refresh Token 刷新必须重新校验 Authorization，而不是读取 User.user_level。
+      4. Refresh Token 刷新必须重新校验 Authorization。
       5. /api/auth/me 必须返回当前项目 Authorization 授权摘要。
       6. 软删除用户不得登录。
       7. 软删除用户不得使用 Refresh Token 刷新 Access Token。
@@ -51,7 +51,6 @@ async def _create_test_user(
     创建测试用户并授予指定项目授权。
 
     注意:
-      User.user_level 是旧主体字段，本测试故意创建为 normal。
       登录 / refresh / me 断言必须以 Authorization 为准。
     """
     suffix = uuid.uuid4().hex[:8]
@@ -63,10 +62,6 @@ async def _create_test_user(
         json={
             "username": username,
             "password": password,
-            # 当前用户创建接口仍要求旧主体字段。
-            # 本测试故意写 normal，用来验证认证链不再以 User.user_level 为事实源。
-            "user_level": "normal",
-            "max_devices": 20,
         },
         headers=admin_headers,
     )
@@ -186,14 +181,14 @@ class TestLogin:
         assert "refresh_token" in data
 
         # 重点：
-        # User.user_level 创建时是 normal；
         # 这里必须返回 Authorization.user_level = tester。
-        assert data["user_level"] == "tester"
+        assert data["authorization_level"] == "tester"
+        assert "user_level" not in data
         assert data["game_project_code"] == PROJECT_CODE
 
         payload = decode_access_token(data["access_token"])
-        assert payload["level"] == "tester"
-        assert payload["project"] == PROJECT_CODE
+        assert payload["authorization_level"] == "tester"
+        assert payload["project_code"] == PROJECT_CODE
 
     async def test_login_wrong_password(self, client, admin_headers, project_id):
         """密码错误应返回 401。"""
@@ -247,8 +242,6 @@ class TestLogin:
             json={
                 "username": username,
                 "password": password,
-                "user_level": "normal",
-                "max_devices": 20,
             },
             headers=admin_headers,
         )
@@ -387,10 +380,9 @@ class TestRefreshAndMe:
         Refresh Token 刷新时必须重新读取 Authorization.user_level。
 
         构造:
-          1. User.user_level 固定为 normal。
-          2. 初始 Authorization.user_level 为 tester。
-          3. 登录后直接把 Authorization.user_level 改为 svip。
-          4. refresh 后的新 Access Token 必须是 svip。
+          1. 初始 Authorization.user_level 为 tester。
+          2. 登录后直接把 Authorization.user_level 改为 svip。
+          3. refresh 后的新 Access Token 必须是 svip。
         """
         tokens = await self._do_login(
             client,
@@ -416,8 +408,8 @@ class TestRefreshAndMe:
         assert "access_token" in data
 
         payload = decode_access_token(data["access_token"])
-        assert payload["level"] == "svip"
-        assert payload["project"] == PROJECT_CODE
+        assert payload["authorization_level"] == "svip"
+        assert payload["project_code"] == PROJECT_CODE
 
     async def test_refresh_soft_deleted_user_is_rejected(
         self,

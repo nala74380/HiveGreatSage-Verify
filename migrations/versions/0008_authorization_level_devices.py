@@ -10,8 +10,6 @@ r"""
 迁移原因:
     旧模型:
         user.user_level
-        user.max_devices
-        user.expired_at
 
     无法表达:
         同一用户在 A 项目是普通，B 项目是 VIP；
@@ -24,9 +22,6 @@ r"""
         authorization.valid_until
 
 安全口径:
-    - 本迁移不会删除 user.user_level / user.max_devices / user.expired_at。
-    - 旧字段暂时保留作兼容与回滚。
-    - 新增字段会用旧 user 字段进行一次性回填。
 
 改进历史:
     V1.0.1 - 修复 PostgreSQL 中 authorization 表名未加双引号导致的语法错误
@@ -87,21 +82,6 @@ def upgrade() -> None:
     #      - user 也是敏感表名，也必须加双引号。
     #    回填规则：
     #      - authorization.user_level 从 user.user_level 回填
-    #      - authorization.authorized_devices 从 user.max_devices 回填
-    #      - authorization.valid_until 若自身为空，则从 user.expired_at 回填
-    op.execute(
-        """
-        UPDATE "authorization" AS a
-        SET
-            user_level = COALESCE(u.user_level, 'normal'),
-            authorized_devices = COALESCE(u.max_devices, 20),
-            valid_until = COALESCE(a.valid_until, u.expired_at)
-        FROM "user" AS u
-        WHERE a.user_id = u.id
-        """
-    )
-
-
 def downgrade() -> None:
     op.drop_constraint(
         "chk_authorization_authorized_devices_non_negative",

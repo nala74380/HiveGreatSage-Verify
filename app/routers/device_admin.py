@@ -51,7 +51,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.redis_client import get_redis
 from app.core.security import decode_admin_token, decode_agent_token
 from app.database import get_main_db
-from app.models.main.models import Admin, Agent, DeviceBinding, GameProject, User
+from app.models.main.models import Admin, Agent, Authorization, DeviceBinding, GameProject, User
 from app.services.device_admin_service import (
     get_admin_device_list,
     get_agent_device_list,
@@ -147,40 +147,35 @@ def _normalize_datetime(value: datetime | None) -> datetime | None:
     return value
 
 
-async def _read_runtime_from_redis(
-    *,
+
+async def _build_redis_online_map(
     redis: aioredis.Redis,
-    game_project_id: int,
-    user_id: int,
-    device_fingerprint: str,
-) -> dict | None:
+) -> dict[tuple[int, int, str], dict]:
     """
-    读取设备实时运行数据。
+    一次性 SCAN 所有 device:runtime:* key，构建 (game_id, user_id, device_fp) → data 的映射。
 
-    Key 格式:
-        device:runtime:{game_id}:{user_id}:{device_fp}
+    替代原有的逐设备 _read_runtime_from_redis，将 N 次 Redis 调用减少为 1 次 SCAN。
     """
-    redis_key = f"device:runtime:{game_project_id}:{user_id}:{device_fingerprint}"
-    raw = await redis.get(redis_key)
-
-    if raw:
+    online_map: dict[tuple[int, int, str], dict] = {}
+    async for key in redis.scan_iter("device:runtime:*"):
+        raw = await redis.get(key)
+        if not raw:
+            continue
         try:
-            return json.loads(raw)
+            data = json.loads(raw)
         except Exception:
-            return None
-
-    # 兼容旧数据或项目未知情况下的通配扫描。
-    redis_pattern = f"device:runtime:*:{user_id}:{device_fingerprint}"
-    async for rkey in redis.scan_iter(redis_pattern):
-        raw = await redis.get(rkey)
-        if raw:
+            continue
+        # Key 格式：device:runtime:{game_id}:{user_id}:{device_fp}
+        parts = key.split(":")
+        if len(parts) >= 5:
             try:
-                return json.loads(raw)
-            except Exception:
-                return None
-        break
-
-    return None
+                gid = int(parts[2])
+                uid = int(parts[3])
+                fp = parts[4]
+                online_map[(gid, uid, fp)] = data
+            except (ValueError, IndexError):
+                continue
+    return online_map
 
 
 @router.get("/", summary="全平台设备总览（Admin / Agent 后台）")
@@ -213,13 +208,24 @@ async def list_all_devices(
 
     Agent Token:
       当前代理 + 下级代理创建的用户。
+
+    性能说明:
+      1. 一次性 SCAN Redis 构建全量在线设备 map（替代 N 次逐设备查询）。
+      2. SQL 层过滤 user_id / keyword / project_id / project_code。
+      3. Redis 依赖过滤（status / online_only）仍在 Python 层完成，但无需逐设备调用 Redis GET。
     """
     admin_caller, agent_caller = caller
 
     base_q = (
-        select(DeviceBinding, User, GameProject)
+        select(DeviceBinding, User, GameProject, Authorization)
         .join(User, DeviceBinding.user_id == User.id)
         .join(GameProject, DeviceBinding.game_project_id == GameProject.id)
+        .outerjoin(
+            Authorization,
+            (Authorization.user_id == User.id)
+            & (Authorization.game_project_id == GameProject.id)
+            & (Authorization.status == "active"),
+        )
         .where(
             DeviceBinding.status == "active",
             GameProject.is_active == True,  # noqa: E712
@@ -259,6 +265,9 @@ async def list_all_devices(
             | (DeviceBinding.imsi.ilike(kw))
         )
 
+    # ── 一次性构建 Redis 在线设备 map ─────────────────────────
+    redis_online_map = await _build_redis_online_map(redis)
+
     rows_result = await main_db.execute(
         base_q.order_by(DeviceBinding.last_seen_at.desc().nullslast(), DeviceBinding.id.desc())
     )
@@ -267,13 +276,8 @@ async def list_all_devices(
     now = datetime.now(timezone.utc)
     all_devices: list[dict] = []
 
-    for binding, user, project in rows:
-        redis_data = await _read_runtime_from_redis(
-            redis=redis,
-            game_project_id=project.id,
-            user_id=binding.user_id,
-            device_fingerprint=binding.device_fingerprint,
-        )
+    for binding, user, project, authorization in rows:
+        redis_data = redis_online_map.get((project.id, binding.user_id, binding.device_fingerprint))
 
         is_online_redis = redis_data is not None
 
@@ -322,7 +326,7 @@ async def list_all_devices(
                 "user_id": binding.user_id,
                 "username": user.username,
                 "user_status": user.status,
-                "user_level": user.user_level,
+                "authorization_level": authorization.user_level if authorization else None,
 
                 "project_id": project.id,
                 "project_code": project.code_name,

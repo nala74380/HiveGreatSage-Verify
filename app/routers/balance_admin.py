@@ -7,9 +7,6 @@ r"""
 功能说明:
     管理员专用点数与定价接口。只挂载到 /admin/api。
 
-新增能力:
-    GET /admin/api/balance-transactions
-        管理员全局点数流水页面使用。
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -60,30 +57,6 @@ class UnfreezeRequest(BaseModel):
 
 
 # ── 管理员全局流水 ───────────────────────────────────────────
-
-@router.get("/balance-transactions", summary="管理员全局点数流水")
-async def global_balance_transactions(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
-    tx_type: str | None = Query(default=None),
-    agent_id: int | None = Query(default=None),
-    related_user_id: int | None = Query(default=None),
-    related_project_id: int | None = Query(default=None),
-    _: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> dict:
-    return await get_balance_transactions(
-        agent_id=agent_id,
-        db=db,
-        page=page,
-        page_size=page_size,
-        tx_type=tx_type,
-        related_user_id=related_user_id,
-        related_project_id=related_project_id,
-    )
-
-
-# ── 项目定价 ────────────────────────────────────────────────
 
 @router.get("/prices/{project_id}", summary="获取项目各级别定价")
 async def get_prices(

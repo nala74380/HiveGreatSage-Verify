@@ -10,7 +10,7 @@ r"""
     当前整改边界:
       1. /api/auth/me 不再把 User.user_level 作为授权等级返回。
       2. /api/auth/me 返回当前 Token 项目上下文下的 Authorization 授权摘要。
-      3. LoginResponse 暂保留 user_level / game_project_code 旧字段名，后续单独整改。
+      3. LoginResponse 返回 authorization_level / game_project_code。
 
 改进历史:
     V1.1.0 (2026-05-02) - MeResponse 改为 Authorization 授权摘要口径。
@@ -60,8 +60,7 @@ class LoginResponse(BaseModel):
     expires_in: int = Field(description="Access Token 有效期（秒）", examples=[900])
     user_id: int
     username: str
-    # TODO: 后续 token/schema 收口时改为 authorization_level。
-    user_level: str
+    authorization_level: str
     game_project_code: str = Field(description="登录的游戏项目代码名")
 
 

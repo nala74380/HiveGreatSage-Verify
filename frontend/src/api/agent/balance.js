@@ -10,12 +10,6 @@
 import http from '../http'
 
 export const agentBalanceApi = {
-  catalog() {
-    return http.get('/api/agents/my/catalog', {
-      _skipAuthRedirect: true,
-    })
-  },
-
   myBalance() {
     return http.get('/api/agents/my/balance', {
       _skipAuthRedirect: true,

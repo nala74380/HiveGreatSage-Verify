@@ -74,7 +74,6 @@
             <el-table-column prop="username" label="用户名" min-width="130" />
             <el-table-column label="级别" width="75">
               <template #default="{ row }">
-                <LevelTag :level="row.user_level" />
               </template>
             </el-table-column>
             <el-table-column label="状态" width="80">
@@ -84,10 +83,6 @@
             </el-table-column>
             <el-table-column label="到期时间" min-width="120">
               <template #default="{ row }">
-                <span v-if="!row.expired_at" class="text-muted">永久</span>
-                <span v-else :class="{ 'text-danger': daysFromNow(row.expired_at) < 7 }">
-                  {{ formatDate(row.expired_at) }}
-                </span>
               </template>
             </el-table-column>
             <el-table-column label="注册时间" min-width="120">
@@ -194,8 +189,7 @@ import { agentApi }        from '@/api/agent'
 import { userApi }         from '@/api/user'
 import { useDevicePoller } from '@/composables/useDevicePoller'
 import StatusBadge from '@/components/common/StatusBadge.vue'
-import LevelTag    from '@/components/common/LevelTag.vue'
-import { formatRelativeTime, formatDate, daysFromNow } from '@/utils/format'
+import { formatRelativeTime, formatDate } from '@/utils/format'
 import { USER_LEVEL_MAP } from '@/utils/format'
 
 const auth = useAuthStore()

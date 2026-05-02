@@ -11,7 +11,6 @@
  *   - 项目管理是项目相关能力统一入口。
  *   - 项目详情页承载定价、准入、授权申请、热更新等项目能力。
  *   - 账务中心是平台内部点数资产治理统一入口。
- *   - /balance-transactions 保留为旧入口重定向到 /accounting。
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -137,11 +136,6 @@ const router = createRouter({
           component: () => import('@/views/admin/AccountingCenter.vue'),
           meta: { requiresAdmin: true, title: '账务中心' },
         },
-        {
-          path: 'balance-transactions',
-          redirect: '/accounting',
-        },
-
         // Admin: Other
         {
           path: 'updates',

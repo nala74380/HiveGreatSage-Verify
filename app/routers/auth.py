@@ -219,7 +219,7 @@ def _extract_game_project_code(access_token: str) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    game_project_code = str(payload.get("project") or "").strip()
+    game_project_code = str(payload.get("project_code") or "").strip()
     if not game_project_code:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

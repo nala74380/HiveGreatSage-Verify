@@ -85,15 +85,8 @@ async def create_user(
       - 创建用户只创建账号主体。
       - 用户数量只作为统计展示。
       - 项目等级、设备数、到期时间在项目授权时设置。
-      - User.user_level / User.max_devices / User.expired_at 仅保留兼容字段。
       - 代理真正的商业约束发生在项目授权和扣点阶段。
     """
-    if body.user_level == "tester" and admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="tester 级别用户只有管理员能创建",
-        )
-
     await _assert_username_unique(body.username, db)
 
     user = User(
@@ -101,10 +94,6 @@ async def create_user(
         password_hash=hash_password(body.password),
 
         # 兼容旧字段，新页面不再主展示。
-        user_level=body.user_level,
-        max_devices=body.max_devices,
-        expired_at=body.expired_at,
-
         created_by_admin=admin is not None,
         created_by_agent_id=agent.id if agent else None,
         status="active",
@@ -293,20 +282,6 @@ async def update_user(
 
     if body.status is not None:
         user.status = body.status
-
-    if body.user_level is not None:
-        if body.user_level == "tester" and admin is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="tester 级别只有管理员能设置",
-            )
-        user.user_level = body.user_level
-
-    if body.max_devices is not None:
-        user.max_devices = body.max_devices
-
-    if "expired_at" in body.model_fields_set:
-        user.expired_at = body.expired_at
 
     await db.flush()
     await db.refresh(user)
@@ -815,10 +790,6 @@ def _user_to_response(
         created_by_agent_username=creator_agent_username,
 
         # 兼容旧字段。
-        user_level=user.user_level,
-        max_devices=user.max_devices,
-        expired_at=user.expired_at,
-
         authorizations=authorizations,
         authorization_count=authorization_count,
         active_authorization_count=active_authorization_count,

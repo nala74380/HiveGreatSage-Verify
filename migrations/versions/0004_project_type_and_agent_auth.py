@@ -1,14 +1,14 @@
 """add project_type to game_project and create agent_project_auth table
 
 Revision ID: 0004_project_type_and_agent_auth
-Revises: 0003_add_user_max_devices
+Revises: a458709e354f
 Create Date: 2026-04-25
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = '0004_project_type_and_agent_auth'
-down_revision = '0003_add_user_max_devices'
+down_revision = 'a458709e354f'
 branch_labels = None
 depends_on = None
 

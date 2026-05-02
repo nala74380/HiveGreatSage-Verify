@@ -38,7 +38,6 @@ class UserProjectStatsResponse(BaseModel):
     """用户的项目授权统计响应。"""
     user_id:       int
     username:      str
-    user_level:    str
     project_stats: list[DeviceStatsByProject]
 
     # 汇总
@@ -84,6 +83,6 @@ class PlatformSummaryResponse(BaseModel):
     total_devices_online: int   # 来自 Redis，实时值
     total_authorizations: int
     # 按级别分布
-    level_distribution: dict[str, int] = Field(
+    authorization_level_distribution: dict[str, int] = Field(
         description="各级别用户数，如 {'normal': 100, 'vip': 30}"
     )

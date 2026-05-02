@@ -143,6 +143,18 @@ async def lifespan(app: FastAPI):
         f"RT有效期={settings.REFRESH_TOKEN_EXPIRE_DAYS}天"
     )
 
+    # 初始化系统默认配置（network 等），避免首次请求触发迁移导致的并发竞争。
+    try:
+        from app.database import _main_session_factory
+        from app.services.system_setting_service import ensure_network_settings
+
+        async with _main_session_factory() as startup_db:
+            await ensure_network_settings(startup_db)
+            await startup_db.commit()
+            logger.info("系统默认配置已初始化")
+    except Exception as exc:
+        logger.warning(f"系统默认配置初始化失败（不影响启动）: {exc}")
+
     yield
 
     logger.info("关闭数据库连接池...")

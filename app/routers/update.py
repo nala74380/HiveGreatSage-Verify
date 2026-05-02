@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_game_project_code
 from app.core.redis_client import get_redis
-from app.database import get_game_db
+from app.database import get_main_db
 from app.models.main.models import User
 from app.schemas.update import UpdateCheckResponse, UpdateDownloadResponse
 from app.services.update_service import check_update, get_download_url
@@ -64,6 +64,7 @@ async def check_update_endpoint(
     ),
     current_user: User = Depends(get_current_user),
     game_project_code: str = Depends(get_game_project_code),
+    main_db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> UpdateCheckResponse:
     """
@@ -79,15 +80,13 @@ async def check_update_endpoint(
     Authorization: Bearer {access_token}
     ```
     """
-    game_db_factory = get_game_db(game_project_code)
-    async for game_db in game_db_factory():
-        return await check_update(
-            current_version=current_version,
-            client_type=client_type,
-            game_project_code=game_project_code,
-            game_db=game_db,
-            redis=redis,
-        )
+    return await check_update(
+        current_version=current_version,
+        client_type=client_type,
+        game_project_code=game_project_code,
+        main_db=main_db,
+        redis=redis,
+    )
 
 
 @router.get("/download", response_model=UpdateDownloadResponse, summary="获取下载链接")
@@ -99,6 +98,7 @@ async def download_update_endpoint(
     ),
     current_user: User = Depends(get_current_user),
     game_project_code: str = Depends(get_game_project_code),
+    main_db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> UpdateDownloadResponse:
     """
@@ -113,11 +113,9 @@ async def download_update_endpoint(
     Authorization: Bearer {access_token}
     ```
     """
-    game_db_factory = get_game_db(game_project_code)
-    async for game_db in game_db_factory():
-        return await get_download_url(
-            client_type=client_type,
-            game_project_code=game_project_code,
-            game_db=game_db,
-            redis=redis,
-        )
+    return await get_download_url(
+        client_type=client_type,
+        game_project_code=game_project_code,
+        main_db=main_db,
+        redis=redis,
+    )

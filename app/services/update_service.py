@@ -50,7 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.storage import get_storage
 from app.core.storage.local import compute_sha256
-from app.models.game.models import VersionRecord
+from app.models.main.models import VersionRecord
 from app.schemas.update import (
     UpdateCheckResponse,
     UpdateDownloadResponse,
@@ -73,7 +73,7 @@ async def check_update(
     current_version: str,
     client_type: str,
     game_project_code: str,
-    game_db: AsyncSession,
+    main_db: AsyncSession,
     redis,
 ) -> UpdateCheckResponse:
     """
@@ -81,14 +81,14 @@ async def check_update(
 
     流程：
       1. 查 Redis 缓存（TTL=5分钟），命中则跳过数据库查询
-      2. 缓存未命中：查游戏库 version_record，取 is_active=TRUE 的记录
+      2. 缓存未命中：查主库 version_record，按 project + client_type 取 is_active=TRUE 记录
       3. 比较语义化版本号
       4. 返回 UpdateCheckResponse
     """
     record = await _get_active_version(
         client_type=client_type,
         game_project_code=game_project_code,
-        game_db=game_db,
+        main_db=main_db,
         redis=redis,
     )
 
@@ -125,14 +125,14 @@ async def check_update(
 async def get_download_url(
     client_type: str,
     game_project_code: str,
-    game_db: AsyncSession,
+    main_db: AsyncSession,
     redis,
 ) -> UpdateDownloadResponse:
     """生成限时签名下载 URL（有效期由 S3_URL_EXPIRE_SECONDS 控制，默认 10 分钟）。"""
     record = await _get_active_version(
         client_type=client_type,
         game_project_code=game_project_code,
-        game_db=game_db,
+        main_db=main_db,
         redis=redis,
     )
 
@@ -294,12 +294,14 @@ async def invalidate_version_cache(
 async def _get_active_version(
     client_type: str,
     game_project_code: str,
-    game_db: AsyncSession,
+    main_db: AsyncSession,
     redis,
 ) -> dict | None:
     """
-    获取活跃版本信息，优先读 Redis 缓存，缓存未命中时查数据库并写入缓存。
+    获取活跃版本信息，优先读 Redis 缓存，缓存未命中时查主库并写入缓存。
     返回 dict 或 None（无已发布版本）。
+
+    V2 迁移后，VersionRecord 已从游戏库迁至主库，按 game_project_code 关联项目。
     """
     cache_key = _CACHE_KEY.format(
         game_project_code=game_project_code,
@@ -314,9 +316,22 @@ async def _get_active_version(
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # 2. 查游戏数据库
-    result = await game_db.execute(
+    # 2. 从主库查找项目 ID
+    from app.models.main.models import GameProject
+    proj_result = await main_db.execute(
+        select(GameProject).where(
+            GameProject.code_name == game_project_code,
+            GameProject.is_active == True,
+        )
+    )
+    project = proj_result.scalar_one_or_none()
+    if not project:
+        return None
+
+    # 3. 查主库活跃版本
+    result = await main_db.execute(
         select(VersionRecord).where(
+            VersionRecord.game_project_id == project.id,
             VersionRecord.client_type == client_type,
             VersionRecord.is_active == True,
         )
@@ -326,7 +341,7 @@ async def _get_active_version(
     if record is None:
         return None
 
-    # 3. 序列化并写入 Redis 缓存
+    # 4. 序列化并写入 Redis 缓存
     data = {
         "id": record.id,
         "version": record.version,

@@ -10,7 +10,6 @@ r"""
 核心口径:
     - 用户是账号主体。
     - 用户等级、授权设备数、到期时间属于 Authorization，即“用户 × 项目授权”。
-    - User.user_level / User.max_devices / User.expired_at 仅作历史兼容，不再作为新业务主显示口径。
 """
 
 from datetime import datetime
@@ -30,19 +29,11 @@ class UserCreateRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=64, description="用户名")
     password: str = Field(..., min_length=6, max_length=128, description="初始密码")
 
-    # 兼容旧字段：后端会给默认值，新页面不再主动使用。
-    user_level: UserLevel = Field(default="normal", description="兼容旧字段")
-    max_devices: int = Field(default=20, ge=0, description="兼容旧字段")
-    expired_at: datetime | None = Field(default=None, description="兼容旧字段")
+    model_config = {"extra": "forbid"}
 
 
 class UserUpdateRequest(BaseModel):
     status: UserStatus | None = Field(default=None, description="账号状态")
-
-    # 兼容旧字段：新页面不再作为主要业务字段使用。
-    user_level: UserLevel | None = Field(default=None, description="兼容旧字段")
-    max_devices: int | None = Field(default=None, ge=0, description="兼容旧字段")
-    expired_at: datetime | None = Field(default=None, description="兼容旧字段")
 
     model_config = {"extra": "forbid"}
 
@@ -133,11 +124,6 @@ class UserResponse(BaseModel):
     created_by_type: str = "unknown"
     created_by_display: str = "未知"
     created_by_agent_username: str | None = None
-
-    # 兼容旧字段，前端新页面不再主展示
-    user_level: str | None = None
-    max_devices: int | None = None
-    expired_at: datetime | None = None
 
     authorizations: list[AuthorizationInfo] = Field(default_factory=list)
     authorization_count: int = 0

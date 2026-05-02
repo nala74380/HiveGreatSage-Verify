@@ -274,7 +274,7 @@
  *   - 支持“申请授权”。
  *   - 支持“立即开通”。
  *   - 支持“申请中 / 已拒绝 / 暂不可申请 / 已授权”等状态。
- *   - 不再调用旧的 /api/agents/my/catalog + /api/agents/my-projects 双接口合并。
+ *   - 使用 /api/agents/my/project-access/catalog 单接口返回项目目录。
  */
 
 import { onMounted, reactive, ref } from 'vue'

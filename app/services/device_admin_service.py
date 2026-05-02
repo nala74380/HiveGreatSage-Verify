@@ -185,11 +185,16 @@ async def _build_device_list(
     构建设备列表（在线设备来自 Redis，离线设备来自游戏库）。
 
     allowed_user_ids=None 表示不限制（管理员视角）。
+
+    性能说明:
+      - 仅对当前项目 SCAN Redis，不跨项目遍历。
+      - 游戏库离线设备查询带 SQL 层过滤。
+      - 分页在 Python 层完成（因 status/online 过滤依赖 Redis）。
     """
     game_id = game_project.id
     game_code = game_project.code_name
 
-    # Step 1: Redis 在线设备
+    # Step 1: 一次性 SCAN 当前项目的 Redis 在线设备
     redis_heartbeats = await get_all_heartbeats_for_game(redis, game_id)
     online_map: dict[str, dict] = {}   # device_fp → heartbeat data
     for hb in redis_heartbeats:

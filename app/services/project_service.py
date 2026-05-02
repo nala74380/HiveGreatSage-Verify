@@ -68,8 +68,16 @@ async def _provision_game_database(db_name: str) -> None:
                 {"n": db_name},
             )
             if not result.scalar():
+                # 使用参数化标识符防止 SQL 注入（db_name 来自用户输入的 code_name）。
+                # PostgreSQL 不允许在 CREATE DATABASE 中使用参数占位符，
+                # 因此需要对标识符做显式校验：db_name 只能包含字母数字和下划线。
+                if not db_name.replace("_", "").isalnum():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"非法数据库名称: {db_name}",
+                    )
                 await conn.execute(
-                    text(f"CREATE DATABASE {db_name} OWNER hive_user")
+                    text(f"CREATE DATABASE \"{db_name}\" OWNER hive_user")
                 )
                 logger.info("游戏库已创建: %s", db_name)
             else:

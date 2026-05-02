@@ -137,7 +137,7 @@ def get_game_project_code(
     """
     try:
         payload = decode_access_token(credentials.credentials)
-        code = str(payload.get("project") or "").strip()
+        code = str(payload.get("project_code") or "").strip()
         if not code:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

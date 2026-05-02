@@ -42,7 +42,6 @@ r"""
       - Authorization 新增 user_level。
       - Authorization 新增 authorized_devices。
       - 项目内用户等级、授权设备数、授权到期时间统一归属 Authorization。
-      - User.user_level / User.max_devices / User.expired_at 暂保留兼容，不再作为新业务主口径。
 
 调试信息:
     关系加载策略统一使用 lazy="select"。
@@ -220,16 +219,6 @@ class Agent(Base):
 
 class User(Base):
     __tablename__ = "user"
-    __table_args__ = (
-        CheckConstraint(
-            "user_level IN ('trial', 'normal', 'vip', 'svip', 'tester')",
-            name="chk_user_level_enum",
-        ),
-        CheckConstraint(
-            "user_level != 'tester' OR created_by_admin = TRUE",
-            name="chk_tester_creator",
-        ),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
@@ -239,10 +228,6 @@ class User(Base):
         nullable=False,
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    # 兼容旧字段：
-    # 新业务口径中，用户等级应以 Authorization.user_level 为准。
-    user_level: Mapped[str] = mapped_column(String(20), nullable=False)
 
     created_by_agent_id: Mapped[int | None] = mapped_column(
         Integer,
@@ -267,14 +252,6 @@ class User(Base):
         comment="软删除标记：True=已删除",
     )
 
-    # 兼容旧字段：
-    # 新业务口径中，项目授权设备数应以 Authorization.authorized_devices 为准。
-    max_devices: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        server_default="500",
-    )
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -283,13 +260,6 @@ class User(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
-    )
-
-    # 兼容旧字段：
-    # 新业务口径中，到期时间应以 Authorization.valid_until 为准。
-    expired_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
     )
 
     created_by_agent: Mapped["Agent | None"] = relationship(

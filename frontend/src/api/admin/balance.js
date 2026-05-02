@@ -11,10 +11,6 @@ import http from '../http'
 
 export const adminBalanceApi = {
   // ── 管理员全局点数流水 ───────────────────────────────────
-  globalTransactions(params = {}) {
-    return http.get('/admin/api/balance-transactions', { params })
-  },
-
   // ── 项目定价 ─────────────────────────────────────────────
   getPrices(projectId) {
     return http.get(`/admin/api/prices/${projectId}`)

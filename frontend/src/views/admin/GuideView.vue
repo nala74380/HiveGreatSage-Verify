@@ -438,7 +438,7 @@ if __name__ == "__main__":
         project_uuid="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         device_fingerprint="a1b2c3d4e5f6..."
     )
-    print("登录成功，用户级别：", result["level"])
+    print("登录成功，授权等级：", result["authorization_level"])
     devices = client.get_device_list()
     print("在线设备数：", sum(1 for d in devices if d["is_online"]))`
 

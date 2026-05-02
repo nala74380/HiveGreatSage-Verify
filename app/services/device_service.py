@@ -32,7 +32,7 @@ r"""
 """
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as aioredis
 from fastapi import HTTPException, status
@@ -363,9 +363,6 @@ async def _get_devices_from_main_db(
     登录时就会创建 DeviceBinding，所以即使还没有心跳，
     也能展示已绑定的设备列表（状态显示为离线）。
     """
-    from datetime import timedelta
-    from sqlalchemy import select
-
     result = await main_db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == user_id,

@@ -71,15 +71,12 @@ async def platform_summary(
     result = await get_platform_summary(db=db)
 
     # 注入 Redis 实时在线设备数
+    # 使用 SCAN 代替 KEYS，避免在生产环境阻塞 Redis。
     try:
-        from app.core.redis_client import get_all_heartbeats_for_game
-        # 简化：计算所有 device:runtime:* key 的数量
-        online_count = await redis.eval(
-            "return #redis.call('keys', ARGV[1])",
-            0,
-            "device:runtime:*",
-        )
-        result.total_devices_online = int(online_count or 0)
+        online_count = 0
+        async for _ in redis.scan_iter("device:runtime:*"):
+            online_count += 1
+        result.total_devices_online = online_count
     except Exception:
         pass
 

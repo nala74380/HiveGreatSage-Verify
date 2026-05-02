@@ -23,7 +23,6 @@ r"""
     - AccountingDocument 是一次账务业务单据。
     - AccountingLedgerEntry 是不可变账本明细。
     - AuthorizationChargeSnapshot 是授权扣点快照。
-    - 旧 balance_service.py 将作为兼容转发层。
 """
 
 import math
@@ -168,13 +167,24 @@ def _make_no(prefix: str) -> str:
 
 
 def _signed_amount(entry: AccountingLedgerEntry) -> float:
+    """
+    将账本金额转为带符号金额。
+
+    规则:
+      - consume / freeze → 负数（余额减少）
+      - unfreeze / refund / recharge / credit → 正数（余额增加）
+      - reversal: 根据 direction 判断
+      - 其他: 根据 direction 判断
+    """
     amount = _money(entry.amount)
 
-    if entry.entry_type in {"consume"}:
+    # 明确消耗类 → 负数
+    if entry.entry_type in {"consume", "freeze"}:
         return -float(amount)
 
-    if entry.entry_type == "unfreeze":
-        return -float(amount)
+    # 明确增加类 → 正数
+    if entry.entry_type in {"unfreeze", "refund", "recharge", "credit"}:
+        return float(amount)
 
     if entry.entry_type == "reversal":
         return -float(amount) if entry.direction == "out" else float(amount)
@@ -278,46 +288,6 @@ async def delete_project_price(project_id: int, user_level: str, db: AsyncSessio
 
     await db.delete(price)
     await db.flush()
-
-
-async def get_all_projects_with_prices(db: AsyncSession) -> list[dict]:
-    result = await db.execute(
-        select(GameProject, ProjectPrice)
-        .outerjoin(
-            ProjectPrice,
-            (GameProject.id == ProjectPrice.project_id)
-            & (ProjectPrice.user_level.in_(PRICING_LEVELS)),
-        )
-        .where(GameProject.is_active == True)  # noqa: E712
-        .order_by(GameProject.id, ProjectPrice.user_level)
-    )
-
-    projects: dict[int, dict] = {}
-
-    for project, price in result.all():
-        if project.id not in projects:
-            projects[project.id] = {
-                "id": project.id,
-                "code_name": project.code_name,
-                "display_name": project.display_name,
-                "project_type": project.project_type,
-                "project_uuid": str(project.project_uuid),
-                "prices": {},
-                "price_meta": {},
-            }
-
-        if price:
-            level = price.user_level
-            projects[project.id]["prices"][level] = float(_money(price.points_per_device))
-            projects[project.id]["price_meta"][level] = {
-                "level_name": LEVEL_NAMES[level],
-                "billing_period": BILLING_RULES[level]["period"],
-                "billing_period_name": BILLING_RULES[level]["period_name"],
-                "billing_period_hours": BILLING_RULES[level]["period_hours"],
-                "unit_label": BILLING_RULES[level]["unit_label"],
-            }
-
-    return list(projects.values())
 
 
 # ─────────────────────────────────────────────────────────────

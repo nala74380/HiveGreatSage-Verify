@@ -14,7 +14,7 @@ r"""
     本次整改边界:
       1. 用户登录必须过滤软删除用户。
       2. Refresh Token 刷新必须过滤软删除用户。
-      3. 用户登录不再以 User.expired_at 作为主授权判断。
+      3. 用户登录以 Authorization.valid_until 作为项目授权有效期判断。
       4. Refresh Token 刷新不再读取 User.user_level。
       5. Refresh Token 刷新必须重新校验项目与 Authorization。
       6. Access Token 中的 user_level 来自 Authorization.user_level。
@@ -112,7 +112,6 @@ async def login_user(
     D5 限流由 router 层在调用前执行。
 
     重要边界：
-      User.expired_at 已不再作为登录主授权判断。
       授权有效期统一以 Authorization.valid_until 为准。
     """
     fail_reason: str | None = None
@@ -231,7 +230,7 @@ async def login_user(
         # Step 8：签发 Token
         access_token, jti = create_access_token(
             user_id=user.id,
-            user_level=auth.user_level,
+            authorization_level=auth.user_level,
             game_project_code=game_project.code_name,
         )
         refresh_token = create_refresh_token()
@@ -267,7 +266,7 @@ async def login_user(
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             user_id=user.id,
             username=user.username,
-            user_level=auth.user_level,
+            authorization_level=auth.user_level,
             game_project_code=game_project.code_name,
         )
 
@@ -367,7 +366,7 @@ async def refresh_access_token(
 
     access_token, _ = create_access_token(
         user_id=user.id,
-        user_level=auth.user_level,
+        authorization_level=auth.user_level,
         game_project_code=game_project.code_name,
     )
 
@@ -475,8 +474,21 @@ def _is_authorization_expired(
     auth: Authorization,
     now: datetime,
 ) -> bool:
-    """判断授权是否过期。"""
-    return bool(auth.valid_until and auth.valid_until < now)
+    """
+    判断授权是否过期。
+
+    兼容数据库返回 naive datetime 的情况：
+    PostgreSQL 存储带时区的 timestamp，但 ORM 加载时可能丢失 tzinfo。
+    对 naive datetime 统一视为 UTC，避免 TypeError。
+    """
+    if auth.valid_until is None:
+        return False
+
+    valid_until = auth.valid_until
+    if valid_until.tzinfo is None:
+        valid_until = valid_until.replace(tzinfo=timezone.utc)
+
+    return valid_until < now
 
 
 def _build_login_log(

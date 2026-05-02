@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     @field_validator("DEBUG")
     @classmethod
     def debug_must_be_false_in_production(cls, v: bool, info) -> bool:
+        if v and info.data.get("ENVIRONMENT") == "production":
+            raise ValueError("生产环境 DEBUG 必须为 False")
         return v
 
 

@@ -8,7 +8,6 @@ r"""
     代理端点数接口。只挂载到 /api/agents。
 
 接口:
-      GET /api/agents/my/catalog
       GET /api/agents/my/balance
       GET /api/agents/my/transactions
 """
@@ -19,21 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_agent
 from app.database import get_main_db
 from app.models.main.models import Agent
-from app.services.accounting_service import (
-    get_agent_balance,
-    get_all_projects_with_prices,
-    get_balance_transactions,
-)
+from app.services.accounting_service import get_agent_balance, get_balance_transactions
 
 router = APIRouter()
-
-
-@router.get("/my/catalog", summary="全项目定价目录（代理查看，推荐路径）")
-async def my_price_catalog(
-    current_agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_main_db),
-) -> list[dict]:
-    return await get_all_projects_with_prices(db)
 
 
 @router.get("/my/balance", summary="代理查询自己余额")
