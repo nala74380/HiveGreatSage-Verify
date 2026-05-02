@@ -692,22 +692,7 @@ async def _get_user_or_404(user_id: int, db: AsyncSession) -> User:
     return user
 
 
-async def _get_project_or_404(project_id: int, db: AsyncSession) -> GameProject:
-    result = await db.execute(
-        select(GameProject).where(
-            GameProject.id == project_id,
-            GameProject.is_active == True,  # noqa: E712
-        )
-    )
-    project = result.scalar_one_or_none()
-
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"项目 ID={project_id} 不存在或已下线",
-        )
-
-    return project
+from app.core.utils import get_project_or_404 as _get_project_or_404
 
 
 async def _get_authorization_or_404(

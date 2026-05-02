@@ -253,21 +253,7 @@ async def get_device_data(
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
 
-async def _get_game_project(db: AsyncSession, code_name: str) -> GameProject:
-    """从主库查找游戏项目，不存在则抛 404。"""
-    result = await db.execute(
-        select(GameProject).where(
-            GameProject.code_name == code_name,
-            GameProject.is_active == True,
-        )
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"游戏项目 '{code_name}' 不存在或已下线",
-        )
-    return project
+from app.core.utils import get_game_project_by_code as _get_game_project
 
 
 async def _assert_device_bound(

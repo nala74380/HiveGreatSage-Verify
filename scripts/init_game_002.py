@@ -229,13 +229,11 @@ async def _ensure_test_user(session) -> int:
     user = User(
         username=username,
         password_hash=hash_password(password),
-        # 当前 User.user_level 仍是数据库非空旧列。
-        # 本脚本写入 tester 只为满足当前模型约束；项目授权事实源见 Authorization。
-        user_level="tester",
-        max_devices=0,
         created_by_admin=True,
         status="active",
     )
+    # 注意：User 模型已删除 user_level / max_devices 字段。
+    # 项目授权等级和设备数统一通过 Authorization 管理。
     session.add(user)
     await session.flush()
 

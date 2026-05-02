@@ -40,22 +40,17 @@ r"""
 """
 
 import json
-import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.storage import get_storage
-from app.core.storage.local import compute_sha256
 from app.models.main.models import VersionRecord
 from app.schemas.update import (
     UpdateCheckResponse,
     UpdateDownloadResponse,
-    VersionUploadRequest,
-    VersionUploadResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,134 +152,6 @@ async def get_download_url(
         version=record["version"],
         checksum_sha256=record.get("checksum_sha256"),
     )
-
-
-async def upload_version(
-    file_data: bytes,
-    filename: str,
-    meta: VersionUploadRequest,
-    game_project_code: str,
-    game_db: AsyncSession,
-    redis,
-) -> VersionUploadResponse:
-    """
-    发布新版本（C06，管理员调用）。
-
-    完整流程：
-      1. 计算文件 SHA-256 校验值
-      2. 构建存储路径：{game_code}/{client_type}/packages/{version}/{filename}
-      3. 调用存储抽象层保存文件（LocalStorage 或 S3Storage）
-      4. 将旧活跃版本 is_active 置为 FALSE（归档，不删除历史记录）
-      5. 插入新版本记录（is_active=TRUE）
-      6. 主动删除 Redis 缓存，确保下次 check_update 立即读到新版本
-      7. 返回新版本信息
-
-    幂等性说明：
-      同一 game_project_code + client_type + version 的包重复上传时：
-      - 文件会被覆盖（存储层）
-      - version_record 不会重复插入（version + client_type 唯一）
-      - 若旧记录已存在，更新 package_path / checksum / release_notes
-    """
-    # Step 1: 计算 SHA-256
-    checksum = compute_sha256(file_data)
-
-    # Step 2: 构建存储路径
-    package_path = (
-        f"{game_project_code}/{meta.client_type}/packages/"
-        f"{meta.version}/{filename}"
-    )
-
-    # Step 3: 保存文件
-    storage = get_storage()
-    saved_path = await storage.save_file(data=file_data, path=package_path)
-    logger.info(
-        "热更新包已保存: game=%s client=%s version=%s path=%s size=%d bytes",
-        game_project_code, meta.client_type, meta.version, saved_path, len(file_data),
-    )
-
-    # Step 4: 归档旧活跃版本
-    await game_db.execute(
-        update(VersionRecord)
-        .where(
-            VersionRecord.client_type == meta.client_type,
-            VersionRecord.is_active == True,
-        )
-        .values(is_active=False)
-    )
-
-    # Step 5: 检查同版本记录是否已存在（幂等处理）
-    existing_result = await game_db.execute(
-        select(VersionRecord).where(
-            VersionRecord.version == meta.version,
-            VersionRecord.client_type == meta.client_type,
-        )
-    )
-    existing = existing_result.scalar_one_or_none()
-
-    if existing:
-        # 同版本重新上传：更新字段，重新激活
-        existing.package_path = saved_path
-        existing.checksum_sha256 = checksum
-        existing.release_notes = meta.release_notes
-        existing.force_update = meta.force_update
-        existing.is_active = True
-        existing.released_at = datetime.now(timezone.utc)
-        await game_db.flush()
-        record = existing
-        op_msg = f"版本 {meta.version} 已重新发布（覆盖旧包），旧版本已归档"
-    else:
-        # 插入全新版本记录
-        record = VersionRecord(
-            client_type=meta.client_type,
-            version=meta.version,
-            package_path=saved_path,
-            checksum_sha256=checksum,
-            release_notes=meta.release_notes,
-            force_update=meta.force_update,
-            is_active=True,
-        )
-        game_db.add(record)
-        await game_db.flush()
-        op_msg = f"版本 {meta.version} 发布成功，旧版本已归档"
-
-    # Step 6: 主动删除 Redis 缓存
-    await invalidate_version_cache(
-        game_project_code=game_project_code,
-        client_type=meta.client_type,
-        redis=redis,
-    )
-
-    logger.info(
-        "热更新版本发布完成: game=%s client=%s version=%s force=%s",
-        game_project_code, meta.client_type, meta.version, meta.force_update,
-    )
-
-    return VersionUploadResponse(
-        id=record.id,
-        version=record.version,
-        client_type=record.client_type,
-        package_path=record.package_path,
-        checksum_sha256=checksum,
-        force_update=record.force_update,
-        release_notes=record.release_notes,
-        released_at=record.released_at,
-        game_project_code=game_project_code,
-        message=op_msg,
-    )
-
-
-async def invalidate_version_cache(
-    game_project_code: str,
-    client_type: str,
-    redis,
-) -> None:
-    """主动删除版本缓存（发布新版本时调用）。"""
-    cache_key = _CACHE_KEY.format(
-        game_project_code=game_project_code,
-        client_type=client_type,
-    )
-    await redis.delete(cache_key)
-    logger.info("版本缓存已清除: game=%s client=%s", game_project_code, client_type)
 
 
 # ─────────────────────────────────────────────────────────────

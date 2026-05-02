@@ -231,14 +231,14 @@ async def set_project_price(
     db: AsyncSession,
 ) -> dict:
     if user_level not in PRICING_LEVELS:
-        raise HTTPException(status_code=400, detail=f"不可售卖用户级别: {user_level}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"不可售卖用户级别: {user_level}")
 
     if points_per_device < 0:
-        raise HTTPException(status_code=400, detail="点数不能为负数")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="点数不能为负数")
 
     project = await db.get(GameProject, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
 
     normalized = _money(points_per_device)
 
@@ -284,7 +284,7 @@ async def delete_project_price(project_id: int, user_level: str, db: AsyncSessio
     price = result.scalar_one_or_none()
 
     if not price:
-        raise HTTPException(status_code=404, detail="定价记录不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="定价记录不存在")
 
     await db.delete(price)
     await db.flush()
@@ -305,7 +305,7 @@ async def get_or_create_wallet(agent_id: int, db: AsyncSession) -> AccountingWal
 
     agent = await db.get(Agent, agent_id)
     if not agent:
-        raise HTTPException(status_code=404, detail="代理不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
 
     wallet = AccountingWallet(agent_id=agent_id)
     db.add(wallet)
@@ -373,7 +373,7 @@ async def _append_ledger_entry(
     operated_by_agent_id: int | None = None,
 ) -> AccountingLedgerEntry:
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="账本金额必须大于 0")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="账本金额必须大于 0")
 
     entry = AccountingLedgerEntry(
         entry_no=_make_no("PL"),
@@ -455,7 +455,7 @@ async def recharge_agent(
     db: AsyncSession,
 ) -> dict:
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="充值金额必须大于 0")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="充值金额必须大于 0")
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db)
@@ -506,7 +506,7 @@ async def credit_agent(
     db: AsyncSession,
 ) -> dict:
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="授信金额必须大于 0")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="授信金额必须大于 0")
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db)
@@ -557,7 +557,7 @@ async def freeze_credit(
     db: AsyncSession,
 ) -> dict:
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="冻结金额必须大于 0")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="冻结金额必须大于 0")
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db)
@@ -568,7 +568,7 @@ async def freeze_credit(
 
     if amount_dec > available_credit:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"可冻结授信不足（可用授信: {available_credit} 点，请求冻结: {amount_dec} 点）",
         )
 
@@ -616,7 +616,7 @@ async def unfreeze_credit(
     db: AsyncSession,
 ) -> dict:
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="解冻金额必须大于 0")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="解冻金额必须大于 0")
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db)
@@ -625,7 +625,7 @@ async def unfreeze_credit(
 
     if amount_dec > frozen:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"已冻结金额不足（已冻结: {frozen} 点，请求解冻: {amount_dec} 点）",
         )
 
@@ -682,10 +682,10 @@ async def calculate_authorization_cost(
     db: AsyncSession,
 ) -> dict:
     if user_level not in PRICING_LEVELS:
-        raise HTTPException(status_code=400, detail=f"用户级别 {user_level} 不支持代理计费")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"用户级别 {user_level} 不支持代理计费")
 
     if authorized_devices <= 0:
-        raise HTTPException(status_code=400, detail="代理授权设备数必须大于 0")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="代理授权设备数必须大于 0")
 
     result = await db.execute(
         select(ProjectPrice).where(
@@ -697,13 +697,13 @@ async def calculate_authorization_cost(
 
     if not price:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"该项目尚未设置 {LEVEL_NAMES.get(user_level, user_level)} 级别定价",
         )
 
     period_count = _calc_period_count(user_level, start_at, valid_until)
     if period_count <= 0:
-        raise HTTPException(status_code=400, detail="授权到期时间必须晚于授权开始时间")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="授权到期时间必须晚于授权开始时间")
 
     unit_price = _money(price.points_per_device)
     period_hours = BILLING_RULES[user_level]["period_hours"]

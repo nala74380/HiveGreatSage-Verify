@@ -68,7 +68,7 @@ async def update_agent_level_policy(
     db: AsyncSession,
 ) -> AgentLevelPolicyAdminResponse:
     if level < 1 or level > 4:
-        raise HTTPException(status_code=400, detail="代理等级必须在 Lv.1 - Lv.4 之间")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="代理等级必须在 Lv.1 - Lv.4 之间")
 
     result = await db.execute(
         select(AgentLevelPolicy).where(AgentLevelPolicy.level == level)
@@ -76,7 +76,7 @@ async def update_agent_level_policy(
     policy = result.scalar_one_or_none()
 
     if not policy:
-        raise HTTPException(status_code=404, detail="代理等级策略不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理等级策略不存在")
 
     data = body.model_dump(exclude_unset=True)
 
@@ -85,7 +85,7 @@ async def update_agent_level_policy(
 
     if policy.max_credit_limit < policy.default_credit_limit:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="最高授信额度不能低于默认授信额度",
         )
 
@@ -124,7 +124,7 @@ async def update_agent_business_profile(
         setattr(profile, key, value)
 
     if profile.tier_level < 1 or profile.tier_level > 4:
-        raise HTTPException(status_code=400, detail="代理业务等级必须在 Lv.1 - Lv.4 之间")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="代理业务等级必须在 Lv.1 - Lv.4 之间")
 
     if (
         profile.credit_limit_override is not None
@@ -132,7 +132,7 @@ async def update_agent_business_profile(
         and profile.max_credit_limit_override < profile.credit_limit_override
     ):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="代理最高授信覆盖值不能低于默认授信覆盖值",
         )
 
@@ -158,7 +158,7 @@ async def reset_agent_password(
         new_password = _generate_password()
     else:
         if not body.new_password:
-            raise HTTPException(status_code=400, detail="手动重置密码时必须提供新密码")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="手动重置密码时必须提供新密码")
         new_password = body.new_password
 
     agent.password_hash = hash_password(new_password)
@@ -196,7 +196,7 @@ async def _get_agent_or_404(agent_id: int, db: AsyncSession) -> Agent:
     agent = result.scalar_one_or_none()
 
     if not agent:
-        raise HTTPException(status_code=404, detail="代理不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
 
     return agent
 
@@ -235,7 +235,7 @@ async def _get_level_policy_or_404(
     policy = result.scalar_one_or_none()
 
     if not policy:
-        raise HTTPException(status_code=404, detail=f"代理等级策略 Lv.{level} 不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"代理等级策略 Lv.{level} 不存在")
 
     return policy
 

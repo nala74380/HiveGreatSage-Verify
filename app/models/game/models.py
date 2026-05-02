@@ -238,66 +238,6 @@ class DeviceRuntime(GameBase):
         return f"<DeviceRuntime device={self.device_id[:16]}... user={self.user_id}>"
 
 
-# ── 热更新版本记录表 ──────────────────────────────────────────
-class VersionRecord(GameBase):
-    """
-    热更新版本记录，PC 包和安卓包分开管理。
-
-    每种客户端类型（pc / android）在任意时刻只能有一个 is_active=TRUE 的记录，
-    通过部分唯一索引 idx_version_active 强制实现。
-
-    发布新版本流程：
-      1. 上传新包文件，获取 package_path
-      2. 将旧版本 is_active 置为 FALSE
-      3. 插入新版本记录并设 is_active=TRUE
-    """
-    __tablename__ = "version_record"
-    __table_args__ = (
-        # 部分唯一索引：每种客户端类型只能有一个活跃版本
-        # WHERE is_active = TRUE 确保归档的历史版本不受约束
-        Index(
-            "idx_version_active",
-            "client_type",
-            unique=True,
-            postgresql_where="is_active = TRUE",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    client_type: Mapped[str] = mapped_column(
-        String(20), nullable=False,
-        comment="客户端类型：pc / android",
-    )
-    version: Mapped[str] = mapped_column(
-        String(32), nullable=False,
-        comment="版本号，格式 MAJOR.MINOR.PATCH，如 1.0.1",
-    )
-    package_path: Mapped[str] = mapped_column(
-        String(512), nullable=False,
-        comment="热更新包存储路径（本地文件系统路径 或 对象存储 key）",
-    )
-    checksum_sha256: Mapped[str | None] = mapped_column(
-        String(64), nullable=True,
-        comment="文件 SHA-256 校验值，客户端下载后验证完整性",
-    )
-    release_notes: Mapped[str | None] = mapped_column(
-        Text, nullable=True,
-        comment="版本更新说明，显示在客户端更新提示中",
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true",
-        comment="是否为当前最新版本；部分唯一索引确保每种类型只有一个活跃版本",
-    )
-    force_update: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false",
-        comment="是否强制更新；TRUE 时客户端不更新则无法继续运行",
-    )
-    released_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<VersionRecord {self.client_type} v{self.version} "
-            f"active={self.is_active}>"
-        )
+# 注意：热更新版本记录表 VersionRecord 已迁移到主库 app/models/main/models.py。
+# 游戏库中不再包含此表。客户端和管理端统一从主库读写。
+# 迁移决策：D014 (2026-04-26)

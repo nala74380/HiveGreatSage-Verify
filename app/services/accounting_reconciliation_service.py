@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -544,7 +544,7 @@ async def get_reconciliation_run_detail(
     run = await db.get(AccountingReconciliationRun, run_id)
 
     if not run:
-        raise HTTPException(status_code=404, detail="对账批次不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对账批次不存在")
 
     item_query = select(AccountingReconciliationItem).where(
         AccountingReconciliationItem.run_id == run_id

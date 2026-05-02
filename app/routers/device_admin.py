@@ -45,7 +45,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_redis
@@ -112,28 +112,7 @@ async def _get_admin_or_agent(
     )
 
 
-async def _get_agent_scope_ids(agent_id: int, db: AsyncSession) -> list[int]:
-    """
-    获取代理权限范围内所有代理 ID。
-
-    范围:
-        当前代理自身 + 所有下级代理。
-    """
-    sql = text(
-        """
-        WITH RECURSIVE scope AS (
-            SELECT id FROM agent WHERE id = :agent_id
-            UNION ALL
-            SELECT a.id
-            FROM agent a
-            INNER JOIN scope s ON a.parent_agent_id = s.id
-        )
-        SELECT id FROM scope
-        """
-    )
-
-    result = await db.execute(sql, {"agent_id": agent_id})
-    return [row[0] for row in result.all()]
+from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids
 
 
 def _normalize_datetime(value: datetime | None) -> datetime | None:

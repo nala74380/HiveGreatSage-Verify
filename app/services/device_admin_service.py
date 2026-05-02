@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 from fastapi import HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_all_heartbeats_for_game
@@ -139,35 +139,10 @@ async def get_agent_device_list(
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
 
-async def _get_game_project_or_404(db: AsyncSession, code_name: str) -> GameProject:
-    result = await db.execute(
-        select(GameProject).where(
-            GameProject.code_name == code_name,
-            GameProject.is_active == True,
-        )
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"游戏项目 '{code_name}' 不存在或已下线",
-        )
-    return project
+from app.core.utils import get_game_project_by_code as _get_game_project_or_404
 
 
-async def _get_agent_scope_ids(agent_id: int, db: AsyncSession) -> list[int]:
-    """WITH RECURSIVE 获取代理权限范围内所有代理 ID（含自身）。"""
-    sql = text("""
-        WITH RECURSIVE scope AS (
-            SELECT id FROM agent WHERE id = :agent_id
-            UNION ALL
-            SELECT a.id FROM agent a
-            INNER JOIN scope s ON a.parent_agent_id = s.id
-        )
-        SELECT id FROM scope
-    """)
-    result = await db.execute(sql, {"agent_id": agent_id})
-    return [row[0] for row in result.all()]
+from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids
 
 
 async def _build_device_list(

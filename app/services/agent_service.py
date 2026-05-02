@@ -347,13 +347,8 @@ async def get_all_agent_ids_in_subtree(
       代理查看权限范围内的用户时，先取得所有子代理 ID，
       再用 WHERE created_by_agent_id IN (...) 过滤。
     """
-    flat_rows = await _fetch_subtree_flat(root_agent_id, db)
-    ids = [row["id"] for row in flat_rows]
-
-    if root_agent_id not in ids:
-        ids.insert(0, root_agent_id)
-
-    return ids
+    from app.core.utils import get_agent_scope_ids
+    return await get_agent_scope_ids(db, root_agent_id)
 
 
 async def list_agents_in_scope(

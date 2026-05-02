@@ -40,12 +40,7 @@ _ALLOWED_EXTENSIONS = {".lrj", ".zip", ".apk", ".exe"}
 _MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
 
 
-async def _get_project_or_404(project_id: int, db: AsyncSession) -> GameProject:
-    """通过数字 ID 查找项目，不存在则 404。"""
-    project = await db.get(GameProject, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    return project
+from app.core.utils import get_project_or_404 as _get_project_or_404
 
 
 def _record_to_dict(r: VersionRecord, project_code: str) -> dict:

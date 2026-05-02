@@ -43,7 +43,7 @@ from app.core.dependencies import get_current_user
 from app.core.redis_client import get_redis, incr_rate_limit
 from app.core.security import decode_access_token
 from app.database import get_main_db
-from app.models.main.models import Authorization, GameProject, User
+from app.models.main.models import GameProject, User
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -54,6 +54,8 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.services.auth_service import (
+    _get_active_authorization,
+    _is_authorization_expired,
     login_user,
     logout_user,
     refresh_access_token,
@@ -188,7 +190,7 @@ async def get_me(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if _is_authorization_expired(authorization.valid_until):
+    if _is_authorization_expired(authorization, datetime.now(timezone.utc)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="项目授权已过期，请重新登录",
@@ -234,7 +236,7 @@ async def _get_active_game_project_by_code(
     db: AsyncSession,
     code_name: str,
 ) -> GameProject | None:
-    """按 code_name 读取 active 游戏项目。"""
+    """按 code_name 读取 active 游戏项目，不存在返回 None（不抛 404）。"""
     result = await db.execute(
         select(GameProject).where(
             GameProject.code_name == code_name,
@@ -242,31 +244,3 @@ async def _get_active_game_project_by_code(
         )
     )
     return result.scalar_one_or_none()
-
-
-async def _get_active_authorization(
-    db: AsyncSession,
-    user_id: int,
-    game_project_id: int,
-) -> Authorization | None:
-    """读取当前用户在当前项目下的 active 授权。"""
-    result = await db.execute(
-        select(Authorization).where(
-            Authorization.user_id == user_id,
-            Authorization.game_project_id == game_project_id,
-            Authorization.status == "active",
-        )
-    )
-    return result.scalar_one_or_none()
-
-
-def _is_authorization_expired(valid_until: datetime | None) -> bool:
-    """判断授权是否过期，兼容数据库返回 naive datetime 的情况。"""
-    if valid_until is None:
-        return False
-
-    normalized_valid_until = valid_until
-    if normalized_valid_until.tzinfo is None:
-        normalized_valid_until = normalized_valid_until.replace(tzinfo=timezone.utc)
-
-    return normalized_valid_until < datetime.now(timezone.utc)

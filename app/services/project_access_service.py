@@ -23,7 +23,7 @@ r"""
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status as http_status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -260,11 +260,11 @@ async def create_agent_project_auth_request(
 
     existing_auth = await _get_active_agent_project_auth(agent.id, project.id, db, now)
     if existing_auth:
-        raise HTTPException(status_code=400, detail="该项目已授权，无需重复申请")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="该项目已授权，无需重复申请")
 
     existing_pending = await _get_pending_request(agent.id, project.id, db)
     if existing_pending:
-        raise HTTPException(status_code=409, detail="该项目已有待审核申请，请勿重复提交")
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="该项目已有待审核申请，请勿重复提交")
 
     invite_project_ids = await _load_invite_project_ids(agent.id, db)
 
@@ -276,7 +276,7 @@ async def create_agent_project_auth_request(
     )
 
     if not visible:
-        raise HTTPException(status_code=403, detail="该项目当前不对你的代理账号开放")
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="该项目当前不对你的代理账号开放")
 
     available_points = await _get_agent_available_points(agent.id, db)
 
@@ -325,10 +325,10 @@ async def create_agent_project_auth_request(
         return await _request_to_response(req, db)
 
     if not can_apply:
-        raise HTTPException(status_code=403, detail="该项目当前不允许申请")
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="该项目当前不允许申请")
 
     if policy.require_request_reason and not (body.request_reason or "").strip():
-        raise HTTPException(status_code=400, detail="该项目申请必须填写申请理由")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="该项目申请必须填写申请理由")
 
     req = AgentProjectAuthRequest(
         agent_id=agent.id,
@@ -388,10 +388,10 @@ async def cancel_my_project_auth_request(
     req = await _get_request_or_404(request_id, db)
 
     if req.agent_id != agent.id:
-        raise HTTPException(status_code=403, detail="无权取消该申请")
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="无权取消该申请")
 
     if req.status != "pending":
-        raise HTTPException(status_code=400, detail="只有待审核申请可以取消")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="只有待审核申请可以取消")
 
     now = _now()
 
@@ -526,7 +526,7 @@ async def approve_project_auth_request(
     req = await _get_request_or_404(request_id, db)
 
     if req.status != "pending":
-        raise HTTPException(status_code=400, detail="只有待审核申请可以批准")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="只有待审核申请可以批准")
 
     now = _now()
 
@@ -563,7 +563,7 @@ async def reject_project_auth_request(
     req = await _get_request_or_404(request_id, db)
 
     if req.status != "pending":
-        raise HTTPException(status_code=400, detail="只有待审核申请可以拒绝")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="只有待审核申请可以拒绝")
 
     now = _now()
 
@@ -876,19 +876,19 @@ def _build_auto_approve_reason(
 def _validate_policy(policy: ProjectAccessPolicy) -> None:
     if policy.allow_auto_open and policy.open_mode not in {"auto_by_level", "auto_by_condition"}:
         raise HTTPException(
-            status_code=400,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="允许自动开通时，open_mode 必须是 auto_by_level 或 auto_by_condition",
         )
 
     if policy.open_mode in {"auto_by_level", "auto_by_condition"} and policy.min_auto_open_agent_level is None:
         raise HTTPException(
-            status_code=400,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="自动开通模式下必须设置最低自动开通代理等级",
         )
 
     if policy.min_apply_agent_level < policy.min_visible_agent_level:
         raise HTTPException(
-            status_code=400,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="最低申请代理等级不能低于最低可见代理等级",
         )
 
@@ -903,23 +903,7 @@ def _validate_policy(policy: ProjectAccessPolicy) -> None:
 # 内部实体读取 / 写入
 # ═══════════════════════════════════════════════════════════════
 
-async def _get_project_or_404(
-    project_id: int,
-    db: AsyncSession,
-) -> GameProject:
-    result = await db.execute(
-        select(GameProject).where(
-            GameProject.id == project_id,
-            GameProject.is_active == True,  # noqa: E712
-        )
-    )
-
-    project = result.scalar_one_or_none()
-
-    if not project:
-        raise HTTPException(status_code=404, detail="项目不存在或已停用")
-
-    return project
+from app.core.utils import get_project_or_404 as _get_project_or_404
 
 
 async def _get_active_agent_project_auth(
@@ -976,7 +960,7 @@ async def _get_request_or_404(
     req = result.scalar_one_or_none()
 
     if not req:
-        raise HTTPException(status_code=404, detail="项目授权申请不存在")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="项目授权申请不存在")
 
     return req
 

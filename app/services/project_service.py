@@ -249,7 +249,7 @@ async def list_projects(
 async def get_project(project_id: int, db: AsyncSession) -> ProjectResponse:
     project = await db.get(GameProject, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
     return await _project_to_response(project, db)
 
 
@@ -260,7 +260,7 @@ async def update_project(
 ) -> ProjectResponse:
     project = await db.get(GameProject, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
     if body.display_name is not None:
         project.display_name = body.display_name
     if body.is_active is not None:
@@ -280,12 +280,12 @@ async def grant_agent_project_auth(
     # 代理存在检查
     agent = await db.get(Agent, agent_id)
     if not agent:
-        raise HTTPException(status_code=404, detail="代理不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
 
     # 项目存在检查
     project = await db.get(GameProject, body.project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="项目不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
 
     # 已有授权检查
     existing = (await db.execute(
@@ -335,7 +335,7 @@ async def update_agent_project_auth(
 ) -> AgentProjectAuthResponse:
     auth = await db.get(AgentProjectAuth, auth_id)
     if not auth:
-        raise HTTPException(status_code=404, detail="授权记录不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="授权记录不存在")
     if body.status is not None:
         auth.status = body.status
     if "valid_until" in body.model_fields_set:
@@ -349,7 +349,7 @@ async def update_agent_project_auth(
 async def revoke_agent_project_auth(auth_id: int, db: AsyncSession) -> None:
     auth = await db.get(AgentProjectAuth, auth_id)
     if not auth:
-        raise HTTPException(status_code=404, detail="授权记录不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="授权记录不存在")
     auth.status = "suspended"
     await db.commit()
 

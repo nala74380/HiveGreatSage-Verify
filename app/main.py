@@ -14,10 +14,10 @@ r"""
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
 
 改进历史:
+    v1.1.0 (2026-05-03) - 删除旧 balance_admin/balance_agent 路由；新增 pricing 路由；
+                         启动时初始化 network 默认配置；更新 VersionRecord 为统一主库读取
     v1.0.5 (2026-04-30) - 注册 system_settings 系统设置路由与客户端 network-config 路由
     v1.0.4 (2026-04-30) - 注册 accounting 账务中心正式路由
-    v1.0.3 (2026-04-29) - 调整 balance_agent 注册顺序，避免静态代理自查接口被 /api/agents/{agent_id} 抢占
-    v1.0.2 (2026-04-29) - 拆分 balance_admin / balance_agent 路由，移除 balance.router 双前缀挂载
     v1.0.1 (2026-04-25) - 注册 update_admin 路由（POST /admin/api/updates/，C06）
     v1.0.0 - 初始版本
 
@@ -184,17 +184,17 @@ app.add_middleware(
 
 
 # ── 路由注册 ──────────────────────────────────────────────────
+# 按调用方分组：客户端 / 代理 / 管理后台
 from app.routers import (
     accounting,
     admin,
     agent_profile_admin,
     agents,
     auth,
-    balance_admin,
-    balance_agent,
     device,
     device_admin,
     params,
+    pricing,
     project_access_admin,
     project_access_agent,
     projects,
@@ -205,54 +205,32 @@ from app.routers import (
     users,
 )
 
+# -- 客户端 API（User Token）--
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
-app.include_router(users.router, prefix="/api/users", tags=["用户管理"])
-
-# 客户端公开配置接口：PC 中控 / 安卓脚本后续可拉取。
-app.include_router(system_settings.client_router, prefix="/api/client", tags=["客户端配置"])
-
-# 注意：
-# balance_agent 必须在 agents.router 之前注册。
-# 原因：agents.router 内存在 /{agent_id} 动态路由，代理自查类静态路径必须先注册。
-app.include_router(balance_agent.router, prefix="/api/agents", tags=["代理余额"])
-
-app.include_router(
-    project_access_agent.router,
-    prefix="/api/agents/my/project-access",
-    tags=["代理项目准入"],
-)
-
-app.include_router(agents.router, prefix="/api/agents", tags=["代理管理"])
 app.include_router(device.router, prefix="/api/device", tags=["设备数据"])
 app.include_router(params.router, prefix="/api/params", tags=["脚本参数"])
 app.include_router(update.router, prefix="/api/update", tags=["热更新"])
+app.include_router(stats.router, prefix="/api/stats", tags=["统计数据"])
+app.include_router(system_settings.client_router, prefix="/api/client", tags=["客户端配置"])
 
+# -- 代理 API（Agent Token）--
+# 静态路径（/my/*）必须在 agents.router 之前注册，避免被 /{agent_id} 动态路由抢占。
+app.include_router(project_access_agent.router, prefix="/api/agents/my/project-access", tags=["代理项目准入"])
+app.include_router(agents.router, prefix="/api/agents", tags=["代理管理"])
+
+# -- 用户管理 API（Admin / Agent Token）--
+app.include_router(users.router, prefix="/api/users", tags=["用户管理"])
+
+# -- 管理后台 API（Admin Token）--
 app.include_router(admin.router, prefix="/admin/api", tags=["管理后台"])
 app.include_router(projects.router, prefix="/admin/api", tags=["项目管理"])
+app.include_router(pricing.router, prefix="/admin/api", tags=["项目定价"])
 app.include_router(update_admin.router, prefix="/admin/api/updates", tags=["热更新管理"])
 app.include_router(device_admin.router, prefix="/admin/api/devices", tags=["设备监控"])
-app.include_router(stats.router, prefix="/api/stats", tags=["统计数据"])
-
-# 系统设置。
 app.include_router(system_settings.admin_router, prefix="/admin/api/system-settings", tags=["系统设置"])
-
-# 旧点数管理接口：暂时保留兼容。
-app.include_router(balance_admin.router, prefix="/admin/api", tags=["点数管理"])
-
-# 新账务中心接口：后续前端应逐步切换到这里。
 app.include_router(accounting.router, prefix="/admin/api/accounting", tags=["账务中心"])
-
-app.include_router(
-    project_access_admin.router,
-    prefix="/admin/api/project-access",
-    tags=["项目准入管理"],
-)
-
-app.include_router(
-    agent_profile_admin.router,
-    prefix="/admin/api",
-    tags=["代理业务管理"],
-)
+app.include_router(project_access_admin.router, prefix="/admin/api/project-access", tags=["项目准入管理"])
+app.include_router(agent_profile_admin.router, prefix="/admin/api", tags=["代理业务管理"])
 
 
 # ── 健康检查 ─────────────────────────────────────────────────

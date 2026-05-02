@@ -58,6 +58,7 @@ from app.schemas.agent import (
     AgentSubtreeResponse,
     AgentUpdateRequest,
 )
+from app.services.accounting_service import get_balance_transactions
 from app.services.agent_service import (
     agent_login,
     create_agent,
@@ -168,6 +169,30 @@ async def get_my_profile(
         "users_suspended": users_suspended,
         "authorized_projects": authorized_projects,
     }
+
+
+# ── 代理流水查询（静态路径，原 balance_agent 迁移至此）─────────
+
+@router.get("/my/transactions", summary="代理查询自己流水")
+async def my_transactions(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    tx_type: str | None = Query(default=None),
+    related_user_id: int | None = Query(default=None),
+    related_project_id: int | None = Query(default=None),
+    current_agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    """代理查询自己的点数流水记录（Agent Token）。"""
+    return await get_balance_transactions(
+        agent_id=current_agent.id,
+        db=db,
+        page=page,
+        page_size=page_size,
+        tx_type=tx_type,
+        related_user_id=related_user_id,
+        related_project_id=related_project_id,
+    )
 
 
 # ── 已授权项目列表（静态路径）────────────────────────────────
