@@ -16,8 +16,7 @@
           <div class="user-meta">
             <div class="user-name">{{ user.username }}</div>
             <div class="user-tags">
-              <LevelTag :level="user.user_level" />
-              <StatusBadge :status="user.status" type="user" style="margin-left:6px" />
+              <StatusBadge :status="user.status" type="user" />
             </div>
           </div>
           <div class="user-actions">
@@ -44,24 +43,18 @@
           <el-descriptions-item label="最后更新">
             {{ formatDatetime(user.updated_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="账号到期">
-            <span v-if="!user.expired_at" class="text-success">永久有效</span>
-            <span v-else>
-              {{ formatDatetime(user.expired_at) }}
-              <el-tag :type="expiryTagType(user.expired_at)" size="small" effect="light" style="margin-left:6px">
-                {{ expiryLabel(user.expired_at) }}
-              </el-tag>
-            </span>
+          <el-descriptions-item label="授权项目">
+            {{ user.authorization_count || 0 }} 个
           </el-descriptions-item>
-          <el-descriptions-item label="设备上限">
-            <span>{{ user.max_devices === 0 ? '无限制' : user.max_devices + ' 台' }}</span>
+          <el-descriptions-item label="有效授权">
+            {{ user.active_authorization_count || 0 }} 个
           </el-descriptions-item>
           <el-descriptions-item label="已绑设备">
-            <span :class="{ 'text-warning': isNearLimit }">
+            <span>
               {{ user.device_binding_count }} 台
             </span>
-            <span class="text-muted" style="margin-left:4px" v-if="user.max_devices > 0">
-              / {{ user.max_devices }}
+            <span class="text-muted" style="margin-left:4px" v-if="false">
+              / -
             </span>
           </el-descriptions-item>
           <el-descriptions-item label="创建方式">
@@ -188,39 +181,12 @@
     <!-- 编辑用户对话框（快捷版，含续费） -->
     <el-dialog v-model="editDialog.visible" title="编辑用户" width="460px" destroy-on-close>
       <el-form :model="editDialog.form" label-width="90px" v-if="user">
-        <el-form-item label="当前级别">
-          <el-select v-model="editDialog.form.user_level" style="width:100%">
-            <el-option label="试用"  value="trial" />
-            <el-option label="普通"  value="normal" />
-            <el-option label="VIP"   value="vip" />
-            <el-option label="SVIP"  value="svip" />
-            <el-option v-if="authStore.isAdmin" label="测试" value="tester" />
+        <el-form-item label="账号状态">
+          <el-select v-model="editDialog.form.status" style="width:100%">
+            <el-option label="启用" value="active" />
+            <el-option label="停用" value="suspended" />
+            <el-option label="过期" value="expired" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="设备上限">
-          <el-input-number v-model="editDialog.form.max_devices" :min="0" :step="100" controls-position="right" style="width:160px" />
-          <span class="field-hint" style="margin-left:8px">0 = 无限制</span>
-        </el-form-item>
-        <el-form-item label="当前到期">
-          <span v-if="!user.expired_at" class="text-success">永久有效</span>
-          <span v-else>{{ formatDatetime(user.expired_at) }}</span>
-        </el-form-item>
-        <el-form-item label="续费天数">
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-            <el-button size="small" @click="addDays(7)">+7天</el-button>
-            <el-button size="small" @click="addDays(30)">+30天</el-button>
-            <el-button size="small" @click="addDays(90)">+90天</el-button>
-            <el-button size="small" type="info" plain @click="editDialog.form.expired_at = null">永久</el-button>
-          </div>
-          <el-date-picker
-            v-model="editDialog.form.expired_at"
-            type="datetime"
-            placeholder="直接选择新到期时间"
-            style="width:100%"
-          />
-          <div v-if="editDialog.form.expired_at" class="field-hint">
-            {{ formatDatetime(editDialog.form.expired_at) }}
-          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -266,15 +232,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { userApi }    from '@/api/user'
 import { agentApi }   from '@/api/agent'
-import { projectApi } from '@/api/project'
+import { adminProjectApi as projectApi } from '@/api/admin/project'
 import { useAuthStore } from '@/stores/auth'
 import StatusBadge from '@/components/common/StatusBadge.vue'
-import LevelTag    from '@/components/common/LevelTag.vue'
 import {
   formatDatetime, formatDate, formatRelativeTime,
   expiryTagType, expiryLabel,
@@ -291,13 +256,6 @@ const user           = ref(null)
 const deviceBindings = ref([])
 const bindingsLoading = ref(false)
 const availableProjects = ref([])
-
-const isNearLimit = computed(() => {
-  if (!user.value) return false
-  const { max_devices, device_binding_count } = user.value
-  if (!max_devices) return false
-  return device_binding_count / max_devices >= 0.8
-})
 
 const loadUser = async () => {
   pageLoading.value = true
@@ -357,17 +315,9 @@ const editDialog = reactive({ visible: false, loading: false, form: {} })
 
 const openEditDialog = () => {
   editDialog.form = {
-    user_level:  user.value.user_level,
-    max_devices: user.value.max_devices,
-    expired_at:  user.value.expired_at ? new Date(user.value.expired_at) : null,
+    status: user.value.status,
   }
   editDialog.visible = true
-}
-
-const addDays = (n) => {
-  const base = user.value.expired_at ? new Date(user.value.expired_at) : new Date()
-  base.setDate(base.getDate() + n)
-  editDialog.form.expired_at = base
 }
 
 const submitEdit = async () => {

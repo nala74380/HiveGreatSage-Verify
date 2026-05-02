@@ -588,8 +588,8 @@ import {
   Share,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { projectApi } from '@/api/project'
-import { balanceApi } from '@/api/balance'
+import { adminProjectApi as projectApi } from '@/api/admin/project'
+import { adminBalanceApi as balanceApi } from '@/api/admin/balance'
 import { adminProjectAccessApi } from '@/api/admin/projectAccess'
 
 const router = useRouter()

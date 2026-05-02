@@ -2,30 +2,43 @@ r"""
 文件位置: app/services/auth_service.py
 文件名称: auth_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-22
-版本: V1.0.0
+日期/时间: 2026-05-02
+版本: V1.1.0
 功能说明:
     认证服务层，包含全部认证业务逻辑：
-      - login_user()          登录（10步验证链，项目维度设备绑定上限）
-      - refresh_access_token() 刷新 AT（O(1) RT 反查，无 SCAN）
-      - logout_user()          登出（AT 加黑名单 + 删除 RT）
+      - login_user()           用户登录
+      - refresh_access_token() Refresh Token 刷新 Access Token
+      - revoke_all_devices()   踢出所有 User Token 会话
+      - logout_user()          用户登出
 
-    设计要点：
-      1. 本层不接触 HTTP 概念（不导入 Request/Response），
-         只接受数据对象，返回数据对象，由 router 层转换为 HTTP 响应。
-      2. 登录日志写入使用独立 Session（_write_login_log），
-         与主登录事务隔离，确保失败日志不被主事务回滚。
-      3. Android 设备绑定按 user_id + game_project_id + device_fingerprint 判断。
+    本次整改边界:
+      1. 用户登录必须过滤软删除用户。
+      2. Refresh Token 刷新必须过滤软删除用户。
+      3. 用户登录不再以 User.expired_at 作为主授权判断。
+      4. Refresh Token 刷新不再读取 User.user_level。
+      5. Refresh Token 刷新必须重新校验项目与 Authorization。
+      6. Access Token 中的 user_level 来自 Authorization.user_level。
 
-    关联文档: [[01-网络验证系统/架构设计]] [[01-网络验证系统/API鉴权方案]]
+    当前仍保留的历史字段边界:
+      1. LoginResponse 仍返回 user_level / game_project_code。
+      2. Access Token 当前仍写入 user_level / game_project_code。
+      3. 这些字段属于后续 schema / token payload 收口任务，本文件本轮不扩展响应结构。
+
+    关联文档:
+      [[01-网络验证系统/架构设计]]
+      [[01-网络验证系统/API鉴权方案]]
+      [[01-网络验证系统/旧字段旧接口清理清单]]
 
 改进历史:
-    V1.0.1 - 设备绑定改为用户 × 项目 × 设备维度，设备上限改用 Authorization.authorized_devices
-    V1.0.0 - 初始版本，从 routers/auth.py 迁移全部业务逻辑
+    V1.1.0 (2026-05-02) - 登录与刷新过滤软删除用户；刷新改用 Authorization.user_level。
+    V1.0.1 - 设备绑定改为用户 × 项目 × 设备维度，设备上限改用 Authorization.authorized_devices。
+    V1.0.0 - 初始版本，从 routers/auth.py 迁移全部业务逻辑。
 
 调试信息:
-    已知问题: 无
-    TODO(P1): 数据库查询逐步迁移到 repositories 层（当前直接在 service 内查询）
+    已知问题:
+      1. LoginResponse / Token payload 仍保留旧字段名 user_level / game_project_code。
+      2. Admin / Agent Token 尚未接入服务端吊销闭环。
+      3. token_version 尚未落地。
 """
 
 from datetime import datetime, timezone
@@ -36,11 +49,11 @@ from jose import JWTError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.redis_client import (
     delete_all_refresh_tokens,
     delete_refresh_token_v2,
     get_refresh_token_by_value,
-    incr_rate_limit,
     revoke_token,
     store_refresh_token_v2,
 )
@@ -68,7 +81,6 @@ from app.schemas.auth import (
     RefreshRequest,
     TokenResponse,
 )
-from app.config import settings
 
 
 # ─────────────────────────────────────────────────────────────
@@ -82,31 +94,38 @@ async def login_user(
     redis: aioredis.Redis,
 ) -> LoginResponse:
     """
-    用户登录（10步验证链）。
+    用户登录。
 
-    验证链：
-      Step 1  用户名存在
+    当前验证链：
+      Step 1  用户名存在，且用户未软删除
       Step 2  密码匹配
       Step 3  账号状态 active
-      Step 4  账号未到期
-      Step 5  project_uuid 对应的游戏项目存在且激活
-      Step 6  该用户对该项目有授权记录
-      Step 7  授权未到期
-      Step 8  设备绑定检查（已绑定→更新；新设备→检查上限→绑定）
-      Step 9  写登录日志（成功）
-      Step 10 签发 AT + RT，存 Redis，返回
+      Step 4  project_uuid 对应的游戏项目存在且激活
+      Step 5  该用户对该项目有 active 授权记录
+      Step 6  授权未到期
+      Step 7  Android 设备绑定检查
+      Step 8  签发 AT + RT
+      Step 9  写成功登录日志
+      Step 10 返回登录响应
 
     失败时写登录日志（独立 Session，不受主事务回滚影响）。
     D5 限流由 router 层在调用前执行。
+
+    重要边界：
+      User.expired_at 已不再作为登录主授权判断。
+      授权有效期统一以 Authorization.valid_until 为准。
     """
     fail_reason: str | None = None
     user: User | None = None
     game_project: GameProject | None = None
 
     try:
-        # Step 1 & 2：用户名 + 密码
+        # Step 1 & 2：用户名 + 密码 + 软删除过滤
         result = await db.execute(
-            select(User).where(User.username == body.username)
+            select(User).where(
+                User.username == body.username,
+                User.is_deleted == False,  # noqa: E712
+            )
         )
         user = result.scalar_one_or_none()
 
@@ -125,20 +144,13 @@ async def login_user(
                 detail="账号已被停用",
             )
 
-        # Step 4：账号到期
         now = datetime.now(timezone.utc)
-        if user.expired_at and user.expired_at < now:
-            fail_reason = "fail_expired"
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="账号已过期",
-            )
 
-        # Step 5：游戏项目存在且激活
+        # Step 4：游戏项目存在且激活
         result = await db.execute(
             select(GameProject).where(
                 GameProject.project_uuid == body.project_uuid,
-                GameProject.is_active == True,
+                GameProject.is_active == True,  # noqa: E712
             )
         )
         game_project = result.scalar_one_or_none()
@@ -149,15 +161,12 @@ async def login_user(
                 detail="游戏项目不存在或已下线",
             )
 
-        # Step 6：授权记录存在
-        result = await db.execute(
-            select(Authorization).where(
-                Authorization.user_id == user.id,
-                Authorization.game_project_id == game_project.id,
-                Authorization.status == "active",
-            )
+        # Step 5：授权记录存在
+        auth = await _get_active_authorization(
+            db=db,
+            user_id=user.id,
+            game_project_id=game_project.id,
         )
-        auth = result.scalar_one_or_none()
         if not auth:
             fail_reason = "fail_no_auth"
             raise HTTPException(
@@ -165,15 +174,15 @@ async def login_user(
                 detail="无此游戏的授权",
             )
 
-        # Step 7：授权未到期
-        if auth.valid_until and auth.valid_until < now:
+        # Step 6：授权未到期
+        if _is_authorization_expired(auth, now):
             fail_reason = "fail_auth_expired"
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="游戏授权已过期",
             )
 
-        # Step 8：设备绑定检查
+        # Step 7：设备绑定检查
         # PC 中控（client_type="pc"）登录不创建设备绑定，不占用安卓设备名额。
         # Android 脚本按“用户 × 项目 × 设备”维度绑定。
         # 设备上限来自当前项目授权 Authorization.authorized_devices：
@@ -190,10 +199,8 @@ async def login_user(
             binding = result.scalar_one_or_none()
 
             if binding:
-                # 已绑定设备：更新最后在线时间
                 binding.last_seen_at = now
             else:
-                # 新设备：检查当前项目授权设备数上限
                 limit = int(auth.authorized_devices or 0)
                 if limit > 0:
                     count_result = await db.execute(
@@ -211,17 +218,17 @@ async def login_user(
                             detail=f"当前项目设备绑定数量已达上限（{limit} 台）",
                         )
 
-                new_binding = DeviceBinding(
-                    user_id=user.id,
-                    game_project_id=game_project.id,
-                    device_fingerprint=body.device_fingerprint,
-                    last_seen_at=now,
-                    status="active",
+                db.add(
+                    DeviceBinding(
+                        user_id=user.id,
+                        game_project_id=game_project.id,
+                        device_fingerprint=body.device_fingerprint,
+                        last_seen_at=now,
+                        status="active",
+                    )
                 )
-                db.add(new_binding)
-        # PC 中控：跳过绑定，直接进入 Step 9 签发 Token
 
-        # Step 9 & 10：签发 Token
+        # Step 8：签发 Token
         access_token, jti = create_access_token(
             user_id=user.id,
             user_level=auth.user_level,
@@ -240,17 +247,20 @@ async def login_user(
             ttl_seconds=rt_ttl,
         )
 
-        # 写成功日志（在主事务内，随 commit 一起落库）
-        db.add(_build_login_log(
-            user_id=user.id,
-            device_fingerprint=body.device_fingerprint,
-            ip_address=client_ip,
-            client_type=body.client_type,
-            game_project_id=game_project.id,
-            success=True,
-            fail_reason=None,
-        ))
+        # Step 9：写成功日志（在主事务内，随 commit 一起落库）
+        db.add(
+            _build_login_log(
+                user_id=user.id,
+                device_fingerprint=body.device_fingerprint,
+                ip_address=client_ip,
+                client_type=body.client_type,
+                game_project_id=game_project.id,
+                success=True,
+                fail_reason=None,
+            )
+        )
 
+        # Step 10：返回
         return LoginResponse(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -262,7 +272,6 @@ async def login_user(
         )
 
     except HTTPException:
-        # 失败日志用独立 Session 写入，不受主事务回滚影响
         await _write_login_log(
             user_id=user.id if user else None,
             device_fingerprint=body.device_fingerprint,
@@ -283,8 +292,16 @@ async def refresh_access_token(
     """
     使用 Refresh Token 换取新的 Access Token。
 
-    通过 RT 反查索引 O(1) 定位 RT 数据，不做 SCAN 全表扫描。
-    RT 本身有效期内可多次使用（Phase 1 不做滚动刷新）。
+    当前规则：
+      1. 通过 RT 反查索引 O(1) 定位 RT 数据，不做 SCAN。
+      2. 用户必须存在、未软删除、状态 active。
+      3. RT 中的 game_project_code 必须能找到 active GameProject。
+      4. 用户必须仍拥有该项目 active Authorization。
+      5. Authorization.valid_until 未过期。
+      6. 新 Access Token 的 user_level 来自 Authorization.user_level。
+
+    重要整改：
+      Refresh Token 刷新不得再读取 User.user_level。
     """
     rt_data = await get_refresh_token_by_value(redis, body.refresh_token)
     if rt_data is None:
@@ -293,10 +310,21 @@ async def refresh_access_token(
             detail="Refresh Token 无效或已过期",
         )
 
-    user_id: int = rt_data["user_id"]
-    game_project_code: str = rt_data.get("game_project_code", "")
+    user_id: int = int(rt_data["user_id"])
+    game_project_code: str = str(rt_data.get("game_project_code") or "").strip()
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    if not game_project_code:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh Token 缺少项目上下文",
+        )
+
+    result = await db.execute(
+        select(User).where(
+            User.id == user_id,
+            User.is_deleted == False,  # noqa: E712
+        )
+    )
     user = result.scalar_one_or_none()
 
     if not user or user.status != "active":
@@ -305,10 +333,42 @@ async def refresh_access_token(
             detail="用户不存在或已被停用",
         )
 
+    result = await db.execute(
+        select(GameProject).where(
+            GameProject.code_name == game_project_code,
+            GameProject.is_active == True,  # noqa: E712
+        )
+    )
+    game_project = result.scalar_one_or_none()
+
+    if not game_project:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="项目不存在或已下线",
+        )
+
+    auth = await _get_active_authorization(
+        db=db,
+        user_id=user.id,
+        game_project_id=game_project.id,
+    )
+    if not auth:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="项目授权不存在或已失效",
+        )
+
+    now = datetime.now(timezone.utc)
+    if _is_authorization_expired(auth, now):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="项目授权已过期",
+        )
+
     access_token, _ = create_access_token(
         user_id=user.id,
-        user_level=user.user_level,
-        game_project_code=game_project_code,
+        user_level=auth.user_level,
+        game_project_code=game_project.code_name,
     )
 
     return TokenResponse(
@@ -322,7 +382,7 @@ async def revoke_all_devices(
     redis: aioredis.Redis,
 ) -> MessageResponse:
     """
-    踢出所有设备（T025）。
+    踢出所有 User Token 会话。
 
     操作：
       1. 吊销当前 AT（加黑名单，TTL = 剩余有效期）
@@ -334,8 +394,8 @@ async def revoke_all_devices(
 
     安全说明：
       该用户所有已签发的 AT 在过期前仍然有效（黑名单只记录了当前这一个）。
-      这是 Stateless JWT 的固有限制——AT 最多 15 分钟自动失效。
-      如需即时完全失效，Phase 3 可引入 per-user 版本号机制。
+      这是 Stateless JWT 的固有限制。
+      后续 token_version 落地后，应改为服务端版本号强校验。
     """
     try:
         payload = decode_access_token(access_token_str)
@@ -343,11 +403,9 @@ async def revoke_all_devices(
         exp: int = payload.get("exp", 0)
         user_id: int = int(payload.get("sub", 0))
 
-        # 吊销当前 AT
         remaining = get_access_token_remaining_seconds(exp)
         await revoke_token(redis, jti, remaining)
 
-        # 删除该用户所有 RT
         deleted_count = await delete_all_refresh_tokens(redis, user_id)
 
         return MessageResponse(
@@ -380,7 +438,6 @@ async def logout_user(
         remaining = get_access_token_remaining_seconds(exp)
         await revoke_token(redis, jti, remaining)
 
-        # 删除 RT 主 Key + 反查索引
         await delete_refresh_token_v2(
             redis=redis,
             user_id=user_id,
@@ -389,7 +446,6 @@ async def logout_user(
         )
 
     except JWTError:
-        # AT 已过期也允许登出，静默处理
         pass
 
     return MessageResponse(message="登出成功")
@@ -398,6 +454,30 @@ async def logout_user(
 # ─────────────────────────────────────────────────────────────
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
+
+async def _get_active_authorization(
+    db: AsyncSession,
+    user_id: int,
+    game_project_id: int,
+) -> Authorization | None:
+    """读取用户在指定项目下的 active 授权。"""
+    result = await db.execute(
+        select(Authorization).where(
+            Authorization.user_id == user_id,
+            Authorization.game_project_id == game_project_id,
+            Authorization.status == "active",
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+def _is_authorization_expired(
+    auth: Authorization,
+    now: datetime,
+) -> bool:
+    """判断授权是否过期。"""
+    return bool(auth.valid_until and auth.valid_until < now)
+
 
 def _build_login_log(
     user_id: int | None,

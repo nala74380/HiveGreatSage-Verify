@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_admin
 from app.database import get_main_db
 from app.models.main.models import Admin
-from app.services.balance_service import (
+from app.services.accounting_service import (
     credit_agent,
     delete_project_price,
     freeze_credit,

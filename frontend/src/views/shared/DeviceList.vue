@@ -333,7 +333,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { adminDeviceApi } from '@/api/device'
+import { adminDeviceApi } from '@/api/admin/device'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { formatRelativeTime, formatDatetime } from '@/utils/format'
 

@@ -17,7 +17,7 @@ r"""
          创建，不通过 FastAPI 依赖注入（因为 code_name 在运行时才能确定）。
       4. 所有跨库引用（user_id, device_id）在应用层校验，不依赖数据库外键。
 
-    TODO(P1): 数据库查询逐步迁移到 repositories 层
+    P1: 后续如需拆分数据访问层，再按实际重复度引入 repository 抽象。
 
 关联文档:
     [[01-网络验证系统/Redis心跳落库策略]]

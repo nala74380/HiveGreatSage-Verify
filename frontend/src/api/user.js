@@ -20,9 +20,8 @@
 
 import http from './http'
 import { adminUserApi } from './admin/user'
-import { sharedUserApi } from './shared/user'
 
-export { adminUserApi, sharedUserApi }
+export { adminUserApi }
 
 export const userApi = {
   // ── 用户基础 ──────────────────────────────────────────────

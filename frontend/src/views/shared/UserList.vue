@@ -899,7 +899,7 @@ import { useRouter } from 'vue-router'
 
 import { userApi } from '@/api/user'
 import { agentApi } from '@/api/agent'
-import { projectApi } from '@/api/project'
+import { adminProjectApi as projectApi } from '@/api/admin/project'
 import { useAuthStore } from '@/stores/auth'
 
 import StatusBadge from '@/components/common/StatusBadge.vue'

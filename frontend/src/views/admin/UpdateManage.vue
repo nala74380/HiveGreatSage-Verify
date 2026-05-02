@@ -149,7 +149,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { projectApi } from '@/api/project'
+import { adminProjectApi as projectApi } from '@/api/admin/project'
 import http from '@/api/http'
 import { formatDatetime } from '@/utils/format'
 import UploadVersionForm from '@/components/common/UploadVersionForm.vue'

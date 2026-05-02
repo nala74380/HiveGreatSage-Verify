@@ -1,36 +1,35 @@
 r"""
 文件位置: app/schemas/auth.py
 文件名称: auth.py
-作者: HiveGreatSage Dev
-日期/时间: 2026-04-16
-版本: v1.0.0
+作者: 蜂巢·大圣 (Hive-GreatSage)
+日期/时间: 2026-05-02
+版本: V1.1.0
 功能说明:
-    认证相关的 Pydantic v2 请求/响应模型（接口契约）。
-    与接入契约.md 保持一致：
-      - LoginRequest  : 登录请求体
-      - LoginResponse : 登录成功响应
-      - RefreshRequest: 刷新 Token 请求体
-      - TokenResponse : Token 刷新响应
-      - MeResponse    : 当前用户信息响应
-改进历史: 无
-调试信息: 字段的 examples 会显示在 FastAPI 自动生成的 Swagger 文档中，方便调试。
+    认证相关的 Pydantic v2 请求 / 响应模型。
+
+    当前整改边界:
+      1. /api/auth/me 不再把 User.user_level 作为授权等级返回。
+      2. /api/auth/me 返回当前 Token 项目上下文下的 Authorization 授权摘要。
+      3. LoginResponse 暂保留 user_level / game_project_code 旧字段名，后续单独整改。
+
+改进历史:
+    V1.1.0 (2026-05-02) - MeResponse 改为 Authorization 授权摘要口径。
+    V1.0.0 - 初始认证接口契约。
 """
+
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 
-# ── 请求模型 ──────────────────────────────────────────────────
-
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=64, examples=["user001"])
     password: str = Field(..., min_length=1, max_length=128, examples=["MyPassword123"])
-    # 客户端登录时传入 game_project.project_uuid（不暴露自增 ID）
     project_uuid: str = Field(
         ...,
         description="游戏项目 UUID（由管理员分配给客户端）",
         examples=["550e8400-e29b-41d4-a716-446655440000"],
     )
-    # 设备指纹（安卓：hardware_serial；PC：网卡MAC + CPU序列号的哈希）
     device_fingerprint: str = Field(
         ...,
         min_length=8,
@@ -54,8 +53,6 @@ class LogoutRequest(BaseModel):
     refresh_token: str = Field(..., description="要吊销的 Refresh Token")
 
 
-# ── 响应模型 ──────────────────────────────────────────────────
-
 class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -63,6 +60,7 @@ class LoginResponse(BaseModel):
     expires_in: int = Field(description="Access Token 有效期（秒）", examples=[900])
     user_id: int
     username: str
+    # TODO: 后续 token/schema 收口时改为 authorization_level。
     user_level: str
     game_project_code: str = Field(description="登录的游戏项目代码名")
 
@@ -74,11 +72,27 @@ class TokenResponse(BaseModel):
 
 
 class MeResponse(BaseModel):
+    """
+    当前用户信息响应。
+
+    重要边界:
+      1. authorization_level 来自 Authorization.user_level。
+      2. authorized_devices 来自 Authorization.authorized_devices。
+      3. valid_until 来自 Authorization.valid_until。
+      4. 不再返回旧 User.user_level 作为授权等级。
+    """
+
     user_id: int
     username: str
-    user_level: str
     status: str
+
+    game_project_id: int
     game_project_code: str
+
+    authorization_id: int
+    authorization_level: str
+    authorized_devices: int
+    valid_until: datetime | None = None
 
 
 class MessageResponse(BaseModel):

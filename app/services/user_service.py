@@ -41,13 +41,13 @@ from app.core.security import hash_password
 from app.models.main.models import (
     Admin,
     Agent,
-    AgentBalance,
     AgentProjectAuth,
     Authorization,
     DeviceBinding,
     GameProject,
     User,
 )
+from app.models.main.accounting import AccountingWallet
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationInfo,
@@ -61,7 +61,7 @@ from app.schemas.user import (
     UserResponse,
     UserUpdateRequest,
 )
-from app.services.balance_service import (
+from app.services.accounting_service import (
     LEVEL_NAMES,
     consume_agent_authorization_points,
     refund_user_authorization_points_on_delete,
@@ -646,9 +646,9 @@ async def get_creator_agent_detail(
     )
 
     balance_result = await db.execute(
-        select(AgentBalance).where(AgentBalance.agent_id == agent_id)
+        select(AccountingWallet).where(AccountingWallet.agent_id == agent_id)
     )
-    balance = balance_result.scalar_one_or_none()
+    wallet = balance_result.scalar_one_or_none()
 
     auth_result = await db.execute(
         select(AgentProjectAuth, GameProject)
@@ -681,14 +681,10 @@ async def get_creator_agent_detail(
         "created_at": agent.created_at.isoformat() if agent.created_at else None,
         "authorized_projects": authorized_projects,
         "balance": {
-            "charged_points": float(balance.charged_points) if balance else 0.0,
-            "credit_points": float(balance.credit_points) if balance else 0.0,
-            "frozen_credit": float(balance.frozen_credit) if balance else 0.0,
-            "available_total": (
-                float(balance.charged_points)
-                + float(balance.credit_points)
-                - float(balance.frozen_credit)
-            ) if balance else 0.0,
+            "charged_points": float(wallet.charged_balance) if wallet else 0.0,
+            "credit_points": float(wallet.credit_balance) if wallet else 0.0,
+            "frozen_credit": float(wallet.frozen_credit) if wallet else 0.0,
+            "available_total": float(wallet.available_total) if wallet else 0.0,
         },
         "users_total": user_list.total,
     }

@@ -680,8 +680,8 @@ const updateCheckResp = `{
 
 const bindingLogic = [
   { cond: '设备指纹在 device_binding 中存在且 active', result: '✅ 通过', action: '更新 last_seen_at，直接签发 Token' },
-  { cond: '设备指纹不存在 + 已绑数量 < max_devices',   result: '✅ 通过', action: '插入新绑定记录，签发 Token' },
-  { cond: '设备指纹不存在 + 已绑数量 ≥ max_devices',   result: '❌ 拒绝', action: 'fail_reason = device_limit' },
+  { cond: '设备指纹不存在 + 已绑数量 < 授权设备数',   result: '✅ 通过', action: '插入新绑定记录，签发 Token' },
+  { cond: '设备指纹不存在 + 已绑数量 ≥ 授权设备数',   result: '❌ 拒绝', action: 'fail_reason = device_limit' },
   { cond: 'SVIP / tester 级别用户',                     result: '✅ 通过', action: '跳过设备数量检查，直接绑定' },
 ]
 </script>

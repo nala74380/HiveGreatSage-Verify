@@ -221,7 +221,7 @@ import { ref, onMounted } from 'vue'
 import { User, Plus, Monitor, Tickets, Wallet } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
-import { agentBalanceApi } from '@/api/balance'
+import { agentBalanceApi } from '@/api/agent/balance'
 import { formatDatetime, formatDate, expiryTagType, expiryLabel } from '@/utils/format'
 
 const loading = ref(false)

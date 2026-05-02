@@ -1,28 +1,46 @@
 r"""
 文件位置: scripts/reset_to_clean.py
-名称: 数据库全清重置脚本
+文件名称: reset_to_clean.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-时间: 2026-04-28
-版本: V1.0.0
+日期/时间: 2026-05-02
+版本: V1.1.0
 功能说明:
-    将 hive_platform 主库和所有游戏项目库重置为干净初始状态。
-    清除所有用户、代理、授权、设备绑定、登录日志、游戏数据。
-    保留：表结构、管理员账号（可选）。
-    同步清除 Redis 所有缓存数据。
+    开发期数据库与 Redis 清理脚本。
 
-    ⚠️ 高危操作，不可逆！
-    运行前会显示当前数据量让你确认，输入 YES 才执行。
+    当前用途:
+      1. 清理开发 / 测试环境主库业务数据。
+      2. 清理开发 / 测试环境游戏库业务数据。
+      3. 清理 HiveGreatSage / Verify 相关 Redis key。
+      4. 可选择保留 admin 表中的管理员账号。
 
-运行方式：
+    强安全边界:
+      1. 本脚本禁止在 production / prod / release / online 环境运行。
+      2. 本脚本默认不执行 Redis FLUSHALL。
+      3. --yes 只跳过普通确认，不跳过环境保护。
+      4. 如需 Redis FLUSHALL，必须额外传入 --redis-flushall，并输入二次确认短语。
+      5. 本脚本不删除数据库本身，只清理 public schema 中的业务表数据。
+
+运行示例:
     python scripts/reset_to_clean.py
-    python scripts/reset_to_clean.py --keep-admin   # 保留管理员账号
-    python scripts/reset_to_clean.py --yes          # 跳过确认（自动化场景）
+    python scripts/reset_to_clean.py --keep-admin
+    python scripts/reset_to_clean.py --yes --keep-admin
+    python scripts/reset_to_clean.py --redis-flushall
+
+环境要求:
+    ENVIRONMENT 必须是 development / dev / local / test / testing 之一。
+
+改进历史:
+    V1.1.0 (2026-05-02) - 增加开发环境强保护；默认禁用 Redis FLUSHALL；增加数据库名保护。
+    V1.0.0 - 初始全清脚本。
 """
 
-import asyncio
-import sys
 import argparse
+import asyncio
+import os
+import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -33,221 +51,428 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.config import settings
 
 
-# ─────────────────────────────────────────────────────────────
-# 主库表清理顺序（必须尊重外键依赖，子表先删）
-# ─────────────────────────────────────────────────────────────
-# login_log          → 无外键约束问题，先删
-# device_binding     → 依赖 user
-# authorization      → 依赖 user、game_project
-# agent_project_auth → 依赖 agent、game_project
-# version_record     → 依赖 game_project
-# user               → 依赖 agent（created_by_agent_id）
-# agent              → 自引用，需按 level 倒序或直接禁用外键检查
-# game_project       → 被多个表依赖，最后删
-# admin              → 可选保留
+ALLOWED_ENVIRONMENTS = {"development", "dev", "local", "test", "testing"}
+BLOCKED_ENVIRONMENTS = {"production", "prod", "release", "online", "staging"}
 
-TRUNCATE_ORDER = [
-    "login_log",
-    "device_binding",
-    '"authorization"',       # authorization 是 PostgreSQL 保留字，必须加引号
-    "agent_project_auth",
-    "version_record",
-    '"user"',               # user 也是保留字
-    "agent",
-    "game_project",
+DEFAULT_ALLOWED_MAIN_DATABASES = {
+    "hive_platform",
+    "hive_platform_dev",
+    "hive_verify_dev",
+    "hive_test",
+    "hive_test_platform",
+}
+
+PROTECTED_DATABASE_KEYWORDS = {
+    "prod",
+    "production",
+    "release",
+    "online",
+    "live",
+    "staging",
+}
+
+ALWAYS_KEEP_TABLES = {
+    "alembic_version",
+}
+
+HGS_REDIS_KEY_PATTERNS = [
+    "device:runtime:*",
+    "heartbeat:*",
+    "rate_limit:*",
+    "refresh:*",
+    "refresh_token:*",
+    "blacklist:*",
+    "token:*",
+    "hgs:*",
+    "verify:*",
+    "hive:*",
 ]
 
-# 游戏库表（每个游戏库都要清）
-GAME_TABLE_ORDER = [
-    "user_script_param",
-    "device_runtime",
-    "version_record",    # 游戏库也有 version_record
-    "script_param_def",
-    "project_config",
-]
+
+@dataclass(frozen=True)
+class ResetOptions:
+    keep_admin: bool
+    yes: bool
+    include_redis: bool
+    redis_flushall: bool
 
 
-async def get_stats(engine) -> dict:
-    """获取当前各表数据量（用于确认提示）。"""
-    stats = {}
-    async with engine.connect() as conn:
-        for table in ["admin", "agent", '"user"', "game_project",
-                      "authorization", "device_binding", "login_log",
-                      "agent_project_auth", "version_record"]:
-            try:
-                r = await conn.execute(text(f"SELECT COUNT(*) FROM {table}"))
-                stats[table.strip('"')] = r.scalar()
-            except Exception:
-                stats[table.strip('"')] = "表不存在"
-    return stats
+def _get_environment() -> str:
+    value = (
+        getattr(settings, "ENVIRONMENT", None)
+        or getattr(settings, "APP_ENV", None)
+        or os.getenv("ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or ""
+    )
+    return str(value).strip().lower()
 
 
-async def get_game_databases(engine) -> list[str]:
-    """查询主库中注册的所有游戏项目库名。"""
+def _require_safe_environment() -> None:
+    environment = _get_environment()
+
+    if not environment:
+        raise RuntimeError(
+            "未检测到 ENVIRONMENT / APP_ENV。"
+            "为了防止误清库，请先在 .env 中设置 ENVIRONMENT=development。"
+        )
+
+    if environment in BLOCKED_ENVIRONMENTS:
+        raise RuntimeError(
+            f"当前环境为 {environment!r}，禁止执行 reset_to_clean.py。"
+        )
+
+    if environment not in ALLOWED_ENVIRONMENTS:
+        raise RuntimeError(
+            "当前环境不在允许列表中。"
+            f"当前值：{environment!r}；允许值：{sorted(ALLOWED_ENVIRONMENTS)}。"
+        )
+
+
+def _get_allowed_main_databases() -> set[str]:
+    raw = os.getenv("HGS_RESET_ALLOWED_MAIN_DBS", "")
+    if not raw.strip():
+        return set(DEFAULT_ALLOWED_MAIN_DATABASES)
+
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
+def _database_name_from_url(database_url: str) -> str:
+    return make_url(database_url).database or ""
+
+
+def _assert_safe_main_database(database_name: str) -> None:
+    if not database_name:
+        raise RuntimeError("无法从 DATABASE_MAIN_URL 解析主库名称。")
+
+    lowered = database_name.lower()
+
+    if any(keyword in lowered for keyword in PROTECTED_DATABASE_KEYWORDS):
+        raise RuntimeError(
+            f"主库名称 {database_name!r} 命中生产保护关键词，禁止清理。"
+        )
+
+    allowed_databases = _get_allowed_main_databases()
+    if database_name not in allowed_databases:
+        raise RuntimeError(
+            "主库名称不在允许清理列表中，禁止执行。"
+            f" 当前主库：{database_name!r}；允许列表：{sorted(allowed_databases)}。\n"
+            "如确认为开发库，可临时设置环境变量：\n"
+            "HGS_RESET_ALLOWED_MAIN_DBS='hive_platform,你的开发库名'"
+        )
+
+
+def _assert_safe_game_database(database_name: str) -> None:
+    if not database_name:
+        raise RuntimeError("发现空游戏库名，禁止继续。")
+
+    lowered = database_name.lower()
+
+    if any(keyword in lowered for keyword in PROTECTED_DATABASE_KEYWORDS):
+        raise RuntimeError(
+            f"游戏库名称 {database_name!r} 命中生产保护关键词，禁止清理。"
+        )
+
+    if not lowered.startswith("hive_"):
+        raise RuntimeError(
+            f"游戏库名称 {database_name!r} 不以 hive_ 开头，禁止清理。"
+        )
+
+
+def _confirm_or_abort(options: ResetOptions, main_database_name: str) -> None:
+    if options.yes:
+        print("  WARN 已传入 --yes，跳过普通交互确认。")
+        print("  WARN 环境保护、数据库名保护、Redis FLUSHALL 二次确认仍然生效。")
+        return
+
+    print()
+    print("即将清理开发 / 测试环境数据。")
+    print(f"主库：{main_database_name}")
+    print(f"保留管理员账号：{'是' if options.keep_admin else '否'}")
+    print(f"清理 Redis 项目 key：{'是' if options.include_redis else '否'}")
+    print(f"Redis FLUSHALL：{'是' if options.redis_flushall else '否'}")
+    print()
+    confirm = input("请输入 RESET_TO_CLEAN 确认执行：").strip()
+
+    if confirm != "RESET_TO_CLEAN":
+        raise RuntimeError("确认短语不匹配，已取消。")
+
+
+def _confirm_redis_flushall() -> None:
+    print()
+    print("DANGER 你正在请求 Redis FLUSHALL。")
+    print("DANGER 这会清空当前 Redis 实例的所有数据库和所有 key。")
+    print("DANGER 如果 Redis 不是 Verify 独占实例，会影响其他业务。")
+    print()
+    confirm = input("请输入 FLUSHALL_HGS_VERIFY 确认执行 Redis FLUSHALL：").strip()
+
+    if confirm != "FLUSHALL_HGS_VERIFY":
+        raise RuntimeError("Redis FLUSHALL 确认短语不匹配，已取消。")
+
+
+def _make_engine_for_database(database_name: str):
+    base_url = make_url(settings.DATABASE_MAIN_URL).set(database=database_name)
+    return create_async_engine(base_url, echo=False, connect_args={"ssl": False})
+
+
+def _quote_table_names(table_names: Iterable[str]) -> str:
+    return ", ".join(f'"{name}"' for name in table_names)
+
+
+async def _get_public_tables(engine) -> list[str]:
     async with engine.connect() as conn:
         result = await conn.execute(
-            text("SELECT db_name FROM game_project WHERE db_name IS NOT NULL")
-        )
-        return [row[0] for row in result.all() if row[0]]
-
-
-async def clear_main_db(engine, keep_admin: bool) -> None:
-    """清空主库所有数据表（按外键顺序）。"""
-    # 使用 TRUNCATE ... CASCADE 一次性清所有表，忽略外键顺序问题
-    tables = list(TRUNCATE_ORDER)
-    if keep_admin:
-        tables = [t for t in tables if t != "admin"]
-
-    async with engine.begin() as conn:
-        # RESTART IDENTITY 重置序列（ID 从 1 重新开始）
-        # CASCADE 自动处理外键依赖
-        truncate_sql = ", ".join(tables)
-        await conn.execute(
-            text(f"TRUNCATE TABLE {truncate_sql} RESTART IDENTITY CASCADE")
-        )
-    print("  ✅ 主库数据已清空（表结构保留）")
-    if keep_admin:
-        print("  ℹ️  管理员账号已保留（--keep-admin）")
-
-
-async def clear_game_db(db_name: str) -> None:
-    """清空一个游戏项目库的所有数据表。"""
-    game_url = make_url(settings.DATABASE_MAIN_URL).set(database=db_name)
-    engine = create_async_engine(game_url, echo=False, connect_args={"ssl": False})
-    try:
-        async with engine.begin() as conn:
-            # 查询该库中实际存在的表
-            result = await conn.execute(text(
-                "SELECT tablename FROM pg_tables "
-                "WHERE schemaname = 'public' ORDER BY tablename"
-            ))
-            existing_tables = [row[0] for row in result.all()]
-
-            if not existing_tables:
-                print(f"  ℹ️  {db_name} 库为空，跳过")
-                return
-
-            tables_sql = ", ".join(existing_tables)
-            await conn.execute(
-                text(f"TRUNCATE TABLE {tables_sql} RESTART IDENTITY CASCADE")
+            text(
+                "SELECT tablename "
+                "FROM pg_tables "
+                "WHERE schemaname = 'public' "
+                "ORDER BY tablename"
             )
-        print(f"  ✅ 游戏库 {db_name} 数据已清空")
-    except Exception as e:
-        print(f"  ⚠️  游戏库 {db_name} 清理失败: {e}")
+        )
+        return [row[0] for row in result.fetchall()]
+
+
+async def _truncate_database_tables(
+    database_name: str,
+    *,
+    keep_admin: bool,
+    is_main_database: bool,
+) -> None:
+    engine = _make_engine_for_database(database_name)
+
+    try:
+        table_names = await _get_public_tables(engine)
+        excluded_tables = set(ALWAYS_KEEP_TABLES)
+
+        if keep_admin and is_main_database:
+            excluded_tables.add("admin")
+
+        tables_to_truncate = [
+            table_name
+            for table_name in table_names
+            if table_name not in excluded_tables
+        ]
+
+        if not tables_to_truncate:
+            print(f"  INFO 数据库 {database_name} 没有需要清理的业务表。")
+            return
+
+        quoted_tables = _quote_table_names(tables_to_truncate)
+
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(f"TRUNCATE TABLE {quoted_tables} RESTART IDENTITY CASCADE")
+            )
+
+        print(f"  OK 数据库 {database_name} 已清理。")
+        print(f"     清理表数：{len(tables_to_truncate)}")
+        if excluded_tables:
+            print(f"     保留表：{', '.join(sorted(excluded_tables))}")
+
     finally:
         await engine.dispose()
 
 
-async def clear_redis() -> None:
-    """清空 Redis 全部数据（FLUSHALL）。"""
-    import redis.asyncio as aioredis
-    r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+async def _get_game_database_names(main_database_name: str) -> list[str]:
+    engine = _make_engine_for_database(main_database_name)
+
     try:
-        await r.flushall()
-        print("  ✅ Redis 全部数据已清空")
-    except Exception as e:
-        print(f"  ⚠️  Redis 清理失败: {e}")
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT DISTINCT db_name "
+                    "FROM game_project "
+                    "WHERE db_name IS NOT NULL AND db_name <> '' "
+                    "ORDER BY db_name"
+                )
+            )
+            database_names = [row[0] for row in result.fetchall()]
     finally:
-        await r.aclose()
+        await engine.dispose()
+
+    safe_names: list[str] = []
+    for database_name in database_names:
+        _assert_safe_game_database(database_name)
+        safe_names.append(database_name)
+
+    return safe_names
 
 
-async def main(keep_admin: bool, auto_yes: bool) -> None:
-    print()
-    print("=" * 60)
-    print(" ⚠️  HiveGreatSage-Verify 数据库全清重置")
-    print("=" * 60)
-    print()
-
-    # 连接主库
-    engine = create_async_engine(
-        settings.DATABASE_MAIN_URL, echo=False, connect_args={"ssl": False}
+def _get_redis_url() -> str | None:
+    return (
+        getattr(settings, "REDIS_URL", None)
+        or os.getenv("REDIS_URL")
+        or os.getenv("HGS_REDIS_URL")
     )
 
-    # 显示当前数据量
-    print("当前数据量：")
+
+async def _delete_redis_keys_by_patterns(patterns: list[str]) -> int:
+    redis_url = _get_redis_url()
+    if not redis_url:
+        print("  WARN 未配置 REDIS_URL，跳过 Redis 清理。")
+        return 0
+
     try:
-        stats = await get_stats(engine)
-        print(f"  管理员    : {stats.get('admin', '—')} 条")
-        print(f"  代理      : {stats.get('agent', '—')} 条")
-        print(f"  用户      : {stats.get('user', '—')} 条")
-        print(f"  游戏项目  : {stats.get('game_project', '—')} 条")
-        print(f"  授权记录  : {stats.get('authorization', '—')} 条")
-        print(f"  设备绑定  : {stats.get('device_binding', '—')} 条")
-        print(f"  登录日志  : {stats.get('login_log', '—')} 条")
-    except Exception as e:
-        print(f"  （无法读取数据量：{e}）")
+        import redis.asyncio as redis
+    except ImportError:
+        print("  WARN 未安装 redis Python 包，跳过 Redis 清理。")
+        return 0
 
-    # 查询游戏库列表
-    game_dbs = []
+    client = redis.from_url(redis_url, decode_responses=True)
+
+    deleted_total = 0
     try:
-        game_dbs = await get_game_databases(engine)
-        if game_dbs:
-            print(f"\n  游戏库列表：{', '.join(game_dbs)}")
-    except Exception:
-        pass
+        for pattern in patterns:
+            batch: list[str] = []
 
-    print()
-    print("清理范围：")
-    print("  • 主库 hive_platform 全部数据")
-    for db in game_dbs:
-        print(f"  • 游戏库 {db} 全部数据")
-    print("  • Redis 全部缓存")
-    if keep_admin:
-        print("  （✓ 管理员账号将被保留）")
-    else:
-        print("  （⚠️  管理员账号也将被清除）")
+            async for key in client.scan_iter(match=pattern, count=500):
+                batch.append(key)
 
-    print()
+                if len(batch) >= 500:
+                    deleted_total += await client.delete(*batch)
+                    batch.clear()
 
-    if not auto_yes:
-        confirm = input("输入 YES 确认执行（其他任何输入取消）: ").strip()
-        if confirm != "YES":
-            print("\n已取消，数据未修改。")
-            await engine.dispose()
-            return
+            if batch:
+                deleted_total += await client.delete(*batch)
 
-    print()
-    print("开始清理...")
+        return deleted_total
 
-    # 清主库
-    print("\n[1] 清空主库数据...")
-    await clear_main_db(engine, keep_admin=keep_admin)
+    finally:
+        await client.aclose()
 
-    # 清游戏库
-    if game_dbs:
-        print(f"\n[2] 清空游戏库数据（共 {len(game_dbs)} 个）...")
-        for db in game_dbs:
-            await clear_game_db(db)
-    else:
-        print("\n[2] 无游戏库需要清理")
 
-    # 清 Redis
-    print("\n[3] 清空 Redis...")
-    await clear_redis()
+async def _flush_all_redis() -> None:
+    redis_url = _get_redis_url()
+    if not redis_url:
+        print("  WARN 未配置 REDIS_URL，跳过 Redis FLUSHALL。")
+        return
 
-    await engine.dispose()
+    try:
+        import redis.asyncio as redis
+    except ImportError:
+        print("  WARN 未安装 redis Python 包，跳过 Redis FLUSHALL。")
+        return
+
+    client = redis.from_url(redis_url, decode_responses=True)
+
+    try:
+        await client.flushall()
+    finally:
+        await client.aclose()
+
+
+async def reset_to_clean(options: ResetOptions) -> None:
+    _require_safe_environment()
+
+    main_database_name = _database_name_from_url(settings.DATABASE_MAIN_URL)
+    _assert_safe_main_database(main_database_name)
+
+    _confirm_or_abort(options, main_database_name)
+
+    if options.redis_flushall:
+        _confirm_redis_flushall()
 
     print()
     print("=" * 60)
-    print(" ✅ 重置完成！数据库已恢复干净初始状态。")
+    print(" HiveGreatSage-Verify 开发 / 测试环境清理")
     print("=" * 60)
     print()
-    print("下一步：重新运行初始化脚本")
-    print("  python scripts/setup_real_env.py")
+
+    print("[1/3] 清理主库业务表...")
+    await _truncate_database_tables(
+        main_database_name,
+        keep_admin=options.keep_admin,
+        is_main_database=True,
+    )
+
     print()
+    print("[2/3] 清理游戏库业务表...")
+    game_database_names = await _get_game_database_names(main_database_name)
+
+    if not game_database_names:
+        print("  INFO 未发现 game_project.db_name，跳过游戏库清理。")
+    else:
+        for game_database_name in game_database_names:
+            await _truncate_database_tables(
+                game_database_name,
+                keep_admin=False,
+                is_main_database=False,
+            )
+
+    print()
+    print("[3/3] 清理 Redis...")
+    if not options.include_redis:
+        print("  INFO 已按参数跳过 Redis 清理。")
+    elif options.redis_flushall:
+        await _flush_all_redis()
+        print("  OK Redis FLUSHALL 已执行。")
+    else:
+        deleted_count = await _delete_redis_keys_by_patterns(HGS_REDIS_KEY_PATTERNS)
+        print("  OK Redis 项目相关 key 已清理。")
+        print(f"     删除 key 数：{deleted_count}")
+
+    print()
+    print("=" * 60)
+    print(" OK 清理完成")
+    print("=" * 60)
+    print()
+    print("后续建议：")
+    print("  1. 运行 Alembic 确认主库迁移状态。")
+    print("  2. 重新运行 scripts/init_data.py 创建管理员。")
+    print("  3. 通过后台 API 创建项目、代理和用户。")
+    print("  4. 启动 Web / Redis / Celery Worker / Celery Beat 后再联调。")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="数据库全清重置")
+def _parse_args() -> ResetOptions:
+    parser = argparse.ArgumentParser(
+        description="清理 HiveGreatSage-Verify 开发 / 测试环境数据。"
+    )
+
     parser.add_argument(
         "--keep-admin",
         action="store_true",
-        help="保留管理员账号（清除其他所有数据）",
+        help="清理主库时保留 admin 表。",
     )
+
     parser.add_argument(
         "--yes",
         action="store_true",
-        help="跳过确认提示，直接执行（危险！）",
+        help="跳过普通确认。环境保护和 Redis FLUSHALL 二次确认不会被跳过。",
     )
+
+    parser.add_argument(
+        "--no-redis",
+        action="store_true",
+        help="跳过 Redis 清理。",
+    )
+
+    parser.add_argument(
+        "--redis-flushall",
+        action="store_true",
+        help="危险操作：执行 Redis FLUSHALL。默认不会执行。",
+    )
+
     args = parser.parse_args()
-    asyncio.run(main(keep_admin=args.keep_admin, auto_yes=args.yes))
+
+    return ResetOptions(
+        keep_admin=args.keep_admin,
+        yes=args.yes,
+        include_redis=not args.no_redis,
+        redis_flushall=args.redis_flushall,
+    )
+
+
+def main() -> None:
+    options = _parse_args()
+
+    try:
+        asyncio.run(reset_to_clean(options))
+    except Exception as exc:
+        print()
+        print("ERROR 清理已中止。")
+        print(f"原因：{exc}")
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    main()

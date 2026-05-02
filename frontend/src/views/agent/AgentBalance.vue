@@ -259,7 +259,7 @@
 
 import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
-import { agentBalanceApi } from '@/api/balance'
+import { agentBalanceApi } from '@/api/agent/balance'
 import { formatDatetime } from '@/utils/format'
 
 const loading = ref(false)

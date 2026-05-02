@@ -30,11 +30,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.main.models import (
     Admin,
     Agent,
-    AgentBalance,
     AgentProjectAuth,
     GameProject,
     ProjectPrice,
 )
+from app.models.main.accounting import AccountingWallet
 from app.models.main.agent_profile import AgentBusinessProfile
 from app.models.main.project_access import (
     AgentProjectAccessInvite,
@@ -717,19 +717,15 @@ async def _get_agent_available_points(
     db: AsyncSession,
 ) -> Decimal:
     result = await db.execute(
-        select(AgentBalance).where(AgentBalance.agent_id == agent_id)
+        select(AccountingWallet).where(AccountingWallet.agent_id == agent_id)
     )
 
-    balance = result.scalar_one_or_none()
+    wallet = result.scalar_one_or_none()
 
-    if not balance:
+    if not wallet:
         return Decimal("0.00")
 
-    return (
-        Decimal(str(balance.charged_points or 0))
-        + Decimal(str(balance.credit_points or 0))
-        - Decimal(str(balance.frozen_credit or 0))
-    )
+    return Decimal(str(wallet.available_total or 0))
 
 
 # ═══════════════════════════════════════════════════════════════

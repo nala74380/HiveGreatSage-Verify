@@ -144,8 +144,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { balanceApi } from '@/api/balance'
-import { projectApi } from '@/api/project'
+import { adminBalanceApi as balanceApi } from '@/api/admin/balance'
+import { adminProjectApi as projectApi } from '@/api/admin/project'
 import LevelTag from '@/components/common/LevelTag.vue'
 
 const LEVELS = ['trial', 'normal', 'vip', 'svip']

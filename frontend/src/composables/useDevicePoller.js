@@ -18,7 +18,8 @@
  */
 
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { adminDeviceApi, clientDeviceApi } from '@/api/device'
+import { adminDeviceApi } from '@/api/admin/device'
+import { clientDeviceApi } from '@/api/client/device'
 
 const POLL_INTERVAL = 10_000
 
