@@ -3,9 +3,9 @@ r"""
 文件名称: update.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-24
-版本: V1.0.0
+版本: V1.0.1
 功能说明:
-    热更新路由（从空桩重写为完整实现）：
+    热更新路由（客户端专用）：
       GET /api/update/check    — 检查是否有新版本
       GET /api/update/download — 获取签名限时下载 URL
 
@@ -15,7 +15,7 @@ r"""
 
     路由层职责：
       1. 鉴权（get_current_user + get_game_project_code）
-      2. 获取游戏库 Session 和 Redis 连接
+      2. 获取主库 Session 和 Redis 连接
       3. 调用 update_service，返回 HTTP 响应
       不包含任何业务判断逻辑。
 
@@ -27,6 +27,7 @@ r"""
     [[01-网络验证系统/架构设计]] 第十节 热更新机制
 
 改进历史:
+    V1.0.1 (2026-05-03): 修正文档说明，热更新版本记录已迁至主库，不再写“游戏库 Session”
     V1.0.0 - 从空桩重写为完整实现
 调试信息:
     已知问题: 无
