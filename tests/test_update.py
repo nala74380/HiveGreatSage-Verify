@@ -1,9 +1,9 @@
 r"""
 文件位置: tests/test_update.py
 名称: 热更新接口集成测试
-作者: 蜂巢·大圣 (Hive-GreatSage)
+作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-04-24
-版本: V1.0.3
+版本: V1.0.4
 功能说明:
     测试 GET /api/update/check 和 GET /api/update/download 接口。
 
@@ -11,6 +11,7 @@ r"""
     测试数据写入前后会清理同名测试版本记录和 Redis 热更新缓存，避免残留状态影响断言。
 
 改进历史:
+    V1.0.4 (2026-05-03) - 授权测试请求补齐 user_level 与 authorized_devices，匹配 AuthorizationCreateRequest
     V1.0.3 (2026-05-03) - seed_version 增加残留测试记录清理和 Redis 热更新缓存清理
     V1.0.2 (2026-05-03) - seed_version 改用主库 session_factory（D014 V2 迁移）
     V1.0.1 (2026-04-25) - seed_version 改用 conftest.game_session_factory
@@ -35,6 +36,8 @@ TEST_PACKAGE_PATH_PC      = f"game_001/pc/packages/test_v{TEST_VERSION_PC}.zip"
 TEST_CHECKSUM = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 TEST_RELEASE_NOTES = "测试版本 - 自动化测试"
 TEST_LOGIN_SECRET = "UpdateTestSecret2026"
+TEST_USER_LEVEL = "normal"
+TEST_AUTHORIZED_DEVICES = 20
 
 
 # ── 辅助 ──────────────────────────────────────────────────────
@@ -55,9 +58,15 @@ async def _create_user_and_login(
     assert r.status_code == 201, f"创建用户失败: {r.text}"
     user_id = r.json()["id"]
 
-    r = await client.post(f"/api/users/{user_id}/authorizations",
-                          json={"game_project_id": project_id},
-                          headers=admin_headers)
+    r = await client.post(
+        f"/api/users/{user_id}/authorizations",
+        json={
+            "game_project_id": project_id,
+            "user_level": TEST_USER_LEVEL,
+            "authorized_devices": TEST_AUTHORIZED_DEVICES,
+        },
+        headers=admin_headers,
+    )
     assert r.status_code == 201, f"授权失败: {r.text}"
 
     r = await client.post("/api/auth/login", json={
