@@ -1,15 +1,16 @@
 r"""
 文件位置: tests/test_update_admin.py
 名称: 热更新管理接口集成测试
-作者: 蜂巢·大圣 (Hive-GreatSage)
+作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-04-25
-版本: V1.1.2
+版本: V1.1.3
 功能说明:
     测试 POST /admin/api/updates/{project_id}/{client_type}。
     V2 迁移后上传已改为主库，路径参数从 code_name 改为 project_id。
     上传、覆盖、缓存失效等管理端测试不依赖游戏库连接。
 
 改进历史:
+    V1.1.3 (2026-05-03): 缓存失效测试的授权请求补齐 user_level 与 authorized_devices
     V1.1.2 (2026-05-03): 移除同版本重复上传测试中不必要的游戏库可用性跳过条件
     V1.1.1 (2026-05-03): 修复 project_id、game_db_accessible、GAME_DB_SKIP_MSG 测试依赖声明不完整的问题
     V1.1.0 (2026-05-03): 上传路径改用 project_id（D014 V2 迁移）；
@@ -21,11 +22,14 @@ r"""
 import pytest
 from sqlalchemy import text
 
-from tests.conftest import GAME_DB_SKIP_MSG, GAME_PROJECT_CODE
+from tests.conftest import GAME_DB_SKIP_MSG, GAME_PROJECT_CODE, GAME_PROJECT_UUID
 
 _FAKE_LRJ_CONTENT = b"PK\x03\x04FAKE_LRJ_CONTENT_FOR_TESTING_ONLY"
 _FAKE_ZIP_CONTENT = b"PK\x03\x04FAKE_ZIP_CONTENT_FOR_TESTING_ONLY"
 _TEST_RELEASE_NOTES = "test_upload"
+_TEST_LOGIN_SECRET = "UpdateAdminTestSecret2026"
+_TEST_USER_LEVEL = "normal"
+_TEST_AUTHORIZED_DEVICES = 20
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -180,21 +184,30 @@ class TestUploadVersion:
             pytest.skip(GAME_DB_SKIP_MSG)
 
         import uuid as _uuid
-        from tests.conftest import GAME_PROJECT_UUID
 
         suffix = _uuid.uuid4().hex[:8]
         username = f"upd_adm_test_{suffix}"
         r = await client.post("/api/users/", json={
-            "username": username, "password": "Test@2026!",
+            "username": username,
+            "password": _TEST_LOGIN_SECRET,
         }, headers=admin_headers)
         assert r.status_code == 201
         user_id = r.json()["id"]
 
-        await client.post(f"/api/users/{user_id}/authorizations",
-                          json={"game_project_id": project_id}, headers=admin_headers)
+        r = await client.post(
+            f"/api/users/{user_id}/authorizations",
+            json={
+                "game_project_id": project_id,
+                "user_level": _TEST_USER_LEVEL,
+                "authorized_devices": _TEST_AUTHORIZED_DEVICES,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201, r.text
 
         r = await client.post("/api/auth/login", json={
-            "username": username, "password": "Test@2026!",
+            "username": username,
+            "password": _TEST_LOGIN_SECRET,
             "project_uuid": GAME_PROJECT_UUID,
             "device_fingerprint": f"adm_dev_{_uuid.uuid4().hex[:12]}",
             "client_type": "android",
