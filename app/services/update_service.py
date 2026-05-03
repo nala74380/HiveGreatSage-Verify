@@ -3,7 +3,7 @@ r"""
 文件名称: update_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-24
-版本: V1.0.1
+版本: V1.1.1
 功能说明:
     热更新服务层（客户端检查/下载）：
       - check_update()      检查版本、比较、返回是否需要更新
@@ -22,6 +22,7 @@ r"""
     [[01-网络验证系统/架构设计]] 第十节 热更新机制
 
 改进历史:
+    V1.1.1 (2026-05-03): 修复 get_download_url() 调用 get_storage() 时缺少导入的问题
     V1.1.0 (2026-05-03): 删除 upload_version() 和 invalidate_version_cache()（已由 update_admin.py 取代）；
                         客户端查询切换到主库 VersionRecord
     V1.0.0 - 初始版本
@@ -37,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.storage import get_storage
 from app.models.main.models import GameProject, VersionRecord
 from app.schemas.update import (
     UpdateCheckResponse,
