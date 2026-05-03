@@ -49,11 +49,6 @@ class Settings(BaseSettings):
     DATABASE_MAIN_URL: str = (
         "postgresql+asyncpg://hive_user:password@localhost:5432/hive_platform"
     )
-    # 游戏库 URL 前缀，代码拼接：{DATABASE_GAME_PREFIX}{code_name}
-    DATABASE_GAME_PREFIX: str = (
-        "postgresql+asyncpg://hive_user:password@localhost:5432/hive_game_"
-    )
-
     # ── Redis ─────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
 

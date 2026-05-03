@@ -15,8 +15,12 @@ r"""
     已知问题: 无
 """
 
+from datetime import date, datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from loguru import logger
+from sqlalchemy import and_, cast, func, select
+from sqlalchemy import Date as SADate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin
@@ -72,9 +76,6 @@ async def list_login_logs(
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
     """登录日志列表（管理员专用）。"""
-    from datetime import date
-    from sqlalchemy import and_, cast, Date as SADate
-
     query = select(LoginLog, User).outerjoin(User, LoginLog.user_id == User.id)
 
     filters = []
@@ -154,9 +155,6 @@ async def get_user_devices(
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
     """查询指定用户的设备绑定列表（管理员专用）。"""
-    from datetime import datetime, timedelta, timezone
-    from loguru import logger
-
     # 不过滤 status，返回所有记录（包括 unbound），方便调试
     result = await db.execute(
         select(DeviceBinding)

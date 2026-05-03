@@ -34,15 +34,20 @@ r"""
     该操作带 idempotency_key，重复执行不会重复写入。
 """
 
-import uuid
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import (
+    make_business_no as _make_no,
+    money as _money,
+    money_float as _money_float,
+    now_utc as _now,
+)
 from app.models.main.accounting import (
     AccountingDocument,
     AccountingLedgerEntry,
@@ -51,22 +56,6 @@ from app.models.main.accounting import (
     AccountingWallet,
 )
 from app.models.main.models import Agent
-
-
-def _money(value: Any) -> Decimal:
-    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def _money_float(value: Any) -> float:
-    return float(_money(value))
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _make_no(prefix: str) -> str:
-    return f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
 
 
 async def _has_idempotency_key(db: AsyncSession, key: str) -> bool:

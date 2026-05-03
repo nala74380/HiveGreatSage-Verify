@@ -202,8 +202,8 @@ class TestAgentManagement:
         assert data["created_by_agent_id"] == agent_id
         assert data["created_by_admin"] is False
 
-    async def test_agent_cannot_create_tester(self, client, admin_headers):
-        """代理不能创建 tester 级别用户。"""
+    async def test_agent_cannot_create_tester(self, client, admin_headers, project_id):
+        """代理创建用户成功（201），但授权 tester 级别被拒绝（403）。"""
         suffix = uuid.uuid4().hex[:8]
         r = await client.post("/api/agents/", json={
             "username": f"aglimit_{suffix}",
@@ -216,10 +216,20 @@ class TestAgentManagement:
         })
         agent_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
+        # 代理可以创建用户（user_level 已从 User 模型迁移到 Authorization）
         r = await client.post("/api/users/", json={
             "username": f"tester_{suffix}",
             "password": "P@2026!",
+        }, headers=agent_headers)
+        assert r.status_code == 201
+        user_id = r.json()["id"]
+
+        # 但代理不能授予 tester 级别授权
+        r = await client.post(f"/api/users/{user_id}/authorizations", json={
+            "game_project_id": project_id,
             "user_level": "tester",
+            "authorized_devices": 5,
+            "valid_until": "2099-01-01T00:00:00Z",
         }, headers=agent_headers)
         assert r.status_code == 403
 

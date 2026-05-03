@@ -52,10 +52,12 @@ class UserPasswordUpdateRequest(BaseModel):
 # ── 授权请求 ──────────────────────────────────────────────────
 
 class AuthorizationCreateRequest(BaseModel):
-    game_project_id: int = Field(..., description="项目 ID")
+    game_project_id: int = Field(..., gt=0, description="项目 ID")
     user_level: UserLevel = Field(..., description="该用户在此项目内的授权等级")
     authorized_devices: int = Field(..., ge=0, description="该项目授权设备数，0 表示无限制")
     valid_until: datetime | None = Field(default=None, description="该项目授权到期时间")
+
+    model_config = {"extra": "forbid"}
 
 
 class AuthorizationUpdateRequest(BaseModel):

@@ -15,6 +15,7 @@ r"""
 
 from __future__ import annotations
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, Field
 
@@ -81,7 +82,7 @@ class ProjectListResponse(BaseModel):
 # ── 代理项目授权 CRUD ─────────────────────────────────────────
 
 class AgentProjectAuthCreateRequest(BaseModel):
-    project_id: int = Field(..., description="要授权的项目 ID")
+    project_id: int = Field(..., gt=0, description="要授权的项目 ID")
     valid_until: datetime | None = Field(
         default=None,
         description="授权到期时间，None = 永久有效",
@@ -89,9 +90,8 @@ class AgentProjectAuthCreateRequest(BaseModel):
 
 
 class AgentProjectAuthUpdateRequest(BaseModel):
-    status: str | None = Field(
+    status: Literal["active", "suspended"] | None = Field(
         default=None,
-        pattern="^(active|suspended)$",
     )
     valid_until: datetime | None = Field(default=None)
 

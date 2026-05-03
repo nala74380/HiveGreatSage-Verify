@@ -26,7 +26,6 @@ r"""
 """
 
 import math
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -109,25 +108,19 @@ BALANCE_TYPE_LABELS = {
 
 
 # ─────────────────────────────────────────────────────────────
-# 基础工具
+# 基础工具（本地特有函数 + 共享模块别名）
 # ─────────────────────────────────────────────────────────────
 
-def _money(value: float | Decimal | int | str | None) -> Decimal:
-    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+from app.core.utils import (
+    ensure_aware as _ensure_aware,
+    money as _money,
+    make_business_no as _make_no,
+    now_utc as _now,
+)
 
 
 def _fmt_money(value: float | Decimal | int | str | None) -> str:
     return f"{float(_money(value)):.2f}"
-
-
-def _ensure_aware(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _fmt_dt(dt: datetime | None) -> str:
@@ -160,10 +153,6 @@ def _calc_period_count(user_level: str, start_at: datetime, end_at: datetime) ->
 
     period_hours = BILLING_RULES[user_level]["period_hours"]
     return max(1, math.ceil(raw_hours / period_hours))
-
-
-def _make_no(prefix: str) -> str:
-    return f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
 
 
 def _signed_amount(entry: AccountingLedgerEntry) -> float:
@@ -236,9 +225,8 @@ async def set_project_price(
     if points_per_device < 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="点数不能为负数")
 
-    project = await db.get(GameProject, project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+    from app.core.utils import get_project_or_404
+    project = await get_project_or_404(db, project_id)
 
     normalized = _money(points_per_device)
 

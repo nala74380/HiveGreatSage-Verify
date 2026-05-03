@@ -42,6 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_all_heartbeats_for_game
+from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids, get_game_project_by_code as _get_game_project_or_404
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime
 from app.models.main.models import Agent, GameProject, User
@@ -139,10 +140,6 @@ async def get_agent_device_list(
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
 
-from app.core.utils import get_game_project_by_code as _get_game_project_or_404
-
-
-from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids
 
 
 async def _build_device_list(

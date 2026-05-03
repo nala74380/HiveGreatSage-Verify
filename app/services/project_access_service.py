@@ -20,13 +20,18 @@ r"""
     - 项目准入策略必须使用 tier_level，不再使用 Agent.level。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import HTTPException, status as http_status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import (
+    ensure_aware as _ensure_aware,
+    get_project_or_404 as _get_project_or_404,
+    now_utc as _now,
+)
 from app.models.main.models import (
     Admin,
     Agent,
@@ -70,37 +75,14 @@ UNIT_LABELS = {
 }
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _ensure_aware(dt: datetime | None) -> datetime | None:
-    """
-    统一 datetime 时区。
-    """
-    if dt is None:
-        return None
-
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-
-    return dt
-
-
 def _is_future(dt: datetime | None, now: datetime) -> bool:
-    """
-    判断时间是否未过期。
-    None 表示永久有效。
-    """
+    """判断时间是否未过期。None 表示永久有效。"""
     if dt is None:
         return True
-
     normalized_dt = _ensure_aware(dt)
     normalized_now = _ensure_aware(now)
-
     if normalized_dt is None or normalized_now is None:
         return True
-
     return normalized_dt > normalized_now
 
 
@@ -902,8 +884,6 @@ def _validate_policy(policy: ProjectAccessPolicy) -> None:
 # ═══════════════════════════════════════════════════════════════
 # 内部实体读取 / 写入
 # ═══════════════════════════════════════════════════════════════
-
-from app.core.utils import get_project_or_404 as _get_project_or_404
 
 
 async def _get_active_agent_project_auth(

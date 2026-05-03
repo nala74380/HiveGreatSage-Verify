@@ -18,7 +18,6 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
     r = await client.post("/api/users/", json={
         "username": username,
         "password": "DevTest@2026!",
-        "user_level": "tester",
     }, headers=admin_headers)
     assert r.status_code == 201, f"用户创建失败: {r.status_code} | {r.text}"
     user_id = r.json()["id"]

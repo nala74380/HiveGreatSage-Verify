@@ -41,7 +41,6 @@ async def _create_user_and_login(
     r = await client.post("/api/users/", json={
         "username": username,
         "password": "Param@2026!",
-        "user_level": "tester",
     }, headers=admin_headers)
     assert r.status_code == 201, f"创建用户失败: {r.text}"
     user_id = r.json()["id"]

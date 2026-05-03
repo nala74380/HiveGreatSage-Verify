@@ -245,4 +245,7 @@ def _validate_value(value: str, param_def: ScriptParamDef) -> str | None:
     elif t == "string":
         pass
 
+    else:
+        return f"未知参数类型：'{t}'，支持的类型为 int / float / bool / string / enum"
+
     return None

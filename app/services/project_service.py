@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.pool import NullPool
 
 from app.config import settings
+from app.core.utils import get_project_or_404
 from app.models.main.models import Agent, AgentProjectAuth, Authorization, GameProject
 from app.models.game.models import GameBase
 from app.schemas.project import (
@@ -247,9 +248,7 @@ async def list_projects(
 
 
 async def get_project(project_id: int, db: AsyncSession) -> ProjectResponse:
-    project = await db.get(GameProject, project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+    project = await get_project_or_404(db, project_id)
     return await _project_to_response(project, db)
 
 
@@ -258,9 +257,7 @@ async def update_project(
     body: ProjectUpdateRequest,
     db: AsyncSession,
 ) -> ProjectResponse:
-    project = await db.get(GameProject, project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+    project = await get_project_or_404(db, project_id)
     if body.display_name is not None:
         project.display_name = body.display_name
     if body.is_active is not None:

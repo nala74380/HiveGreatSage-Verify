@@ -3,48 +3,47 @@ r"""
 文件名称: models.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-04-29
-版本: v1.0.7
+版本: v2.0.0
 功能说明:
     hive_platform 主库的全部 ORM 模型。
 
 核心表:
       - Admin（管理员）
-      - Agent（多级代理，自引用外键；用户数量仅作统计展示）
+      - Agent（多级代理，自引用外键）
       - User（账号主体）
       - Authorization（用户 × 项目授权）
-      - AuthorizationCharge（授权扣点快照）
       - DeviceBinding（用户 × 项目 × 设备绑定）
       - GameProject（项目注册表）
       - AgentProjectAuth（代理 × 项目授权）
       - LoginLog（登录日志）
       - VersionRecord（主库热更新版本记录）
       - ProjectPrice（项目定价）
-      - AgentBalance（代理余额）
-      - BalanceTransaction（点数流水）
+
+已删除的旧表（迁移至 app/models/main/accounting.py）:
+      - AuthorizationCharge → AuthorizationChargeSnapshot
+      - AgentBalance → AccountingWallet
+      - BalanceTransaction → AccountingLedgerEntry
 
 重要模型调整:
+    v2.0.0 (2026-05-03):
+      - 删除 AuthorizationCharge / AgentBalance / BalanceTransaction ORM 模型（D018）。
+      - 账务模型迁移至 app/models/main/accounting.py。
+      - DeviceBinding.game_project_id 改为 NOT NULL。
+      - GameProject 和 Agent 移除对旧模型的 relationship。
+
     v1.0.7:
       - 移除旧账号数量限制口径。
-      - 用户数量只作为统计展示。
       - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
 
     v1.0.6:
       - DeviceBinding 新增 game_project_id。
-      - 设备绑定口径由 user_id + device_fingerprint 调整为
-        user_id + game_project_id + device_fingerprint。
+      - 设备绑定口径调整为 user_id + game_project_id + device_fingerprint。
 
     v1.0.5:
-      - 新增 AuthorizationCharge 授权扣点快照表。
-      - BalanceTransaction 新增 related_charge_id。
-      - 支持删除用户按剩余未使用时间自动返点。
+      - 新增 AuthorizationCharge 授权扣点快照表（v2.0.0 已删除，改用 AuthorizationChargeSnapshot）。
 
     v1.0.4:
-      - Authorization 新增 user_level。
-      - Authorization 新增 authorized_devices。
-      - 项目内用户等级、授权设备数、授权到期时间统一归属 Authorization。
-
-调试信息:
-    关系加载策略统一使用 lazy="select"。
+      - Authorization 新增 user_level / authorized_devices。
 """
 
 import uuid

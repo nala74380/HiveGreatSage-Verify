@@ -1,13 +1,20 @@
 [Unit]
-Description=HiveGreatSage Verify Service
-After=network.target
+Description=HiveGreatSage Verify API Service
+After=network.target postgresql.service redis.service
+Requires=postgresql.service redis.service
 
 [Service]
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/HiveGreatSage-Verify
 Environment="PATH=/opt/HiveGreatSage-Verify/venv/bin"
-ExecStart=/opt/HiveGreatSage-Verify/venv/bin/uvicorn app.main:app --uds /var/run/hive-verify.sock
+ExecStart=/opt/HiveGreatSage-Verify/venv/bin/uvicorn app.main:app --uds /var/run/hive-verify.sock --workers 4
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+
+# 同时需要启动 Celery Worker 和 Beat（建议另建两个 service 文件）:
+#   celery -A app.core.celery_app worker --concurrency=4 --loglevel=info
+#   celery -A app.core.celery_app beat --loglevel=info

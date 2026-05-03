@@ -227,7 +227,9 @@ async def update_network_settings(
         for item in result.scalars().all()
     }
 
-    payload = body.model_dump()
+    # 使用 exclude_unset=True 确保只更新前端显式发送的字段，
+    # 避免 Pydantic 默认值覆盖已存储的配置。
+    payload = body.model_dump(exclude_unset=True)
 
     current_version = int(payload.get("config_version") or 1)
     payload["config_version"] = current_version + 1

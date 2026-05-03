@@ -29,8 +29,6 @@ r"""
     - 删除用户返点只处理存在授权扣点快照的代理扣点授权。
 """
 
-import secrets
-import string
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -38,6 +36,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.core.utils import generate_password as _generate_password, get_project_or_404 as _get_project_or_404
 from app.models.main.models import (
     Admin,
     Agent,
@@ -692,8 +691,6 @@ async def _get_user_or_404(user_id: int, db: AsyncSession) -> User:
     return user
 
 
-from app.core.utils import get_project_or_404 as _get_project_or_404
-
 
 async def _get_authorization_or_404(
     user_id: int,
@@ -947,8 +944,3 @@ def _ensure_aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
-
-
-def _generate_password(length: int = 12) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))

@@ -94,6 +94,19 @@ async def ledger(
     )
 
 
+@router.get("/agents-full", summary="代理列表含余额与项目授权")
+async def agents_full(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    status: str | None = Query(default=None),
+    _: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    """代理列表（含余额与授权项目），前端 AgentList.vue 使用。"""
+    from app.services.accounting_service import get_agents_with_balance_and_projects
+    return await get_agents_with_balance_and_projects(db, page, page_size, status)
+
+
 @router.get("/wallets", summary="代理钱包列表")
 async def wallets(
     page: int = Query(default=1, ge=1),

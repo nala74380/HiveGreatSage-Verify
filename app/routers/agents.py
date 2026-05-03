@@ -58,7 +58,7 @@ from app.schemas.agent import (
     AgentSubtreeResponse,
     AgentUpdateRequest,
 )
-from app.services.accounting_service import get_balance_transactions
+from app.services.accounting_service import get_agent_balance, get_balance_transactions
 from app.services.agent_service import (
     agent_login,
     create_agent,
@@ -171,7 +171,16 @@ async def get_my_profile(
     }
 
 
-# ── 代理流水查询（静态路径，原 balance_agent 迁移至此）─────────
+# ── 代理自查余额与流水（静态路径，原 balance_agent 迁移至此）────
+
+@router.get("/my/balance", summary="代理查询自己余额")
+async def my_balance(
+    current_agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    """代理查询自己点数余额（Agent Token）。"""
+    return await get_agent_balance(current_agent.id, db)
+
 
 @router.get("/my/transactions", summary="代理查询自己流水")
 async def my_transactions(

@@ -3,15 +3,14 @@ r"""
 名称: 热更新接口集成测试
 作者: 蜂巢·大圣 (Hive-GreatSage)
 时间: 2026-04-24
-版本: V1.0.1
+版本: V1.0.2
 功能说明:
     测试 GET /api/update/check 和 GET /api/update/download 接口。
 
-    seed_version fixture：
-      使用 conftest.game_session_factory（SQLAlchemy，session 级，SelectorEventLoop）
-      操作游戏库，替代原先的裸 asyncpg.connect()。
+    V2 迁移后 VersionRecord 已迁至主库，seed_version 写入主库 version_record。
 
 改进历史:
+    V1.0.2 (2026-05-03) - seed_version 改用主库 session_factory（D014 V2 迁移）
     V1.0.1 (2026-04-25) - seed_version 改用 conftest.game_session_factory
     V1.0.0 - 初始版本
 """
@@ -21,7 +20,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
-from tests.conftest import GAME_PROJECT_CODE, GAME_DB_SKIP_MSG
+from tests.conftest import GAME_PROJECT_CODE
 
 # 测试版本数据
 TEST_VERSION_PC      = "9.9.9"
@@ -45,7 +44,6 @@ async def _create_user_and_login(
     r = await client.post("/api/users/", json={
         "username": username,
         "password": "Update@2026!",
-        "user_level": "tester",
     }, headers=admin_headers)
     assert r.status_code == 201, f"创建用户失败: {r.text}"
     user_id = r.json()["id"]
@@ -69,32 +67,30 @@ async def _create_user_and_login(
 # ── Fixture：插入测试版本记录 ─────────────────────────────────
 
 @pytest.fixture
-async def seed_version(game_session_factory, game_db_accessible):
+async def seed_version(session_factory, project_id):
     """
-    将测试版本记录注入游戏库。
-    若 hive_game_001 不可访问，pytest.skip 而非 ERROR。
+    将测试版本记录注入主库 version_record（V2 迁移后不再使用游戏库版本表）。
     """
-    if not game_db_accessible:
-        pytest.skip(GAME_DB_SKIP_MSG)
-    async with game_session_factory() as session:
+    async with session_factory() as session:
         # 先停用已有活跃版本，避免唯一索引冲突
         await session.execute(text(
             "UPDATE version_record SET is_active = FALSE "
-            "WHERE client_type = 'android' AND is_active = TRUE"
-        ))
+            "WHERE game_project_id = :pid AND client_type = 'android' AND is_active = TRUE"
+        ), {"pid": project_id})
         await session.execute(text(
             "UPDATE version_record SET is_active = FALSE "
-            "WHERE client_type = 'pc' AND is_active = TRUE"
-        ))
+            "WHERE game_project_id = :pid AND client_type = 'pc' AND is_active = TRUE"
+        ), {"pid": project_id})
         # 插入测试版本
         await session.execute(text("""
             INSERT INTO version_record
-                (client_type, version, package_path, checksum_sha256,
+                (game_project_id, client_type, version, package_path, checksum_sha256,
                  release_notes, is_active, force_update)
             VALUES
-                ('android', :v_a, :p_a, :c, '测试版本 - 自动化测试', TRUE, FALSE),
-                ('pc',      :v_p, :p_p, :c, '测试版本 - 自动化测试', TRUE, FALSE)
+                (:pid, 'android', :v_a, :p_a, :c, '测试版本 - 自动化测试', TRUE, FALSE),
+                (:pid, 'pc',      :v_p, :p_p, :c, '测试版本 - 自动化测试', TRUE, FALSE)
         """), {
+            "pid": project_id,
             "v_a": TEST_VERSION_ANDROID, "p_a": TEST_PACKAGE_PATH_ANDROID, "c": TEST_CHECKSUM,
             "v_p": TEST_VERSION_PC,      "p_p": TEST_PACKAGE_PATH_PC,
         })
@@ -103,7 +99,7 @@ async def seed_version(game_session_factory, game_db_accessible):
     yield
 
     # teardown：删除测试版本记录
-    async with game_session_factory() as session:
+    async with session_factory() as session:
         await session.execute(text(
             "DELETE FROM version_record WHERE release_notes = '测试版本 - 自动化测试'"
         ))

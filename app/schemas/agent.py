@@ -23,6 +23,7 @@ r"""
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,7 +32,7 @@ from pydantic import BaseModel, Field
 
 class AdminLoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=64, examples=["admin"])
-    password: str = Field(..., min_length=1, examples=["Admin@2026!"])
+    password: str = Field(..., min_length=1, max_length=128, examples=["Admin@2026!"])
 
 
 class AdminLoginResponse(BaseModel):
@@ -46,7 +47,7 @@ class AdminLoginResponse(BaseModel):
 
 class AgentLoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=64)
-    password: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class AgentLoginResponse(BaseModel):
@@ -81,11 +82,12 @@ class AgentCreateRequest(BaseModel):
         description="佣金比例（百分比），可不设置",
     )
 
+    model_config = {"extra": "forbid"}
+
 
 class AgentUpdateRequest(BaseModel):
-    status: str | None = Field(
+    status: Literal["active", "suspended"] | None = Field(
         default=None,
-        pattern="^(active|suspended)$",
         description="更新状态",
     )
     commission_rate: float | None = Field(

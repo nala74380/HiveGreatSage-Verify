@@ -42,7 +42,6 @@ async def _create_and_login(
     r = await client.post("/api/users/", json={
         "username": username,
         "password": "Device@2026!",
-        "user_level": "tester",
     }, headers=admin_headers)
     assert r.status_code == 201
     user_id = r.json()["id"]

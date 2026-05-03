@@ -50,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_redis
 from app.core.security import decode_admin_token, decode_agent_token
+from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids
 from app.database import get_main_db
 from app.models.main.models import Admin, Agent, Authorization, DeviceBinding, GameProject, User
 from app.services.device_admin_service import (
@@ -110,9 +111,6 @@ async def _get_admin_or_agent(
         detail="需要 Admin Token 或 Agent Token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-
-from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids
 
 
 def _normalize_datetime(value: datetime | None) -> datetime | None:

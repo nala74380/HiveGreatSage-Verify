@@ -218,8 +218,51 @@ class NetworkSettingsResponse(NetworkSettingsBase):
     updated_by_admin_id: int | None = None
 
 
-class NetworkSettingsUpdateRequest(NetworkSettingsBase):
-    pass
+class NetworkSettingsUpdateRequest(BaseModel):
+    """网络设置更新请求。所有字段可选——只更新显式提供的字段。"""
+    deployment_mode: str | None = None
+
+    public_api_base_url: str | None = None
+    public_admin_base_url: str | None = None
+    public_update_base_url: str | None = None
+    health_check_url: str | None = None
+
+    reverse_proxy_enabled: bool | None = None
+    reverse_proxy_url: str | None = None
+    force_https: bool | None = None
+    real_ip_header: str | None = None
+    trusted_proxy_enabled: bool | None = None
+    trusted_proxy_ips: list[str] | None = None
+
+    relay_enabled: bool | None = None
+    relay_mode: str | None = None
+    relay_url: str | None = None
+    relay_health_url: str | None = None
+    home_node_id: str | None = None
+    home_node_name: str | None = None
+    home_local_verify_url: str | None = None
+
+    route_strategy: str | None = None
+    direct_enabled: bool | None = None
+    direct_candidate_urls: list[str] | None = None
+    direct_health_url: str | None = None
+    direct_min_success_count: int | None = None
+    direct_failback_threshold: int | None = None
+    relay_keepalive_after_direct: bool | None = None
+    preferred_route: str | None = None
+
+    client_config_enabled: bool | None = None
+    config_version: int | None = None
+    pc_client_api_url: str | None = None
+    android_client_api_url: str | None = None
+    backup_api_urls: list[str] | None = None
+    client_timeout_seconds: int | None = None
+    client_retry_count: int | None = None
+    heartbeat_interval_seconds: int | None = None
+    allow_client_config_pull: bool | None = None
+    allow_client_auto_failover: bool | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class ClientNetworkConfigResponse(BaseModel):

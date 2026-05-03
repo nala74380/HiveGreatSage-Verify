@@ -31,6 +31,7 @@ r"""
     游戏库会话使用内部工厂方法，确保已调用 _get_game_engine 初始化引擎。
 """
 
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -44,9 +45,12 @@ from app.core.redis_client import (
     get_user_heartbeats,
     set_heartbeat,
 )
+from app.core.utils import get_game_project_by_code as _get_game_project
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime
 from app.models.main.models import DeviceBinding, GameProject, User
+
+logger = logging.getLogger(__name__)
 from app.schemas.device import (
     DeviceDataResponse,
     DeviceListResponse,
@@ -253,8 +257,6 @@ async def get_device_data(
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
 
-from app.core.utils import get_game_project_by_code as _get_game_project
-
 
 async def _assert_device_bound(
     db: AsyncSession,
@@ -312,8 +314,9 @@ async def _get_offline_devices_from_db(
                 ))
         return offline
 
-    except Exception:
+    except Exception as exc:
         # 游戏库尚未初始化或连接失败时，优雅降级：只返回 Redis 的在线数据
+        logger.warning("游戏库离线设备查询失败 (%s): %s", game_project_code, exc)
         return []
 
 
@@ -333,7 +336,9 @@ async def _get_device_runtime_from_db(
                 )
             )
             return result.scalar_one_or_none()
-    except Exception:
+    except Exception as exc:
+        logger.warning("游戏库设备运行时查询失败 (%s, uid=%s, fp=%s): %s",
+                       game_project_code, user_id, device_fingerprint[:16], exc)
         return None
 
 

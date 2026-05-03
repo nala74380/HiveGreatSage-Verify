@@ -22,24 +22,18 @@ r"""
 """
 
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import money_float as _money
 from app.models.main.accounting import (
     AccountingLedgerEntry,
     AccountingWallet,
     AuthorizationChargeSnapshot,
 )
 from app.models.main.models import Agent, GameProject, User
-
-
-def _money(value: Any) -> float:
-    if value is None:
-        return 0.0
-    return float(Decimal(str(value)).quantize(Decimal("0.01")))
 
 
 def _today_start_utc() -> datetime:

@@ -6,15 +6,41 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 from app.database import Base
-from app.models.main.models import (  # noqa: F401 — 导入确保 ORM 模型注册到 Base.metadata
+
+# 导入所有主库 ORM 模型——Alembic autogenerate 依赖这些 import 来发现表结构。
+# 缺少任何一个模型，autogenerate 都会认为该表已删除并生成 DROP TABLE 迁移。
+from app.models.main.models import (  # noqa: F401
     Admin,
     Agent,
+    AgentProjectAuth,
     Authorization,
     DeviceBinding,
     GameProject,
     LoginLog,
+    ProjectPrice,
     User,
+    VersionRecord,
 )
+from app.models.main.accounting import (  # noqa: F401
+    AccountingWallet,
+    AccountingDocument,
+    AccountingLedgerEntry,
+    AuthorizationChargeSnapshot,
+    AccountingReconciliationRun,
+    AccountingReconciliationItem,
+    AccountingAdjustmentRequest,
+    AccountingRiskEvent,
+    AgentMonthlyBill,
+)
+from app.models.main.agent_profile import AgentBusinessProfile  # noqa: F401
+from app.models.main.project_access import (  # noqa: F401
+    AgentLevelPolicy,
+    AgentProjectAccessInvite,
+    AgentProjectAuthRequest,
+    ProjectAccessPolicy,
+)
+from app.models.main.system_setting import SystemSetting  # noqa: F401
+
 # 注意：游戏库模型（GameBase）不在此导入。
 # 游戏表不经过 Alembic，由 GameBase.metadata.create_all() 在游戏库初始化时建表。
 from app.config import settings

@@ -15,15 +15,14 @@ r"""
     - 用户数量只作为统计展示。
 """
 
-import secrets
-import string
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.core.utils import generate_password as _generate_password, now_utc as _now
 from app.models.main.models import Agent
 from app.models.main.agent_profile import AgentBusinessProfile
 from app.models.main.project_access import AgentLevelPolicy
@@ -37,17 +36,8 @@ from app.schemas.agent_profile import (
 )
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _as_float(value) -> float:
     return float(value or 0)
-
-
-def _generate_password(length: int = 12) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 async def list_agent_level_policies(

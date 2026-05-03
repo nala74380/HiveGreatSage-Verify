@@ -36,6 +36,5 @@ httpx==0.28.1               # 异步 HTTP 客户端（测试用）
 
 pytest==8.3.4
 pytest-asyncio==0.24.0
-httpx==0.28.1
 pytest-json-report==1.5.0
 anyio==4.6.2

@@ -63,6 +63,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.utils import get_agent_scope_ids
 from app.models.main.models import Admin, Agent, User
 from app.schemas.agent import (
     AdminLoginRequest,
@@ -347,7 +348,6 @@ async def get_all_agent_ids_in_subtree(
       代理查看权限范围内的用户时，先取得所有子代理 ID，
       再用 WHERE created_by_agent_id IN (...) 过滤。
     """
-    from app.core.utils import get_agent_scope_ids
     return await get_agent_scope_ids(db, root_agent_id)
 
 

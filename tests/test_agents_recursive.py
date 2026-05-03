@@ -339,7 +339,6 @@ class TestRevokeAll:
         r = await client.post("/api/users/", json={
             "username": username,
             "password": "Revoke@2026!",
-            "user_level": "tester",
         }, headers=admin_headers)
         assert r.status_code == 201
         user_id = r.json()["id"]

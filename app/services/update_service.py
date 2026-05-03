@@ -5,35 +5,25 @@ r"""
 日期/时间: 2026-04-24
 版本: V1.0.1
 功能说明:
-    热更新服务层，包含全部业务逻辑：
+    热更新服务层（客户端检查/下载）：
       - check_update()      检查版本、比较、返回是否需要更新
       - get_download_url()  生成带签名的限时下载 URL
-      - upload_version()    发布新版本（C06，管理员调用）
-      - invalidate_version_cache()  主动删除版本 Redis 缓存
 
     版本比较规则：
       只比较 MAJOR.MINOR.PATCH 三段，任意一段服务端更大则触发更新。
-      客户端版本 >= 服务端版本：无需更新（need_update=False）。
-      客户端版本格式非法时：视为 0.0.0，强制触发更新。
 
     Redis 缓存策略：
       Key: update:latest:{game_project_code}:{client_type}
       TTL: 300 秒（5 分钟）
-      发布新版本时主动删除缓存（invalidate_version_cache）。
 
-    upload_version 发布流程（C06）：
-      1. 计算文件 SHA-256 校验值
-      2. 调用存储抽象层（LocalStorage / S3Storage）保存文件
-      3. 将旧活跃版本 is_active 置为 FALSE（归档）
-      4. 插入新版本记录（is_active=TRUE）
-      5. 主动删除 Redis 缓存，确保下次 check_update 读到最新版本
+    管理员上传功能见 app/routers/update_admin.py。
 
 关联文档:
     [[01-网络验证系统/架构设计]] 第十节 热更新机制
-    [[01-网络验证系统/数据库设计]] 3.5 version_record
 
 改进历史:
-    V1.0.1 (2026-04-25) - 新增 upload_version()（C06），迁移 _build_local_url 到存储抽象层
+    V1.1.0 (2026-05-03): 删除 upload_version() 和 invalidate_version_cache()（已由 update_admin.py 取代）；
+                        客户端查询切换到主库 VersionRecord
     V1.0.0 - 初始版本
 调试信息:
     已知问题: 无
@@ -47,17 +37,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.main.models import VersionRecord
+from app.models.main.models import GameProject, VersionRecord
 from app.schemas.update import (
     UpdateCheckResponse,
     UpdateDownloadResponse,
 )
 
-logger = logging.getLogger(__name__)
-
-# Redis cache key 模板
 _CACHE_KEY = "update:latest:{game_project_code}:{client_type}"
-_CACHE_TTL = 300   # 5 分钟
+_CACHE_TTL = 300  # 5 分钟
 
 
 # ─────────────────────────────────────────────────────────────
@@ -184,7 +171,6 @@ async def _get_active_version(
             pass
 
     # 2. 从主库查找项目 ID
-    from app.models.main.models import GameProject
     proj_result = await main_db.execute(
         select(GameProject).where(
             GameProject.code_name == game_project_code,
