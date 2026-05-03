@@ -3,23 +3,28 @@ r"""
 名称: 热更新接口集成测试
 作者: 蜂巢·大圣 (Hive-GreatSage)
 时间: 2026-04-24
-版本: V1.0.2
+版本: V1.0.3
 功能说明:
     测试 GET /api/update/check 和 GET /api/update/download 接口。
 
     V2 迁移后 VersionRecord 已迁至主库，seed_version 写入主库 version_record。
+    测试数据写入前后会清理同名测试版本记录和 Redis 热更新缓存，避免残留状态影响断言。
 
 改进历史:
+    V1.0.3 (2026-05-03) - seed_version 增加残留测试记录清理和 Redis 热更新缓存清理
     V1.0.2 (2026-05-03) - seed_version 改用主库 session_factory（D014 V2 迁移）
     V1.0.1 (2026-04-25) - seed_version 改用 conftest.game_session_factory
     V1.0.0 - 初始版本
 """
 
 import uuid
+
 import pytest
+import redis.asyncio as aioredis
 from httpx import AsyncClient
 from sqlalchemy import text
 
+from app.config import settings
 from tests.conftest import GAME_PROJECT_CODE
 
 # 测试版本数据
@@ -28,6 +33,8 @@ TEST_VERSION_ANDROID = "9.9.9"
 TEST_PACKAGE_PATH_ANDROID = f"game_001/android/packages/test_v{TEST_VERSION_ANDROID}.lrj"
 TEST_PACKAGE_PATH_PC      = f"game_001/pc/packages/test_v{TEST_VERSION_PC}.zip"
 TEST_CHECKSUM = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+TEST_RELEASE_NOTES = "测试版本 - 自动化测试"
+TEST_LOGIN_SECRET = "UpdateTestSecret2026"
 
 
 # ── 辅助 ──────────────────────────────────────────────────────
@@ -43,7 +50,7 @@ async def _create_user_and_login(
 
     r = await client.post("/api/users/", json={
         "username": username,
-        "password": "Update@2026!",
+        "password": TEST_LOGIN_SECRET,
     }, headers=admin_headers)
     assert r.status_code == 201, f"创建用户失败: {r.text}"
     user_id = r.json()["id"]
@@ -55,13 +62,25 @@ async def _create_user_and_login(
 
     r = await client.post("/api/auth/login", json={
         "username": username,
-        "password": "Update@2026!",
+        "password": TEST_LOGIN_SECRET,
         "project_uuid": "00000000-0000-0000-0000-000000000001",
         "device_fingerprint": f"upd_dev_{uuid.uuid4().hex[:12]}",
         "client_type": "android",
     })
     assert r.status_code == 200, f"登录失败: {r.text}"
     return r.json()["access_token"]
+
+
+async def _clear_update_cache() -> None:
+    """清理热更新测试会命中的 Redis 缓存。"""
+    redis = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        await redis.delete(
+            f"update:latest:{GAME_PROJECT_CODE}:android",
+            f"update:latest:{GAME_PROJECT_CODE}:pc",
+        )
+    finally:
+        await redis.aclose()
 
 
 # ── Fixture：插入测试版本记录 ─────────────────────────────────
@@ -72,7 +91,12 @@ async def seed_version(session_factory, project_id):
     将测试版本记录注入主库 version_record（V2 迁移后不再使用游戏库版本表）。
     """
     async with session_factory() as session:
-        # 先停用已有活跃版本，避免唯一索引冲突
+        # 先删除上一次异常中断可能遗留的测试版本，避免唯一索引冲突。
+        await session.execute(text(
+            "DELETE FROM version_record WHERE release_notes = :notes"
+        ), {"notes": TEST_RELEASE_NOTES})
+
+        # 再停用已有活跃版本，保证本 fixture 写入的版本成为当前活跃版本。
         await session.execute(text(
             "UPDATE version_record SET is_active = FALSE "
             "WHERE game_project_id = :pid AND client_type = 'android' AND is_active = TRUE"
@@ -81,29 +105,38 @@ async def seed_version(session_factory, project_id):
             "UPDATE version_record SET is_active = FALSE "
             "WHERE game_project_id = :pid AND client_type = 'pc' AND is_active = TRUE"
         ), {"pid": project_id})
-        # 插入测试版本
+
+        # 插入测试版本。
         await session.execute(text("""
             INSERT INTO version_record
                 (game_project_id, client_type, version, package_path, checksum_sha256,
                  release_notes, is_active, force_update)
             VALUES
-                (:pid, 'android', :v_a, :p_a, :c, '测试版本 - 自动化测试', TRUE, FALSE),
-                (:pid, 'pc',      :v_p, :p_p, :c, '测试版本 - 自动化测试', TRUE, FALSE)
+                (:pid, 'android', :v_a, :p_a, :c, :notes, TRUE, FALSE),
+                (:pid, 'pc',      :v_p, :p_p, :c, :notes, TRUE, FALSE)
         """), {
             "pid": project_id,
-            "v_a": TEST_VERSION_ANDROID, "p_a": TEST_PACKAGE_PATH_ANDROID, "c": TEST_CHECKSUM,
-            "v_p": TEST_VERSION_PC,      "p_p": TEST_PACKAGE_PATH_PC,
+            "v_a": TEST_VERSION_ANDROID,
+            "p_a": TEST_PACKAGE_PATH_ANDROID,
+            "v_p": TEST_VERSION_PC,
+            "p_p": TEST_PACKAGE_PATH_PC,
+            "c": TEST_CHECKSUM,
+            "notes": TEST_RELEASE_NOTES,
         })
         await session.commit()
 
+    await _clear_update_cache()
+
     yield
 
-    # teardown：删除测试版本记录
+    # teardown：删除测试版本记录并清理缓存。
     async with session_factory() as session:
         await session.execute(text(
-            "DELETE FROM version_record WHERE release_notes = '测试版本 - 自动化测试'"
-        ))
+            "DELETE FROM version_record WHERE release_notes = :notes"
+        ), {"notes": TEST_RELEASE_NOTES})
         await session.commit()
+
+    await _clear_update_cache()
 
 
 # ── 测试类：版本检查 ──────────────────────────────────────────
