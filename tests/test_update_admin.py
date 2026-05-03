@@ -3,12 +3,14 @@ r"""
 名称: 热更新管理接口集成测试
 作者: 蜂巢·大圣 (Hive-GreatSage)
 时间: 2026-04-25
-版本: V1.1.1
+版本: V1.1.2
 功能说明:
     测试 POST /admin/api/updates/{project_id}/{client_type}。
     V2 迁移后上传已改为主库，路径参数从 code_name 改为 project_id。
+    上传、覆盖、缓存失效等管理端测试不依赖游戏库连接。
 
 改进历史:
+    V1.1.2 (2026-05-03): 移除同版本重复上传测试中不必要的游戏库可用性跳过条件
     V1.1.1 (2026-05-03): 修复 project_id、game_db_accessible、GAME_DB_SKIP_MSG 测试依赖声明不完整的问题
     V1.1.0 (2026-05-03): 上传路径改用 project_id（D014 V2 迁移）；
                           cleanup 改用主库 session_factory
@@ -46,7 +48,7 @@ async def cleanup_test_versions(session_factory):
 
 
 class TestUploadVersion:
-    # ── 不需要游戏库的校验测试（始终运行）─────────────────────
+    # ── 管理端参数/权限校验测试 ────────────────────────────────
 
     async def test_upload_requires_admin_token(self, client, project_id):
         """无 Token 应返回 403。"""
@@ -97,7 +99,7 @@ class TestUploadVersion:
         )
         assert r.status_code == 422
 
-    # ── 需要游戏库的上传测试（game DB 不可用时 skip）──────────
+    # ── 管理端发布/覆盖/缓存失效测试 ──────────────────────────
 
     async def test_upload_android_success(
         self, client, admin_headers, project_id
@@ -148,12 +150,9 @@ class TestUploadVersion:
         assert r.json()["force_update"] is True
 
     async def test_upload_idempotent_same_version(
-        self, client, admin_headers, project_id, game_db_accessible
+        self, client, admin_headers, project_id
     ):
         """同版本重复上传应返回 201（覆盖旧包，checksum 不同）。"""
-        if not game_db_accessible:
-            pytest.skip(GAME_DB_SKIP_MSG)
-
         payload = {"version": "9.3.0", "force_update": "false",
                    "release_notes": _TEST_RELEASE_NOTES}
         r1 = await client.post(
