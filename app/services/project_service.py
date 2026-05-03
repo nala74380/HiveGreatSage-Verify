@@ -248,7 +248,7 @@ async def list_projects(
 
 
 async def get_project(project_id: int, db: AsyncSession) -> ProjectResponse:
-    project = await get_project_or_404(db, project_id)
+    project = await get_project_or_404(project_id, db)
     return await _project_to_response(project, db)
 
 
@@ -257,7 +257,7 @@ async def update_project(
     body: ProjectUpdateRequest,
     db: AsyncSession,
 ) -> ProjectResponse:
-    project = await get_project_or_404(db, project_id)
+    project = await get_project_or_404(project_id, db)
     if body.display_name is not None:
         project.display_name = body.display_name
     if body.is_active is not None:

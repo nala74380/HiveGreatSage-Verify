@@ -226,7 +226,7 @@ async def set_project_price(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="点数不能为负数")
 
     from app.core.utils import get_project_or_404
-    project = await get_project_or_404(db, project_id)
+    project = await get_project_or_404(project_id, db)
 
     normalized = _money(points_per_device)
 

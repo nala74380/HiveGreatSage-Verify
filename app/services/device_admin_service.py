@@ -109,7 +109,7 @@ async def get_agent_device_list(
     game_project = await _get_game_project_or_404(main_db, game_project_code)
 
     # 用 WITH RECURSIVE 获取代理权限范围内所有代理 ID
-    scope_agent_ids = await _get_agent_scope_ids(agent.id, main_db)
+    scope_agent_ids = await _get_agent_scope_ids(main_db, agent.id)
 
     # 查这些代理创建的用户 ID
     result = await main_db.execute(

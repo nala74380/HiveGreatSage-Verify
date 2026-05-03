@@ -210,7 +210,7 @@ async def list_all_devices(
     )
 
     if agent_caller is not None:
-        scope_agent_ids = await _get_agent_scope_ids(agent_caller.id, main_db)
+        scope_agent_ids = await _get_agent_scope_ids(main_db, agent_caller.id)
 
         if not scope_agent_ids:
             return {

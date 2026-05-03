@@ -89,8 +89,8 @@ def generate_password(length: int = 12) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 async def get_project_or_404(
-    db: AsyncSession,
     project_id: int,
+    db: AsyncSession,
 ) -> GameProject:
     """按 ID 查找激活项目，不存在则 404。"""
     project = await db.get(GameProject, project_id)

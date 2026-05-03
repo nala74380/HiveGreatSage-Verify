@@ -25,6 +25,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",  # 忽略 .env 中已废弃的旧配置项（如 DATABASE_GAME_PREFIX）
     )
 
     # ── 基础 ──────────────────────────────────────────────────

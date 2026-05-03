@@ -10,17 +10,16 @@ import { computed } from 'vue'
 import { formatUserStatus, formatAgentStatus, formatDeviceStatus } from '@/utils/format'
 
 const props = defineProps({
-  /** 状态值，如 'active' | 'suspended' | 'expired' | 'running' | 'offline' 等 */
   status: { type: String, required: true },
-  /** 类型：'user' | 'agent' | 'device' */
   type:   { type: String, default: 'user' },
-  /** 设备专用：是否在线 */
   isOnline: { type: Boolean, default: false },
+  /** 用户对象（用于判断是否所有授权已过期） */
+  user: { type: Object, default: null },
 })
 
 const info = computed(() => {
   if (props.type === 'agent')  return formatAgentStatus(props.status)
   if (props.type === 'device') return formatDeviceStatus(props.status, props.isOnline)
-  return formatUserStatus(props.status)
+  return formatUserStatus(props.status, props.user)
 })
 </script>

@@ -4,7 +4,7 @@
     <!-- 顶部统计卡片 -->
     <el-row :gutter="16">
       <el-col :span="auth.isAdmin ? 6 : 12" v-for="card in topCards" :key="card.label">
-        <div class="stat-card" :style="{ borderTopColor: card.color }">
+        <div class="stat-card clickable" :style="{ borderTopColor: card.color }" @click="card.to && router.push(card.to)">
           <div class="stat-left">
             <div class="stat-value">{{ card.value }}</div>
             <div class="stat-label">{{ card.label }}</div>
@@ -74,6 +74,7 @@
             <el-table-column prop="username" label="用户名" min-width="130" />
             <el-table-column label="级别" width="75">
               <template #default="{ row }">
+                <LevelTag :level="userBestLevel(row)" />
               </template>
             </el-table-column>
             <el-table-column label="状态" width="80">
@@ -83,6 +84,7 @@
             </el-table-column>
             <el-table-column label="到期时间" min-width="120">
               <template #default="{ row }">
+                {{ userLongestExpiry(row) || '—' }}
               </template>
             </el-table-column>
             <el-table-column label="注册时间" min-width="120">
@@ -183,16 +185,19 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { User, Share, Monitor, Grid, Key } from '@element-plus/icons-vue'
 import { useAuthStore }    from '@/stores/auth'
 import { agentApi }        from '@/api/agent'
 import { userApi }         from '@/api/user'
 import { useDevicePoller } from '@/composables/useDevicePoller'
 import StatusBadge from '@/components/common/StatusBadge.vue'
+import LevelTag from '@/components/common/LevelTag.vue'
 import { formatRelativeTime, formatDate } from '@/utils/format'
 import { USER_LEVEL_MAP } from '@/utils/format'
 
 const auth = useAuthStore()
+const router = useRouter()
 const { devices, summary: deviceSummary, loading: deviceLoading, notSupported } = useDevicePoller()
 
 // ── 顶部统计 ─────────────────────────────────────────────────
@@ -208,6 +213,7 @@ const topCards = computed(() => {
         sub:   '所有状态',
         icon:  User,
         color: '#2563eb',
+        to:    '/users',
       },
       {
         label: '代理总数',
@@ -215,6 +221,7 @@ const topCards = computed(() => {
         sub:   '所有层级',
         icon:  Share,
         color: '#f59e0b',
+        to:    '/agents',
       },
       {
         label: '活跃项目',
@@ -222,6 +229,7 @@ const topCards = computed(() => {
         sub:   '已启用',
         icon:  Grid,
         color: '#8b5cf6',
+        to:    '/projects',
       },
       {
         label: '在线设备',
@@ -229,6 +237,7 @@ const topCards = computed(() => {
         sub:   notSupported.value ? 'Phase 2' : `共 ${deviceSummary.value.total} 台`,
         icon:  Monitor,
         color: '#10b981',
+        to:    '/devices',
       },
     ]
   }
@@ -303,6 +312,34 @@ const loadAgentStats = async () => {
   } catch { /* 静默 */ }
 }
 
+// ── 辅助：用户最佳级别（取所有授权中最高级别） ──────────────
+const LEVEL_ORDER = ['trial', 'normal', 'vip', 'svip', 'tester']
+const userBestLevel = (user) => {
+  const auths = user.authorizations || []
+  const active = auths.filter(a => a.status === 'active' && !a.is_expired)
+  if (!active.length) return user.authorization_level || 'normal'
+  let best = 'trial'
+  for (const a of active) {
+    const idx = LEVEL_ORDER.indexOf(a.user_level)
+    if (idx > LEVEL_ORDER.indexOf(best)) best = a.user_level
+  }
+  return best
+}
+
+const userLongestExpiry = (user) => {
+  const auths = user.authorizations || []
+  const active = auths.filter(a => a.status === 'active')
+  if (!active.length) return null
+  let longest = null
+  for (const a of active) {
+    if (!a.valid_until) return '永久'
+    if (!longest || new Date(a.valid_until) > new Date(longest)) {
+      longest = a.valid_until
+    }
+  }
+  return longest ? formatDate(longest) : null
+}
+
 onMounted(async () => {
   if (auth.isAdmin) {
     const res = await agentApi.dashboard().catch(() => ({ data: {} }))
@@ -324,6 +361,8 @@ onMounted(async () => {
   box-shadow: 0 1px 3px rgba(0,0,0,.07);
   border-top: 3px solid transparent;
 }
+.stat-card.clickable { cursor: pointer; transition: box-shadow 0.15s; }
+.stat-card.clickable:hover { box-shadow: 0 3px 12px rgba(0,0,0,.12); }
 .stat-left { display: flex; flex-direction: column; gap: 4px; }
 .stat-value { font-size: 28px; font-weight: 700; color: #1e293b; line-height: 1; }
 .stat-label { font-size: 13px; color: #64748b; }

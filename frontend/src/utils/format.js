@@ -108,7 +108,15 @@ export const USER_STATUS_MAP = {
   expired:   { label: '已过期', type: 'info' },
 }
 
-export function formatUserStatus(status) {
+export function formatUserStatus(status, user) {
+  // 已停用优先
+  if (status === 'suspended') return USER_STATUS_MAP.suspended
+  // 检查是否所有授权都已过期
+  if (user) {
+    const auths = user.authorizations || []
+    const hasActive = auths.some(a => a.status === 'active' && !a.is_expired)
+    if (!hasActive && auths.length > 0) return USER_STATUS_MAP.expired
+  }
   return USER_STATUS_MAP[status] || { label: status, type: 'info' }
 }
 
