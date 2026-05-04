@@ -37,6 +37,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.storage import get_storage
 from app.models.main.models import GameProject, VersionRecord
 from app.schemas.update import (
     UpdateCheckResponse,

@@ -36,7 +36,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
@@ -197,6 +197,19 @@ async def get_me(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # 统计已激活设备数
+    from app.models.main.models import DeviceBinding
+    activated_result = await db.execute(
+        select(func.count(DeviceBinding.id)).where(
+            DeviceBinding.user_id == current_user.id,
+            DeviceBinding.game_project_id == game_project.id,
+            DeviceBinding.status == "active",
+        )
+    )
+    activated_devices = activated_result.scalar_one() or 0
+    authorized_devices = int(authorization.authorized_devices or 0)
+    inactive_devices = max(authorized_devices - activated_devices, 0) if authorized_devices > 0 else None
+
     return MeResponse(
         user_id=current_user.id,
         username=current_user.username,
@@ -205,7 +218,9 @@ async def get_me(
         game_project_code=game_project.code_name,
         authorization_id=authorization.id,
         authorization_level=authorization.user_level,
-        authorized_devices=authorization.authorized_devices,
+        authorized_devices=authorized_devices,
+        activated_devices=activated_devices,
+        inactive_devices=inactive_devices,
         valid_until=authorization.valid_until,
     )
 

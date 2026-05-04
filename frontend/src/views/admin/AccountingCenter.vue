@@ -126,31 +126,20 @@
                 </el-select>
               </el-form-item>
 
-              <el-form-item label="代理 ID">
-                <el-input-number
-                  v-model="ledgerFilter.agent_id"
-                  :min="1"
-                  controls-position="right"
-                  style="width:130px"
-                />
+              <el-form-item label="代理">
+                <el-select v-model="ledgerFilter.agent_id" clearable filterable placeholder="全部" style="width:180px">
+                  <el-option v-for="ag in allAgents" :key="ag.id" :label="`${ag.username} (ID:${ag.id})`" :value="ag.id" />
+                </el-select>
               </el-form-item>
 
               <el-form-item label="用户 ID">
-                <el-input-number
-                  v-model="ledgerFilter.related_user_id"
-                  :min="1"
-                  controls-position="right"
-                  style="width:130px"
-                />
+                <el-input-number v-model="ledgerFilter.related_user_id" :min="1" controls-position="right" style="width:130px" />
               </el-form-item>
 
-              <el-form-item label="项目 ID">
-                <el-input-number
-                  v-model="ledgerFilter.related_project_id"
-                  :min="1"
-                  controls-position="right"
-                  style="width:130px"
-                />
+              <el-form-item label="项目">
+                <el-select v-model="ledgerFilter.related_project_id" clearable filterable placeholder="全部" style="width:180px">
+                  <el-option v-for="p in allProjects" :key="p.id" :label="p.display_name" :value="p.id" />
+                </el-select>
               </el-form-item>
 
               <el-form-item>
@@ -257,13 +246,10 @@
                 />
               </el-form-item>
 
-              <el-form-item label="代理 ID">
-                <el-input-number
-                  v-model="walletFilter.agent_id"
-                  :min="1"
-                  controls-position="right"
-                  style="width:130px"
-                />
+              <el-form-item label="代理">
+                <el-select v-model="walletFilter.agent_id" clearable filterable placeholder="全部" style="width:180px">
+                  <el-option v-for="ag in allAgents" :key="ag.id" :label="`${ag.username} (ID:${ag.id})`" :value="ag.id" />
+                </el-select>
               </el-form-item>
 
               <el-form-item label="状态">
@@ -469,31 +455,20 @@
             <el-tab-pane label="授权扣点快照" name="charges">
               <div class="filter-row">
                 <el-form inline :model="chargeFilter">
-                  <el-form-item label="代理 ID">
-                    <el-input-number
-                      v-model="chargeFilter.agent_id"
-                      :min="1"
-                      controls-position="right"
-                      style="width:130px"
-                    />
+                  <el-form-item label="代理">
+                    <el-select v-model="chargeFilter.agent_id" clearable filterable placeholder="全部" style="width:180px">
+                      <el-option v-for="ag in allAgents" :key="ag.id" :label="`${ag.username} (ID:${ag.id})`" :value="ag.id" />
+                    </el-select>
                   </el-form-item>
 
                   <el-form-item label="用户 ID">
-                    <el-input-number
-                      v-model="chargeFilter.user_id"
-                      :min="1"
-                      controls-position="right"
-                      style="width:130px"
-                    />
+                    <el-input-number v-model="chargeFilter.user_id" :min="1" controls-position="right" style="width:130px" />
                   </el-form-item>
 
-                  <el-form-item label="项目 ID">
-                    <el-input-number
-                      v-model="chargeFilter.project_id"
-                      :min="1"
-                      controls-position="right"
-                      style="width:130px"
-                    />
+                  <el-form-item label="项目">
+                    <el-select v-model="chargeFilter.project_id" clearable filterable placeholder="全部" style="width:180px">
+                      <el-option v-for="p in allProjects" :key="p.id" :label="p.display_name" :value="p.id" />
+                    </el-select>
                   </el-form-item>
 
                   <el-form-item label="返点状态">
@@ -1030,6 +1005,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { accountingApi } from '@/api/accounting'
+import { agentApi } from '@/api/agent'
+import { adminProjectApi as projectApi } from '@/api/admin/project'
 import { formatDatetime } from '@/utils/format'
 
 const activeTab = ref('overview')
@@ -1042,6 +1019,19 @@ const chargeLoading = ref(false)
 const refundLoading = ref(false)
 const reconciliationLoading = ref(false)
 const reconciliationActionLoading = ref(false)
+
+const allAgents = ref([])
+const allProjects = ref([])
+const loadFilterOptions = async () => {
+  try {
+    const [agentRes, projRes] = await Promise.all([
+      agentApi.list({ page_size: 500, status: 'active' }),
+      projectApi.list({ page: 1, page_size: 100, is_active: true }),
+    ])
+    allAgents.value = agentRes.data.agents || []
+    allProjects.value = projRes.data.projects || []
+  } catch { /* 静默 */ }
+}
 
 const loadingAny = computed(() => (
   overviewLoading.value
@@ -1605,6 +1595,7 @@ const submitWalletAction = async () => {
 }
 
 onMounted(() => {
+  loadFilterOptions()
   loadAll()
 })
 </script>

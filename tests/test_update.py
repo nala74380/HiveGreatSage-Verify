@@ -49,7 +49,12 @@ async def _create_user_and_login(
     user_id = r.json()["id"]
 
     r = await client.post(f"/api/users/{user_id}/authorizations",
-                          json={"game_project_id": project_id},
+                          json={
+                              "game_project_id": project_id,
+                              "user_level": "tester",
+                              "authorized_devices": 0,
+                              "valid_until": None,
+                          },
                           headers=admin_headers)
     assert r.status_code == 201, f"授权失败: {r.text}"
 

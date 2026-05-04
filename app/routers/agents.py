@@ -249,7 +249,7 @@ async def get_my_authorized_projects(
 @router.get("/scope/list", response_model=AgentFlatListResponse)
 async def list_agents_in_scope_endpoint(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     status_filter: str | None = Query(default=None, alias="status"),
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
@@ -282,7 +282,7 @@ async def create_agent_endpoint(
 @router.get("/", response_model=AgentListResponse)
 async def list_agents_endpoint(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     status_filter: str | None = Query(default=None, alias="status"),
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),

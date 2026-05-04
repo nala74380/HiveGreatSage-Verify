@@ -45,16 +45,7 @@
 
     <div v-if="selectedIds.length > 0" class="batch-toolbar">
       <span class="batch-info">已选 {{ selectedIds.length }} 条</span>
-      <el-popconfirm
-        :title="`确认批量删除 ${selectedIds.length} 个代理？`"
-        confirm-button-text="删除"
-        cancel-button-text="取消"
-        @confirm="batchDelete"
-      >
-        <template #reference>
-          <el-button type="danger" size="small" :loading="batchLoading">批量删除</el-button>
-        </template>
-      </el-popconfirm>
+      <el-button type="warning" size="small" :loading="batchLoading" @click="batchToggleStatus">批量停用</el-button>
       <el-button size="small" @click="selectedIds = []">取消选择</el-button>
     </div>
 
@@ -170,7 +161,7 @@
           <template #default="{ row }">{{ formatDatetime(row.created_at) }}</template>
         </el-table-column>
 
-        <el-table-column v-if="auth.isAdmin" label="操作" width="220" fixed="right">
+        <el-table-column v-if="auth.isAdmin" label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button text size="small" @click="goDetail(row)">详情</el-button>
             <el-button text size="small" type="primary" @click="openEditDrawer(row)">编辑</el-button>
@@ -182,16 +173,6 @@
             >
               {{ row.status === 'active' ? '停用' : '启用' }}
             </el-button>
-            <el-popconfirm
-              title="确认删除该代理？"
-              confirm-button-text="删除"
-              cancel-button-text="取消"
-              @confirm="deleteAgent(row)"
-            >
-              <template #reference>
-                <el-button text size="small" type="danger">删除</el-button>
-              </template>
-            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -970,17 +951,19 @@ const onSelectionChange = (rows) => {
 
 onMounted(loadAgents)
 
-const batchDelete = async () => {
+const batchToggleStatus = async () => {
   batchLoading.value = true
   const ids = [...selectedIds.value]
 
   try {
-    const results = await Promise.allSettled(ids.map(id => agentApi.delete(id)))
+    const results = await Promise.allSettled(
+      ids.map(id => agentApi.update(id, { status: 'suspended' }))
+    )
     const failed = results.filter(r => r.status === 'rejected').length
     const success = results.filter(r => r.status === 'fulfilled').length
 
     if (failed === 0) {
-      ElMessage.success(`已删除 ${success} 个`)
+      ElMessage.success(`已停用 ${success} 个`)
     } else {
       ElMessage.warning(`成功 ${success}，失败 ${failed}`)
     }
@@ -997,12 +980,6 @@ const toggleStatus = async (row) => {
     status: row.status === 'active' ? 'suspended' : 'active',
   })
   ElMessage.success('操作成功')
-  loadAgents()
-}
-
-const deleteAgent = async (row) => {
-  await agentApi.delete(row.id)
-  ElMessage.success('已删除代理')
   loadAgents()
 }
 

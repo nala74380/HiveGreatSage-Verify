@@ -73,8 +73,8 @@ const currentPath = computed(() => '/' + route.path.split('/')[1])
 const menuItems = computed(() => {
   if (auth.isAgent) {
     return [
-      { label: '个人主页', path: '/profile', icon: Avatar },
       { label: '总览', path: '/dashboard', icon: Odometer },
+      { label: '个人主页', path: '/profile', icon: Avatar },
       { label: '用户管理', path: '/users', icon: User },
       { label: '设备监控', path: '/devices', icon: Monitor },
       { label: '项目目录', path: '/catalog', icon: Tickets },

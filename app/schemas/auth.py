@@ -90,7 +90,9 @@ class MeResponse(BaseModel):
 
     authorization_id: int
     authorization_level: str
-    authorized_devices: int
+    authorized_devices: int = Field(description="授权设备总数")
+    activated_devices: int = Field(description="已激活设备数")
+    inactive_devices: int | None = Field(default=None, description="未激活设备数（无限制时为 None）")
     valid_until: datetime | None = None
 
 

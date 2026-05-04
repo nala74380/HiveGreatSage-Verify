@@ -49,13 +49,20 @@
         </el-form-item>
 
         <el-form-item v-if="auth.isAdmin" label="创建代理">
-          <el-input-number
+          <el-select
             v-model="filter.creator_agent_id"
-            :min="1"
-            controls-position="right"
-            placeholder="代理ID"
-            style="width:130px"
-          />
+            clearable
+            filterable
+            placeholder="全部代理"
+            style="width:180px"
+          >
+            <el-option
+              v-for="ag in allAgents"
+              :key="ag.id"
+              :label="`${ag.username} (ID:${ag.id})`"
+              :value="ag.id"
+            />
+          </el-select>
         </el-form-item>
 
         <el-form-item>
@@ -207,6 +214,7 @@
 
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
+            <el-button text size="small" @click="router.push(`/users/${row.id}`)">详情</el-button>
             <el-button text size="small" @click="openEditDialog(row)">编辑</el-button>
             <el-button
               text
@@ -216,8 +224,8 @@
             >
               {{ row.status === 'active' ? '停用' : '启用' }}
             </el-button>
-            <el-button text size="small" type="primary" @click="openProjectAuthDialog(row)">授权</el-button>
             <el-popconfirm
+              v-if="auth.isAdmin"
               title="确认删除该用户？删除后用户列表将不再显示，但授权、设备、流水记录会保留用于审计。"
               confirm-button-text="确认删除"
               cancel-button-text="取消"
@@ -395,25 +403,7 @@
           </el-select>
         </el-form-item>
 
-        <el-alert
-          v-if="auth.isAdmin"
-          title="用户主体不再直接设置等级、设备数、到期时间；这些信息请在项目授权里分别设置。"
-          type="info"
-          show-icon
-          :closable="false"
-          class="small-alert"
-        />
-
         <el-divider content-position="left">密码</el-divider>
-
-        <el-alert
-          v-if="auth.isAdmin"
-          title="系统不保存旧密码明文。管理员自动重置后只会一次性显示新密码；关闭弹窗后不可再次查看。"
-          type="info"
-          show-icon
-          :closable="false"
-          class="small-alert"
-        />
 
         <el-form-item label="新密码">
           <el-input
@@ -503,7 +493,7 @@
             </template>
           </el-table-column>
 
-          <el-table-column v-if="auth.isAdmin" label="操作" width="90" fixed="right">
+          <el-table-column label="操作" width="90" fixed="right">
             <template #default="{ row }">
               <el-button text size="small" @click="openAuthEditDialog(row)">编辑</el-button>
             </template>
@@ -922,6 +912,14 @@ const filter = reactive({
   creator_agent_id: null,
 })
 
+const allAgents = ref([])
+const loadAllAgents = async () => {
+  try {
+    const res = await agentApi.list({ page_size: 500, status: 'active' })
+    allAgents.value = res.data.agents || []
+  } catch { /* 静默 */ }
+}
+
 const pagination = reactive({
   page: 1,
   pageSize: 20,
@@ -929,8 +927,11 @@ const pagination = reactive({
 })
 
 onMounted(async () => {
-  await loadProjects()
-  await loadUsers()
+  const tasks = [loadUsers()]
+  if (auth.isAdmin) {
+    tasks.push(loadProjects(), loadAllAgents())
+  }
+  await Promise.all(tasks)
 })
 
 const loadProjects = async () => {

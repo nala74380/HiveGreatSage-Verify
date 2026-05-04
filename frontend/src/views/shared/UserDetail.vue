@@ -58,7 +58,7 @@
             </span>
           </el-descriptions-item>
           <el-descriptions-item label="创建方式">
-            {{ user.created_by_admin ? '管理员创建' : `代理创建 (ID: ${user.created_by_agent_id ?? '—'})` }}
+            {{ user.created_by_admin ? '管理员创建' : `代理创建 — ${user.created_by_agent_username || `ID:${user.created_by_agent_id}`}` }}
           </el-descriptions-item>
         </el-descriptions>
       </el-card>
@@ -178,16 +178,53 @@
       </el-card>
     </template>
 
-    <!-- 编辑用户对话框（快捷版，含续费） -->
-    <el-dialog v-model="editDialog.visible" title="编辑用户" width="460px" destroy-on-close>
-      <el-form :model="editDialog.form" label-width="90px" v-if="user">
+    <!-- 编辑用户对话框 -->
+    <el-dialog v-model="editDialog.visible" title="编辑用户" width="880px" destroy-on-close>
+      <el-form ref="editFormRef" :model="editDialog.form" label-width="105px" v-if="user">
+        <el-divider content-position="left">账号主体</el-divider>
+        <el-form-item label="用户名">
+          <span class="readonly-val">{{ user.username }}</span>
+        </el-form-item>
+        <el-form-item label="创建信息">
+          <div>
+            <el-tag size="small" effect="plain" :type="user.created_by_type === 'agent' ? 'warning' : 'danger'">
+              {{ user.created_by_display }}
+            </el-tag>
+            <span class="sub-text" style="margin-left:8px">{{ formatDatetime(user.created_at) }}</span>
+          </div>
+        </el-form-item>
         <el-form-item label="账号状态">
-          <el-select v-model="editDialog.form.status" style="width:100%">
-            <el-option label="启用" value="active" />
-            <el-option label="停用" value="suspended" />
-            <el-option label="过期" value="expired" />
+          <el-select v-model="editDialog.form.status" size="small" style="width:150px">
+            <el-option label="正常" value="active" />
+            <el-option label="已停用" value="suspended" />
           </el-select>
         </el-form-item>
+        <el-alert type="info" show-icon :closable="false" class="small-alert"
+          title="用户等级、设备数、到期时间请在项目授权里分别设置。" />
+
+        <el-divider content-position="left">项目授权</el-divider>
+        <el-table :data="user.authorizations" size="small" empty-text="暂无授权" stripe>
+          <el-table-column label="项目" min-width="120" prop="game_project_name" />
+          <el-table-column label="等级" width="75">
+            <template #default="{ row: a }">
+              <LevelTag :level="a.user_level" />
+            </template>
+          </el-table-column>
+          <el-table-column label="设备" width="70" prop="authorized_devices" />
+          <el-table-column label="到期" min-width="120">
+            <template #default="{ row: a }">
+              <span v-if="!a.valid_until">永久</span>
+              <span v-else>{{ formatDate(a.valid_until) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="70">
+            <template #default="{ row: a }">
+              <el-tag :type="a.status === 'active' ? 'success' : 'info'" size="small" effect="light">
+                {{ a.status === 'active' ? '有效' : '已停用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
       </el-form>
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
@@ -240,6 +277,7 @@ import { agentApi }   from '@/api/agent'
 import { adminProjectApi as projectApi } from '@/api/admin/project'
 import { useAuthStore } from '@/stores/auth'
 import StatusBadge from '@/components/common/StatusBadge.vue'
+import LevelTag from '@/components/common/LevelTag.vue'
 import {
   formatDatetime, formatDate, formatRelativeTime,
   expiryTagType, expiryLabel,

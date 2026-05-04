@@ -118,7 +118,7 @@ async def create_user_endpoint(
 @router.get("/", response_model=UserListResponse)
 async def list_users_endpoint(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     status_filter: str | None = Query(default=None, alias="status"),
     level_filter: str | None = Query(default=None, alias="level"),
     project_id: int | None = Query(default=None, description="按项目过滤"),

@@ -17,7 +17,7 @@ import http from '../http'
 
 export const adminUserApi = {
   deviceBindings(userId) {
-    return http.get(`/admin/api/users/${userId}/devices`)
+    return http.get(`/admin/api/users/${userId}/devices`, { _skipAuthRedirect: true })
   },
   unbindDevice(userId, bindingId) {
     return http.delete(`/admin/api/users/${userId}/devices/${bindingId}`)

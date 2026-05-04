@@ -88,23 +88,27 @@
           />
         </el-form-item>
 
-        <el-form-item label="用户 ID">
-          <el-input-number
-            v-model="filter.user_id"
-            :min="1"
-            controls-position="right"
-            style="width:130px"
-          />
+        <el-form-item label="用户">
+          <el-select v-model="filter.user_id" clearable filterable placeholder="全部用户" style="width:190px">
+            <el-option v-for="u in allUsers" :key="u.id" :label="`${u.username} (ID:${u.id})`" :value="u.id" />
+          </el-select>
         </el-form-item>
 
-        <el-form-item label="项目 Code">
-          <el-input
+        <el-form-item label="项目">
+          <el-select
             v-model="filter.project_code"
             clearable
-            placeholder="项目 code_name"
-            style="width:170px"
-            @keyup.enter="search"
-          />
+            filterable
+            placeholder="全部项目"
+            style="width:190px"
+          >
+            <el-option
+              v-for="p in allProjects"
+              :key="p.code_name"
+              :label="p.display_name"
+              :value="p.code_name"
+            />
+          </el-select>
         </el-form-item>
 
         <el-form-item label="状态">
@@ -333,11 +337,28 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 import { adminDeviceApi } from '@/api/admin/device'
+import { adminProjectApi as projectApi } from '@/api/admin/project'
+import { userApi } from '@/api/user'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { formatRelativeTime, formatDatetime } from '@/utils/format'
 
 const route = useRoute()
+const auth = useAuthStore()
+
+const allProjects = ref([])
+const allUsers = ref([])
+const loadFilterOptions = async () => {
+  try {
+    const [projRes, userRes] = await Promise.all([
+      projectApi.list({ page: 1, page_size: 100, is_active: true }),
+      userApi.list({ page: 1, page_size: 200, status: 'active' }),
+    ])
+    allProjects.value = projRes.data.projects || []
+    allUsers.value = userRes.data.users || []
+  } catch { /* 静默 */ }
+}
 const router = useRouter()
 
 const filterUserId = ref(route.query.user_id ? Number(route.query.user_id) : null)
@@ -501,6 +522,7 @@ watch(autoRefresh, () => {
 })
 
 onMounted(() => {
+  if (auth.isAdmin) loadFilterOptions()
   loadDevices()
   startTimer()
 })
