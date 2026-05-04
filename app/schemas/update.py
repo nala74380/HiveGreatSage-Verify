@@ -3,16 +3,20 @@ r"""
 文件名称: update.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-24
-版本: V1.0.1
+版本: V1.1.1
 功能说明:
     热更新接口的 Pydantic v2 请求/响应模型。
 
     接口说明：
-      GET  /api/update/check           检查是否有新版本（用户 AT）
-      GET  /api/update/download        获取签名下载 URL（用户 AT）
-      POST /admin/api/updates/         发布新版本（Admin Token，C06 新增）
+      GET  /api/update/check                          检查是否有新版本（用户 AT）
+      GET  /api/update/download                       获取签名下载 URL（用户 AT）
+      POST /admin/api/updates/{project_id}/{client_type} 发布新版本（Admin Token，Form 上传）
+
+    说明：
+      管理员上传接口使用 Form 参数和 UploadFile，不再使用本文件中的上传请求/响应模型。
 
 改进历史:
+    V1.1.1 (2026-05-03): 修正管理员上传路径说明，并移除未使用的 Field 导入
     V1.1.0 (2026-05-03): 删除 VersionUploadRequest/VersionUploadResponse（管理员上传已改为 update_admin.py Form 参数）
     V1.0.0 - 初始版本
 调试信息:
@@ -21,7 +25,7 @@ r"""
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 # ── GET /api/update/check 响应 ────────────────────────────────
