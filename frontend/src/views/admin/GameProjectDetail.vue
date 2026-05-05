@@ -336,34 +336,20 @@
               <el-divider content-position="left">等级门槛</el-divider>
 
               <el-form-item label="最低可见业务等级">
-                <el-input-number
-                  v-model="accessForm.min_visible_agent_level"
-                  :min="1"
-                  :max="4"
-                  controls-position="right"
-                />
+                <el-select v-model="accessForm.min_visible_agent_level" clearable placeholder="不限制" style="width:220px">
+                  <el-option v-for="p in levelPolicies" :key="p.level" :label="p.level_name" :value="p.level" />
+                </el-select>
               </el-form-item>
 
               <el-form-item label="最低申请业务等级">
-                <el-input-number
-                  v-model="accessForm.min_apply_agent_level"
-                  :min="1"
-                  :max="4"
-                  controls-position="right"
-                />
+                <el-select v-model="accessForm.min_apply_agent_level" clearable placeholder="不限制" style="width:220px">
+                  <el-option v-for="p in levelPolicies" :key="p.level" :label="p.level_name" :value="p.level" />
+                </el-select>
               </el-form-item>
 
               <el-form-item label="最低自动开通等级">
-                <el-select
-                  v-model="accessForm.min_auto_open_agent_level"
-                  clearable
-                  placeholder="不启用自动开通"
-                  style="width:220px"
-                >
-                  <el-option label="Lv.1" :value="1" />
-                  <el-option label="Lv.2" :value="2" />
-                  <el-option label="Lv.3" :value="3" />
-                  <el-option label="Lv.4" :value="4" />
+                <el-select v-model="accessForm.min_auto_open_agent_level" clearable placeholder="不启用自动开通" style="width:220px">
+                  <el-option v-for="p in levelPolicies" :key="p.level" :label="p.level_name" :value="p.level" />
                 </el-select>
               </el-form-item>
 
@@ -453,13 +439,10 @@
                   </el-select>
                 </el-form-item>
 
-                <el-form-item label="代理 ID">
-                  <el-input-number
-                    v-model="requestFilter.agent_id"
-                    :min="1"
-                    controls-position="right"
-                    style="width:130px"
-                  />
+                <el-form-item label="代理">
+                  <el-select v-model="requestFilter.agent_id" clearable filterable placeholder="全部代理" style="width:200px">
+                    <el-option v-for="ag in allAgents" :key="ag.id" :label="`${ag.username} (ID:${ag.id})`" :value="ag.id" />
+                  </el-select>
                 </el-form-item>
 
                 <el-form-item>
@@ -755,20 +738,14 @@
             />
             <el-table :data="featureTable" border size="small" style="margin-top:16px">
               <el-table-column prop="feature" label="功能 / 权限" width="160" fixed />
-              <el-table-column label="试用" width="100" align="center">
-                <template #default="{ row }">{{ row.trial }}</template>
-              </el-table-column>
-              <el-table-column label="普通" width="100" align="center">
-                <template #default="{ row }">{{ row.normal }}</template>
-              </el-table-column>
-              <el-table-column label="VIP" width="100" align="center">
-                <template #default="{ row }">{{ row.vip }}</template>
-              </el-table-column>
-              <el-table-column label="SVIP" width="100" align="center">
-                <template #default="{ row }">{{ row.svip }}</template>
-              </el-table-column>
-              <el-table-column label="测试" width="100" align="center">
-                <template #default="{ row }">{{ row.tester }}</template>
+              <el-table-column v-for="col in ['trial','normal','vip','svip','tester']" :key="col" :label="levelLabel(col)" width="110" align="center">
+                <template #default="{ row, $index }">
+                  <span v-if="editingCell?.r !== $index || editingCell?.c !== col"
+                    @dblclick="editingCell = { r: $index, c: col, v: row[col] }"
+                    style="cursor:pointer;display:block">{{ row[col] }}</span>
+                  <el-input v-else v-model="editingCell.v" size="small" style="width:80px"
+                    @blur="saveFeatureCell($index, col)" @keyup.enter="saveFeatureCell($index, col)" ref="featInput" />
+                </template>
               </el-table-column>
             </el-table>
           </el-tab-pane>
@@ -916,10 +893,22 @@ const PRESETS = {
 const loading = ref(false)
 const activeTab = ref('overview')
 const project = ref(null)
+const DEFAULT_LEVELS = [
+  { level: 1, level_name: 'Lv.1 新手代理' },
+  { level: 2, level_name: 'Lv.2 标准代理' },
+  { level: 3, level_name: 'Lv.3 核心代理' },
+  { level: 4, level_name: 'Lv.4 渠道代理' },
+]
+const levelPolicies = ref([...DEFAULT_LEVELS])
+const allAgents = ref([])
+const editingCell = ref(null)
+const featureTable = ref([])
 
-const featureTable = computed(() => {
+const levelLabel = (c) => ({ trial:'试用', normal:'普通', vip:'VIP', svip:'SVIP', tester:'测试' }[c] || c)
+
+const initFeatureTable = () => {
   const isGame = project.value?.project_type === 'game'
-  return [
+  featureTable.value = [
     { feature: '基础验证登录', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
     { feature: 'Token 自动刷新', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
     { feature: '设备心跳上报', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
@@ -932,7 +921,14 @@ const featureTable = computed(() => {
     { feature: '代理可管理', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✗' },
     { feature: '代理可计费', trial: '✓', normal: '✓', vip: '✓', svip: '✗', tester: '✗' },
   ]
-})
+}
+
+const saveFeatureCell = (rowIdx, col) => {
+  if (editingCell.value) {
+    featureTable.value[rowIdx][col] = editingCell.value.v
+  }
+  editingCell.value = null
+}
 
 const projectId = computed(() => Number(route.params.id))
 
@@ -956,6 +952,17 @@ const loadProject = async () => {
 
   const res = await projectApi.detail(projectId.value)
   project.value = res.data
+  initFeatureTable()
+  import('@/api/admin/agentProfile').then(m => {
+    m.adminAgentProfileApi.levelPolicies().then(r => {
+      if (Array.isArray(r.data) && r.data.length) levelPolicies.value = r.data
+    }).catch(() => {})
+  })
+  import('@/api/agent').then(m => {
+    m.agentApi.list({ page_size: 500, status: 'active' }).then(r => {
+      allAgents.value = r.data.agents || []
+    }).catch(() => {})
+  })
 }
 
 // ── 定价 ────────────────────────────────────────────────────

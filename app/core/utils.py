@@ -92,12 +92,12 @@ async def get_project_or_404(
     project_id: int,
     db: AsyncSession,
 ) -> GameProject:
-    """按 ID 查找激活项目，不存在则 404。"""
+    """按 ID 查找项目，不存在则 404。不检查 is_active（由调用方判断）。"""
     project = await db.get(GameProject, project_id)
-    if not project or not project.is_active:
+    if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"项目 ID={project_id} 不存在或已下线",
+            detail=f"项目 ID={project_id} 不存在",
         )
     return project
 

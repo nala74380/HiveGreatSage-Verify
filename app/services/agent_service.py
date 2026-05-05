@@ -222,7 +222,7 @@ async def list_agents(
         AgentResponse(
             id=a.id,
             username=a.username,
-            hierarchy_depth=int(a.level),
+            hierarchy_depth=int(a.hierarchy_depth),
             parent_agent_id=a.parent_agent_id,
             created_by_admin_id=a.created_by_admin_id,
             commission_rate=float(a.commission_rate) if a.commission_rate else None,
@@ -391,7 +391,7 @@ async def list_agents_in_scope(
         AgentResponse(
             id=a.id,
             username=a.username,
-            hierarchy_depth=int(a.level),
+            hierarchy_depth=int(a.hierarchy_depth),
             parent_agent_id=a.parent_agent_id,
             created_by_admin_id=a.created_by_admin_id,
             commission_rate=float(a.commission_rate) if a.commission_rate else None,

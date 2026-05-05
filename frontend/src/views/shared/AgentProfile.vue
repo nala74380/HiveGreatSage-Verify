@@ -14,7 +14,10 @@
             <div class="agent-name">{{ profile.username }}</div>
             <div class="agent-tags">
               <el-tag type="warning" effect="light" size="small">
-                组织层级 Lv.{{ profile.level }}
+                组织层级 Lv.{{ profile.hierarchy_depth }}
+              </el-tag>
+              <el-tag type="primary" effect="light" size="small" style="margin-left:6px">
+                {{ profile.tier_name || `业务 Lv.${profile.tier_level}` }}
               </el-tag>
               <el-tag
                 :type="profile.status === 'active' ? 'success' : 'danger'"
@@ -56,13 +59,44 @@
             <span v-else class="text-muted">未设置</span>
           </el-descriptions-item>
           <el-descriptions-item label="组织层级">
-            <el-tag type="info" effect="plain" size="small">Lv.{{ profile.level }}</el-tag>
+            <el-tag type="info" effect="plain" size="small">Lv.{{ profile.hierarchy_depth }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="账号状态">
             <el-tag :type="profile.status === 'active' ? 'success' : 'danger'" size="small" effect="light">
               {{ profile.status === 'active' ? '正常' : '已停用' }}
             </el-tag>
           </el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <!-- 业务能力 -->
+      <el-card shadow="never" class="info-card" v-if="profile.tier_level">
+        <template #header><span class="card-title">业务能力 — {{ profile.tier_name || `Lv.${profile.tier_level}` }}</span></template>
+        <el-row :gutter="12">
+          <el-col :span="8">
+            <div class="stat-mini">
+              <div class="stat-val">{{ profile.credit_limit || 0 }}</div>
+              <div class="stat-lbl">授信上限（点）</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="stat-mini">
+              <div class="stat-val">{{ profile.can_create_sub_agents ? '是' : '否' }}</div>
+              <div class="stat-lbl">可开子代理</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="stat-mini">
+              <div class="stat-val">{{ profile.can_auto_open_project ? '是' : '否' }}</div>
+              <div class="stat-lbl">自动开通项目</div>
+            </div>
+          </el-col>
+        </el-row>
+        <el-descriptions :column="2" size="small" border style="margin-top:12px">
+          <el-descriptions-item label="风险状态">{{ riskText(profile.risk_status) }}</el-descriptions-item>
+          <el-descriptions-item label="自动开通上限">{{ profile.auto_open_project_limit || 0 }} 个</el-descriptions-item>
+          <el-descriptions-item label="最大子代理">{{ profile.max_sub_agents || 0 }} 个</el-descriptions-item>
+          <el-descriptions-item label="审核优先级">{{ profile.review_priority || 0 }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
@@ -252,6 +286,8 @@ const fetchBalance = async () => {
   }
 }
 
+const riskText = (s) => ({ normal:'正常', watch:'观察', restricted:'受限', frozen:'冻结' }[s] || s)
+
 onMounted(async () => {
   loading.value = true
   try {
@@ -437,4 +473,7 @@ onMounted(async () => {
   flex-wrap: wrap;
   padding: 4px 0;
 }
+.stat-mini { text-align:center; padding:12px 8px; background:#f8fafc; border-radius:8px; }
+.stat-mini .stat-val { font-size:20px; font-weight:700; color:#1e293b; }
+.stat-mini .stat-lbl { font-size:12px; color:#64748b; margin-top:4px; }
 </style>

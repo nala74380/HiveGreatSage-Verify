@@ -37,6 +37,10 @@ export const agentApi = {
     return http.get('/api/agents/', { params })
   },
 
+  scopeList(params = {}) {
+    return http.get('/api/agents/scope/list', { params, _skipAuthRedirect: true })
+  },
+
   /**
    * 查询代理详情
    * @param {number} agentId

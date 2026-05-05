@@ -1331,16 +1331,25 @@ async def get_agents_with_balance_and_projects(
                 "recharge_balance": 0.0,
             }
 
+        # 统计直属用户数（不含已删除）
+        user_count = (await db.execute(
+            select(func.count(User.id)).where(
+                User.created_by_agent_id == agent.id,
+                User.is_deleted == False,  # noqa: E712
+            )
+        )).scalar_one()
+
         rows.append({
             "id": agent.id,
             "username": agent.username,
-            "level": agent.hierarchy_depth,
+            "hierarchy_depth": agent.hierarchy_depth,
             "parent_agent_id": agent.parent_agent_id,
             "created_by_admin_id": agent.created_by_admin_id,
             "commission_rate": float(agent.commission_rate) if agent.commission_rate is not None else None,
             "status": agent.status,
             "created_at": agent.created_at,
             "updated_at": agent.updated_at,
+            "users_count": user_count,
 
             "balance": balance,
             "project_auths": auth_map.get(agent.id, []),

@@ -2,7 +2,10 @@
   <div class="side-menu">
     <div class="logo" :class="{ collapsed: appStore.sidebarCollapsed }">
       <span class="logo-icon">🐝</span>
-      <span v-if="!appStore.sidebarCollapsed" class="logo-text">蜂巢·大圣</span>
+      <span v-if="!appStore.sidebarCollapsed" class="logo-text">
+        蜂巢·大圣
+        <span v-if="auth.isAgent && tierLevel" class="tier-badge">Lv.{{ tierLevel }}</span>
+      </span>
     </div>
 
     <el-menu
@@ -44,42 +47,47 @@
  *   - 旧“点数流水”不再作为菜单名出现。
  */
 
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import {
-  Odometer,
-  User,
-  Share,
-  Monitor,
-  Grid,
-  Setting,
-  Document,
-  Upload,
-  Avatar,
-  QuestionFilled,
-  Tickets,
-  Wallet,
-  List,
+  Odometer, User, Share, Monitor, Grid, Setting, Document,
+  Upload, Avatar, QuestionFilled, Tickets, Wallet, List,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const auth = useAuthStore()
 const appStore = useAppStore()
+const tierLevel = ref(1)
+
+onMounted(async () => {
+  if (auth.isAgent) {
+    try {
+      const { agentApi } = await import('@/api/agent')
+      const res = await agentApi.me()
+      tierLevel.value = res.data?.tier_level || 1
+    } catch { /* keep default */ }
+  }
+})
 
 const currentPath = computed(() => '/' + route.path.split('/')[1])
 
 const menuItems = computed(() => {
   if (auth.isAgent) {
-    return [
+    const items = [
       { label: '总览', path: '/dashboard', icon: Odometer },
       { label: '个人主页', path: '/profile', icon: Avatar },
       { label: '用户管理', path: '/users', icon: User },
-      { label: '设备监控', path: '/devices', icon: Monitor },
       { label: '项目目录', path: '/catalog', icon: Tickets },
+      { label: '设备监控', path: '/devices', icon: Monitor },
       { label: '我的余额', path: '/balance', icon: Wallet },
     ]
+    // Lv.2+ 可开下级代理 → 显示代理管理入口
+    if (tierLevel.value >= 2) {
+      items.splice(3, 0, { label: '代理管理', path: '/agents', icon: Share })
+    }
+    return items
   }
 
   if (auth.isAdmin) {
@@ -135,6 +143,17 @@ const menuItems = computed(() => {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+.tier-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: middle;
 }
 
 .menu {

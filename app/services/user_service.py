@@ -523,27 +523,61 @@ async def update_authorization(
       - 代理暂不允许修改已授权项目，避免账务补扣/退款规则未定导致错账。
       - 管理员修改授权当前不生成授权扣点快照。
     """
-    if admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="代理暂不能直接修改已授权项目，请由管理员处理",
-        )
-
     user = await _get_user_or_404(user_id, db)
     _assert_can_access_user(user=user, admin=admin, agent=agent)
 
-    auth = await _get_authorization_or_404(
-        user_id=user_id,
-        auth_id=auth_id,
-        db=db,
-    )
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
     project = await _get_project_or_404(auth.game_project_id, db)
+
+    # 代理只能升级设备数，不能改等级和状态
+    if admin is None and agent is not None:
+        if body.user_level is not None and body.user_level != auth.user_level:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="代理不能修改授权等级，请联系管理员处理",
+            )
+        if body.status is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="代理不能修改授权状态，请联系管理员处理",
+            )
+        # 只能增加设备数
+        if body.authorized_devices is not None and body.authorized_devices < int(auth.authorized_devices or 0):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="代理不能减少授权设备数",
+            )
+
+    consumed_points = 0.0
 
     if body.user_level is not None:
         auth.user_level = body.user_level
 
     if body.authorized_devices is not None:
-        auth.authorized_devices = body.authorized_devices
+        old_devices = int(auth.authorized_devices or 0)
+        new_devices = int(body.authorized_devices)
+        auth.authorized_devices = new_devices
+
+        # 代理升级设备数时扣点
+        if agent is not None and new_devices > old_devices:
+            additional = new_devices - old_devices
+            cost = await calculate_authorization_cost(
+                project_id=project.id, user_level=auth.user_level,
+                authorized_devices=additional,
+                start_at=datetime.now(timezone.utc),
+                valid_until=auth.valid_until,
+                db=db,
+            )
+            consumed_points = float(cost.get("total_cost") or 0.0)
+            if consumed_points > 0:
+                await consume_agent_authorization_points(
+                    agent_id=agent.id, user_id=user.id, project_id=project.id,
+                    authorization_id=auth.id, user_level=auth.user_level,
+                    authorized_devices=additional,
+                    start_at=datetime.now(timezone.utc),
+                    valid_until=auth.valid_until,
+                    db=db,
+                )
 
     if "valid_until" in body.model_fields_set:
         auth.valid_until = body.valid_until
@@ -556,7 +590,7 @@ async def update_authorization(
     return _authorization_to_response(
         auth=auth,
         project=project,
-        consumed_points=0.0,
+        consumed_points=consumed_points,
     )
 
 

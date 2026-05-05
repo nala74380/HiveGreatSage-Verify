@@ -22,13 +22,10 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="代理ID">
-          <el-input-number
-            v-model="filter.agent_id"
-            :min="1"
-            controls-position="right"
-            style="width:130px"
-          />
+        <el-form-item label="代理">
+          <el-select v-model="filter.agent_id" clearable filterable placeholder="全部代理" style="width:190px">
+            <el-option v-for="ag in allAgents" :key="ag.id" :label="`${ag.username} (ID:${ag.id})`" :value="ag.id" />
+          </el-select>
         </el-form-item>
 
         <el-form-item label="项目ID">
@@ -239,9 +236,11 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { adminProjectAccessApi } from '@/api/admin/projectAccess'
+import { agentApi } from '@/api/agent'
 import { formatDatetime } from '@/utils/format'
 
 const loading = ref(false)
+const allAgents = ref([])
 const requests = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -381,7 +380,14 @@ const submitReject = async () => {
   }
 }
 
-onMounted(loadRequests)
+const loadAllAgents = async () => {
+  try {
+    const res = await agentApi.list({ page_size: 500, status: 'active' })
+    allAgents.value = res.data.agents || []
+  } catch { /* 静默 */ }
+}
+
+onMounted(() => { loadAllAgents(); loadRequests() })
 </script>
 
 <style scoped>

@@ -75,12 +75,12 @@ const router = createRouter({
           meta: { requiresAgent: true, title: '我的余额' },
         },
 
-        // Admin shared
+        // Admin shared / Agent Lv.2+
         {
           path: 'agents',
           name: 'AgentList',
           component: () => import('@/views/shared/AgentList.vue'),
-          meta: { requiresAdmin: true, title: '代理管理' },
+          meta: { requiresAuth: true, title: '代理管理' },
         },
         {
           path: 'agents/:id',

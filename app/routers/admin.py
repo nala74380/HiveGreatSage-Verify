@@ -237,12 +237,12 @@ async def delete_agent(
     _: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> None:
-    """软删除代理（状态改为 suspended）。"""
+    """硬删除代理（物理删除数据库记录）。"""
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
-    agent.status = "suspended"
+    await db.delete(agent)
     await db.commit()
 
 
@@ -252,10 +252,10 @@ async def delete_project(
     _: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> None:
-    """软删除项目（is_active 改为 False）。"""
+    """硬删除项目（物理删除数据库记录）。"""
     result = await db.execute(select(GameProject).where(GameProject.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
-    project.is_active = False
+    await db.delete(project)
     await db.commit()

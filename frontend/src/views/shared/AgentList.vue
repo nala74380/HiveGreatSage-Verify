@@ -43,7 +43,11 @@
 
     <div v-if="selectedIds.length > 0" class="batch-toolbar">
       <span class="batch-info">已选 {{ selectedIds.length }} 条</span>
-      <el-button type="warning" size="small" :loading="batchLoading" @click="batchToggleStatus">批量停用</el-button>
+      <el-popconfirm :title="`确认删除 ${selectedIds.length} 个代理？`" @confirm="batchDelete">
+        <template #reference>
+          <el-button type="danger" size="small" :loading="batchLoading">批量删除</el-button>
+        </template>
+      </el-popconfirm>
       <el-button size="small" @click="selectedIds = []">取消选择</el-button>
     </div>
 
@@ -159,7 +163,7 @@
           <template #default="{ row }">{{ formatDatetime(row.created_at) }}</template>
         </el-table-column>
 
-        <el-table-column v-if="auth.isAdmin" label="操作" width="200" fixed="right">
+        <el-table-column v-if="auth.isAdmin" label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button text size="small" @click="goDetail(row)">详情</el-button>
             <el-button text size="small" type="primary" @click="openEditDrawer(row)">编辑</el-button>
@@ -171,6 +175,11 @@
             >
               {{ row.status === 'active' ? '停用' : '启用' }}
             </el-button>
+            <el-popconfirm title="确认删除该代理？" @confirm="deleteAgent(row)">
+              <template #reference>
+                <el-button text size="small" type="danger">删除</el-button>
+              </template>
+            </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -872,11 +881,21 @@ const goDetail = (row) => {
 }
 
 // ── 等级策略 ────────────────────────────────────────────────
-const levelPolicies = ref([])
+const DEFAULT_LEVELS = [
+  { level: 1, level_name: 'Lv.1 新手代理' },
+  { level: 2, level_name: 'Lv.2 标准代理' },
+  { level: 3, level_name: 'Lv.3 核心代理' },
+  { level: 4, level_name: 'Lv.4 渠道代理' },
+]
+const levelPolicies = ref([...DEFAULT_LEVELS])
 
 const loadLevelPolicies = async () => {
-  const res = await adminAgentProfileApi.levelPolicies()
-  levelPolicies.value = Array.isArray(res.data) ? res.data : []
+  try {
+    const res = await adminAgentProfileApi.levelPolicies()
+    if (Array.isArray(res.data) && res.data.length) {
+      levelPolicies.value = res.data
+    }
+  } catch { /* keep defaults */ }
 }
 
 // ── 项目列表 ────────────────────────────────────────────────
@@ -917,24 +936,34 @@ const loadAgents = async () => {
   loading.value = true
 
   try {
-    if (!levelPolicies.value.length) {
-      await loadLevelPolicies()
-    }
+    await loadLevelPolicies()
 
-    const res = await balanceApi.agentsFull({
-      page: pagination.page,
-      page_size: pagination.pageSize,
-      status: filter.status || undefined,
-    })
-
-    let rows = res.data.agents || []
-    if (filter.project_id) {
-      rows = rows.filter(ag =>
-        (ag.project_auths || ag.authorized_projects || []).some(p => p.project_id === filter.project_id)
-      )
+    let rows = []
+    if (auth.isAdmin) {
+      const res = await balanceApi.agentsFull({
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        status: filter.status || undefined,
+      })
+      rows = res.data.agents || []
+      pagination.total = res.data.total || 0
+      if (filter.project_id) {
+        rows = rows.filter(ag =>
+          (ag.project_auths || ag.authorized_projects || []).some(p => p.project_id === filter.project_id)
+        )
+      }
+      agents.value = await enrichAgentsWithProfiles(rows)
+    } else {
+      // 代理只查看自己下级
+      const res = await agentApi.scopeList({
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        status: filter.status || undefined,
+      })
+      rows = res.data.agents || []
+      pagination.total = res.data.total || 0
+      agents.value = rows
     }
-    agents.value = await enrichAgentsWithProfiles(rows)
-    pagination.total = res.data.total || 0
   } finally {
     loading.value = false
   }
@@ -952,6 +981,33 @@ const onSelectionChange = (rows) => {
 }
 
 onMounted(loadAgents)
+
+const batchDelete = async () => {
+  batchLoading.value = true
+  const ids = [...selectedIds.value]
+
+  try {
+    const results = await Promise.allSettled(ids.map(id => agentApi.delete(id)))
+    const failed = results.filter(r => r.status === 'rejected').length
+    const success = results.filter(r => r.status === 'fulfilled').length
+
+    if (failed === 0) {
+      ElMessage.success(`已删除 ${success} 个`)
+    } else {
+      ElMessage.warning(`成功 ${success}，失败 ${failed}`)
+    }
+    selectedIds.value = []
+    loadAgents()
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+const deleteAgent = async (row) => {
+  await agentApi.delete(row.id)
+  ElMessage.success('已删除')
+  loadAgents()
+}
 
 const batchToggleStatus = async () => {
   batchLoading.value = true
@@ -1011,9 +1067,7 @@ const createRules = {
 }
 
 const openCreateDialog = async () => {
-  if (!levelPolicies.value.length) {
-    await loadLevelPolicies()
-  }
+  await loadLevelPolicies()
 
   createDialog.form = {
     username: '',
@@ -1054,6 +1108,11 @@ const submitCreate = async () => {
 
     ElMessage.success('代理创建成功')
     createDialog.visible = false
+    loadAgents()
+    // 自动打开编辑抽屉进行项目授权
+    if (newAgentId) {
+      setTimeout(() => openEditDrawer({ id: newAgentId, username: createDialog.form.username }), 300)
+    }
     await loadAgents()
   } finally {
     createDialog.loading = false
@@ -1166,10 +1225,7 @@ const openEditDrawer = async (row) => {
   editDrawer.agent = row
 
   try {
-    if (!levelPolicies.value.length) {
-      await loadLevelPolicies()
-    }
-
+    await loadLevelPolicies()
     await loadAllProjects()
 
     const [detailRes, profileRes] = await Promise.all([
