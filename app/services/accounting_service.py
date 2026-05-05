@@ -1261,7 +1261,7 @@ async def get_agents_with_balance_and_projects(
     offset = (page - 1) * page_size
 
     result = await db.execute(
-        query.order_by(Agent.level, Agent.id)
+        query.order_by(Agent.hierarchy_depth, Agent.id)
         .offset(offset)
         .limit(page_size)
     )
@@ -1334,7 +1334,7 @@ async def get_agents_with_balance_and_projects(
         rows.append({
             "id": agent.id,
             "username": agent.username,
-            "level": agent.level,
+            "level": agent.hierarchy_depth,
             "parent_agent_id": agent.parent_agent_id,
             "created_by_admin_id": agent.created_by_admin_id,
             "commission_rate": float(agent.commission_rate) if agent.commission_rate is not None else None,

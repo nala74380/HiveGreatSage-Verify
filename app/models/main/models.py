@@ -141,10 +141,12 @@ class Agent(Base):
 
     # 代理组织层级 / 代理树深度，不是业务等级。
     # 代理业务等级使用 AgentBusinessProfile.tier_level。
-    level: Mapped[int] = mapped_column(
+    hierarchy_depth: Mapped[int] = mapped_column(
+        "level",
         SmallInteger,
         nullable=False,
         default=1,
+        comment="代理组织层级 / 代理树深度",
     )
 
     created_by_admin_id: Mapped[int | None] = mapped_column(
@@ -200,7 +202,7 @@ class Agent(Base):
         cascade="all, delete-orphan",
     )
     def __repr__(self) -> str:
-        return f"<Agent id={self.id} username={self.username} level={self.level}>"
+        return f"<Agent id={self.id} username={self.username} depth={self.hierarchy_depth}>"
 
 
 # ── 用户表 ────────────────────────────────────────────────────

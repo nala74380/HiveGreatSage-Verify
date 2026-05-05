@@ -51,7 +51,7 @@
 
               <el-descriptions-item label="当前登录身份">
                 <el-tag :type="authStore.isAdmin ? 'danger' : 'warning'" effect="light" size="small">
-                  {{ authStore.isAdmin ? '管理员' : `代理 Lv.${authStore.userInfo?.level ?? '?'}` }}
+                  {{ authStore.isAdmin ? '管理员' : `代理 Lv.${authStore.userInfo?.hierarchy_depth ?? '?'}` }}
                 </el-tag>
               </el-descriptions-item>
 
@@ -1123,7 +1123,7 @@
               <div class="about-row">
                 <span class="about-label">当前登录身份</span>
                 <el-tag :type="authStore.isAdmin ? 'danger' : 'warning'" effect="light" size="small">
-                  {{ authStore.isAdmin ? '管理员' : `代理 Lv.${authStore.userInfo?.level ?? '?'}` }}
+                  {{ authStore.isAdmin ? '管理员' : `代理 Lv.${authStore.userInfo?.hierarchy_depth ?? '?'}` }}
                 </el-tag>
               </div>
             </div>

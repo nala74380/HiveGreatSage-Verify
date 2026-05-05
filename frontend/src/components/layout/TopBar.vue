@@ -19,7 +19,7 @@
         size="small"
         class="role-tag"
       >
-        {{ auth.isAdmin ? '管理员' : `代理 Lv.${auth.userInfo?.level ?? '?'}` }}
+        {{ auth.isAdmin ? '管理员' : `代理 Lv.${auth.userInfo?.hierarchy_depth ?? '?'}` }}
       </el-tag>
 
       <el-dropdown @command="handleCommand" trigger="click">

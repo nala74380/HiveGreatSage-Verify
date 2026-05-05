@@ -70,7 +70,7 @@ export const useAuthStore = defineStore('auth', {
       this._saveSession('agent', data.access_token, {
         agent_id: data.agent_id,
         username: data.username,
-        level: data.level,
+        hierarchy_depth: data.hierarchy_depth,
       })
     },
 

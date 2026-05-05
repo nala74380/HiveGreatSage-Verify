@@ -145,7 +145,7 @@ async def agent_login(
         expires_in=settings.AGENT_TOKEN_EXPIRE_HOURS * 3600,
         agent_id=agent.id,
         username=agent.username,
-        level=agent.level,
+        hierarchy_depth=agent.hierarchy_depth,
     )
 
 
@@ -209,7 +209,7 @@ async def list_agents(
 
     offset = (page - 1) * page_size
     result = await db.execute(
-        query.order_by(Agent.level, Agent.id)
+        query.order_by(Agent.hierarchy_depth, Agent.id)
         .offset(offset)
         .limit(page_size)
     )
@@ -308,7 +308,7 @@ async def get_agent_subtree(
             {
                 "id": root.id,
                 "username": root.username,
-                "level": root.level,
+                "hierarchy_depth": root.hierarchy_depth,
                 "parent_agent_id": root.parent_agent_id,
                 "status": root.status,
                 "commission_rate": float(root.commission_rate) if root.commission_rate else None,
@@ -378,7 +378,7 @@ async def list_agents_in_scope(
 
     offset = (page - 1) * page_size
     result = await db.execute(
-        query.order_by(Agent.level, Agent.id)
+        query.order_by(Agent.hierarchy_depth, Agent.id)
         .offset(offset)
         .limit(page_size)
     )
@@ -489,7 +489,7 @@ async def _agent_to_response(
     return AgentResponse(
         id=agent.id,
         username=agent.username,
-        level=agent.level,
+        hierarchy_depth=agent.hierarchy_depth,
         parent_agent_id=agent.parent_agent_id,
         created_by_admin_id=agent.created_by_admin_id,
         commission_rate=float(agent.commission_rate) if agent.commission_rate else None,

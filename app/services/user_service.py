@@ -649,7 +649,7 @@ async def get_creator_agent_detail(
     agent_payload = {
         "id": agent.id,
         "username": agent.username,
-        "level": agent.level,
+        "level": agent.hierarchy_depth,
         "status": agent.status,
         "commission_rate": float(agent.commission_rate) if agent.commission_rate is not None else None,
         "created_at": agent.created_at.isoformat() if agent.created_at else None,

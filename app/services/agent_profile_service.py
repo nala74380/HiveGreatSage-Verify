@@ -307,7 +307,7 @@ def _profile_to_response(
     return AgentBusinessProfileResponse(
         agent_id=agent.id,
         username=agent.username,
-        hierarchy_level=agent.level,
+        hierarchy_level=agent.hierarchy_depth,
         tier_level=profile.tier_level,
         tier_name=policy.level_name,
         risk_status=profile.risk_status,

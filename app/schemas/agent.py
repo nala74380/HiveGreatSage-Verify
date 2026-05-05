@@ -56,7 +56,7 @@ class AgentLoginResponse(BaseModel):
     expires_in: int = Field(description="Token 有效期（秒）", examples=[28800])
     agent_id: int
     username: str
-    level: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
+    hierarchy_depth: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
 
 
 # ── 代理 CRUD ─────────────────────────────────────────────────
@@ -104,7 +104,7 @@ class AgentResponse(BaseModel):
     """代理详情响应。"""
     id: int
     username: str
-    level: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
+    hierarchy_depth: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
     parent_agent_id: int | None
     created_by_admin_id: int | None
     commission_rate: float | None
@@ -142,7 +142,7 @@ class AgentTreeNode(BaseModel):
     """
     id: int
     username: str
-    level: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
+    hierarchy_depth: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
     parent_agent_id: int | None
     status: str
     commission_rate: float | None

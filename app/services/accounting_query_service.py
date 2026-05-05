@@ -53,7 +53,7 @@ def _wallet_row(wallet: AccountingWallet, agent: Agent | None = None) -> dict:
         "wallet_id": wallet.id,
         "agent_id": wallet.agent_id,
         "agent_username": agent.username if agent else None,
-        "agent_level": agent.level if agent else None,
+        "agent_level": agent.hierarchy_depth if agent else None,
         "agent_status": agent.status if agent else None,
 
         "charged_balance": _money(charged),

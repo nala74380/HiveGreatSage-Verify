@@ -69,7 +69,7 @@
 
         <el-table-column label="组织层级" width="90">
           <template #default="{ row }">
-            <el-tag type="info" effect="plain" size="small">Lv.{{ row.level }}</el-tag>
+            <el-tag type="info" effect="plain" size="small">Lv.{{ row.hierarchy_depth }}</el-tag>
           </template>
         </el-table-column>
 

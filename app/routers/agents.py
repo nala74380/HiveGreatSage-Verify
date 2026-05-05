@@ -158,7 +158,7 @@ async def get_my_profile(
     return {
         "id": current_agent.id,
         "username": current_agent.username,
-        "level": current_agent.level,
+        "hierarchy_depth": current_agent.hierarchy_depth,
         "status": current_agent.status,
         "created_at": current_agent.created_at.isoformat(),
         "updated_at": current_agent.updated_at.isoformat() if current_agent.updated_at else None,

@@ -1,3 +1,11 @@
 2026-05-05 14:33:58.201 | INFO     | app.main:_setup_sentry:91 - Sentry DSN 未配置，跳过初始化
 2026-05-05 14:33:58.228 | INFO     | app.main:lifespan:139 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
 2026-05-05 14:33:58.379 | INFO     | app.main:lifespan:154 - 系统默认配置已初始化
+2026-05-05 15:52:09.457 | INFO     | app.main:_setup_sentry:91 - Sentry DSN 未配置，跳过初始化
+2026-05-05 15:52:09.458 | INFO     | app.main:lifespan:139 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
+2026-05-05 15:52:09.620 | INFO     | app.main:lifespan:154 - 系统默认配置已初始化
+2026-05-05 17:11:48.173 | INFO     | app.main:_setup_sentry:91 - Sentry DSN 未配置，跳过初始化
+2026-05-05 17:11:48.175 | INFO     | app.main:lifespan:139 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=15min | RT有效期=7天
+2026-05-05 17:11:48.325 | INFO     | app.main:lifespan:154 - 系统默认配置已初始化
+2026-05-05 17:16:46.511 | INFO     | app.routers.admin:get_user_devices:166 - [get_user_devices] user_id=78, 共询到 1 条 DeviceBinding
+2026-05-05 17:17:36.248 | INFO     | app.routers.admin:get_user_devices:166 - [get_user_devices] user_id=78, 共询到 1 条 DeviceBinding
