@@ -556,7 +556,7 @@ async def _fetch_subtree_flat(
         {
             "id": row["id"],
             "username": row["username"],
-            "hierarchy_depth": int(row._mapping.get("level", row[2])),
+            "hierarchy_depth": int(row[2]),
             "parent_agent_id": row["parent_agent_id"],
             "status": row["status"],
             "commission_rate": float(row["commission_rate"]) if row["commission_rate"] else None,
@@ -620,7 +620,7 @@ def _build_tree(
         node_map[row["id"]] = AgentTreeNode(
             id=row["id"],
             username=row["username"],
-            hierarchy_depth=int(row._mapping.get("level", row[2])),
+            hierarchy_depth=int(row[2]),
             parent_agent_id=row["parent_agent_id"],
             status=row["status"],
             commission_rate=row["commission_rate"],
