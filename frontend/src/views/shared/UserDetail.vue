@@ -79,16 +79,15 @@
 
         <el-empty v-if="!user.authorizations.length" description="暂无项目授权" :image-size="60" />
         <el-table v-else :data="user.authorizations" size="small">
-          <el-table-column label="项目名称" min-width="150" prop="game_project_name" />
-          <el-table-column label="类型" width="100">
-            <template #default="{ row }">
-              <!-- 后端暂未返回 project_type，展示授权状态 -->
-              <el-tag type="primary" effect="plain" size="small">已授权</el-tag>
-            </template>
+          <el-table-column label="项目名称" min-width="140" prop="game_project_name" />
+          <el-table-column label="等级" width="75">
+            <template #default="{ row }"><LevelTag :level="row.user_level" /></template>
           </el-table-column>
-          <el-table-column label="授权时间" width="155">
+          <el-table-column label="授权设备" width="90" prop="authorized_devices" />
+          <el-table-column label="已激活" width="75" prop="activated_devices" />
+          <el-table-column label="未激活" width="75">
             <template #default="{ row }">
-              {{ formatDatetime(row.valid_from) }}
+              {{ row.inactive_devices != null ? row.inactive_devices : '—' }}
             </template>
           </el-table-column>
           <el-table-column label="到期时间" min-width="160">
@@ -102,20 +101,17 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="80">
+          <el-table-column label="状态" width="75">
             <template #default="{ row }">
               <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="light">
                 {{ row.status === 'active' ? '有效' : '已停用' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="80" fixed="right">
+          <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
-              <el-button
-                text size="small" type="danger"
-                :disabled="row.status !== 'active'"
-                @click="revokeAuth(row)"
-              >停用</el-button>
+              <el-button text size="small" type="primary" @click="openEditAuthDialog(row)">编辑</el-button>
+              <el-button text size="small" type="danger" :disabled="row.status !== 'active'" @click="revokeAuth(row)">停用</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -202,7 +198,12 @@
         <el-alert type="info" show-icon :closable="false" class="small-alert"
           title="用户等级、设备数、到期时间请在项目授权里分别设置。" />
 
-        <el-divider content-position="left">项目授权</el-divider>
+        <el-divider content-position="left">
+          项目授权
+          <el-button size="small" type="primary" plain style="margin-left:12px" @click="editDialog.visible = false; openGrantDialog()">
+            + 授权新项目
+          </el-button>
+        </el-divider>
         <el-table :data="user.authorizations" size="small" empty-text="暂无授权" stripe>
           <el-table-column label="项目" min-width="120" prop="game_project_name" />
           <el-table-column label="等级" width="75">
@@ -233,17 +234,30 @@
     </el-dialog>
 
     <!-- 授权新项目对话框 -->
-    <el-dialog v-model="grantDialog.visible" title="授权新项目" width="440px" destroy-on-close>
-      <el-form :model="grantDialog.form" :rules="grantRules" ref="grantFormRef" label-width="90px">
+    <el-dialog v-model="grantDialog.visible" title="授权新项目" width="460px" destroy-on-close>
+      <el-form :model="grantDialog.form" :rules="grantRules" ref="grantFormRef" label-width="100px">
         <el-form-item label="选择项目" prop="game_project_id">
           <el-select v-model="grantDialog.form.game_project_id" filterable placeholder="请选择项目" style="width:100%">
-            <el-option
-              v-for="p in availableProjects"
-              :key="p.id"
-              :label="`${p.display_name}${p.project_type === 'game' ? ' 🎮' : ' 🔑'}`"
-              :value="p.id"
-            />
+            <el-option v-for="p in availableProjects" :key="p.id" :label="p.display_name" :value="p.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="授权等级" prop="user_level">
+          <el-select v-model="grantDialog.form.user_level" style="width:100%">
+            <el-option label="试用" value="trial" />
+            <el-option label="普通" value="normal" />
+            <el-option label="VIP" value="vip" />
+            <el-option label="SVIP" value="svip" />
+            <el-option v-if="authStore.isAdmin" label="测试" value="tester" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="授权设备数" prop="authorized_devices">
+          <el-input-number v-model="grantDialog.form.authorized_devices" :min="1" style="width:100%" />
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <el-button size="small" @click="grantDialog.form.authorized_devices = 20">20</el-button>
+            <el-button size="small" @click="grantDialog.form.authorized_devices = 50">50</el-button>
+            <el-button size="small" @click="grantDialog.form.authorized_devices = 100">100</el-button>
+            <el-button size="small" @click="grantDialog.form.authorized_devices = 500">500</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="到期时间">
           <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
@@ -252,17 +266,36 @@
             <el-button size="small" @click="setGrantExpiry(365)">一年</el-button>
             <el-button size="small" type="info" plain @click="grantDialog.form.valid_until = null">永久</el-button>
           </div>
-          <el-date-picker
-            v-model="grantDialog.form.valid_until"
-            type="datetime"
-            placeholder="不填为永久"
-            style="width:100%"
-          />
+          <el-date-picker v-model="grantDialog.form.valid_until" type="datetime" placeholder="不填为永久" style="width:100%" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="grantDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="grantDialog.loading" @click="submitGrant">授权</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑授权 -->
+    <el-dialog v-model="authEditDialog.visible" title="编辑项目授权" width="420px" destroy-on-close>
+      <el-form :model="authEditDialog.form" label-width="100px">
+        <el-form-item label="授权等级">
+          <el-select v-model="authEditDialog.form.user_level" style="width:100%">
+            <el-option label="试用" value="trial" />
+            <el-option label="普通" value="normal" />
+            <el-option label="VIP" value="vip" />
+            <el-option label="SVIP" value="svip" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="授权设备数">
+          <el-input-number v-model="authEditDialog.form.authorized_devices" :min="1" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="到期时间">
+          <el-date-picker v-model="authEditDialog.form.valid_until" type="datetime" placeholder="不填为永久" style="width:100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="authEditDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="authEditDialog.loading" @click="submitEditAuth">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -372,8 +405,27 @@ const submitEdit = async () => {
 
 // ── 项目授权 ─────────────────────────────────────────────────
 const grantFormRef = ref(null)
-const grantDialog  = reactive({ visible: false, loading: false, form: { game_project_id: null, valid_until: null } })
-const grantRules   = { game_project_id: [{ required: true, message: '请选择项目', trigger: 'change' }] }
+const grantDialog  = reactive({ visible: false, loading: false, form: { game_project_id: null, user_level: 'normal', authorized_devices: 20, valid_until: null } })
+const grantRules   = { game_project_id: [{ required: true, message: '请选择项目', trigger: 'change' }], user_level: [{ required: true, message: '请选择等级', trigger: 'change' }] }
+
+const authEditDialog = reactive({ visible: false, loading: false, form: { user_level: 'normal', authorized_devices: 20, valid_until: null }, row: null })
+const openEditAuthDialog = (row) => {
+  authEditDialog.row = row
+  authEditDialog.form = { user_level: row.user_level, authorized_devices: row.authorized_devices, valid_until: row.valid_until }
+  authEditDialog.visible = true
+}
+const submitEditAuth = async () => {
+  if (!authEditDialog.row) return
+  authEditDialog.loading = true
+  try {
+    await userApi.updateAuth(user.value.id, authEditDialog.row.id, authEditDialog.form)
+    ElMessage.success('授权已更新')
+    authEditDialog.visible = false
+    await loadUser()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.detail || '更新失败')
+  } finally { authEditDialog.loading = false }
+}
 
 const openGrantDialog = async () => {
   grantDialog.form    = { game_project_id: null, valid_until: null }

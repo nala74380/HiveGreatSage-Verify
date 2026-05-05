@@ -18,20 +18,18 @@
       </el-button>
     </div>
 
-    <el-alert
-      title="说明：组织层级来自 Agent.level；业务等级来自 AgentBusinessProfile.tier_level。二者不是同一个概念。"
-      type="info"
-      show-icon
-      :closable="false"
-      class="top-alert"
-    />
-
     <el-card shadow="never" class="filter-card">
       <el-form inline :model="filter">
         <el-form-item label="状态">
           <el-select v-model="filter.status" clearable placeholder="全部" style="width:120px">
             <el-option label="正常" value="active" />
             <el-option label="已停用" value="suspended" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="项目">
+          <el-select v-model="filter.project_id" clearable filterable placeholder="全部项目" style="width:180px">
+            <el-option v-for="p in allProjects" :key="p.id" :label="p.display_name" :value="p.id" />
           </el-select>
         </el-form-item>
 
@@ -88,7 +86,7 @@
                   </div>
                 </template>
                 <el-tag type="primary" effect="light" size="small">
-                  Lv.{{ row.business_profile.tier_level }} · {{ row.business_profile.tier_name }}
+                  {{ row.business_profile.tier_name }}
                 </el-tag>
               </el-tooltip>
             </template>
@@ -261,7 +259,7 @@
             <el-option
               v-for="item in levelPolicies"
               :key="item.level"
-              :label="`Lv.${item.level} · ${item.level_name}`"
+              :label="`${item.level_name}`"
               :value="item.level"
             />
           </el-select>
@@ -376,7 +374,7 @@
                     <el-option
                       v-for="item in levelPolicies"
                       :key="item.level"
-                      :label="`Lv.${item.level} · ${item.level_name}`"
+                      :label="`${item.level_name}`"
                       :value="item.level"
                     />
                   </el-select>
@@ -814,7 +812,7 @@
  *   - 代理业务能力由项目授权、项目准入、点数余额、授权扣点和风险治理决定。
  */
 
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -885,8 +883,6 @@ const loadLevelPolicies = async () => {
 const allProjects = ref([])
 
 const loadAllProjects = async () => {
-  if (allProjects.value.length) return
-
   const res = await projectApi.list({ page: 1, page_size: 100, is_active: true })
   allProjects.value = res.data.projects || []
 }
@@ -896,7 +892,7 @@ const loading = ref(false)
 const agents = ref([])
 const selectedIds = ref([])
 const batchLoading = ref(false)
-const filter = reactive({ status: null })
+const filter = reactive({ status: null, project_id: null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 const enrichAgentsWithProfiles = async (rows) => {
@@ -931,7 +927,12 @@ const loadAgents = async () => {
       status: filter.status || undefined,
     })
 
-    const rows = res.data.agents || []
+    let rows = res.data.agents || []
+    if (filter.project_id) {
+      rows = rows.filter(ag =>
+        (ag.project_auths || ag.authorized_projects || []).some(p => p.project_id === filter.project_id)
+      )
+    }
     agents.value = await enrichAgentsWithProfiles(rows)
     pagination.total = res.data.total || 0
   } finally {
@@ -941,6 +942,7 @@ const loadAgents = async () => {
 
 const resetFilter = () => {
   filter.status = null
+  filter.project_id = null
   pagination.page = 1
   loadAgents()
 }
@@ -1140,6 +1142,21 @@ const resetEditDrawerState = () => {
   editDrawer.creditForm = { amount: 100, description: '' }
   editDrawer.freezeForm = { amount: 100, description: '' }
 }
+
+// 业务等级变更 → 自动填充能力默认值
+watch(() => editDrawer.profileForm?.tier_level, (newLevel) => {
+  if (!newLevel) return
+  const policy = levelPolicies.value.find(p => p.level === newLevel)
+  if (!policy) return
+  if (editDrawer.profileForm.credit_limit_override == null)
+    editDrawer.profileForm.credit_limit_override = policy.default_credit_limit
+  if (editDrawer.profileForm.max_credit_limit_override == null)
+    editDrawer.profileForm.max_credit_limit_override = policy.max_credit_limit
+  if (editDrawer.profileForm.can_create_sub_agents_override == null)
+    editDrawer.profileForm.can_create_sub_agents_override = policy.can_create_sub_agents
+  if (editDrawer.profileForm.max_sub_agents_override == null)
+    editDrawer.profileForm.max_sub_agents_override = policy.max_sub_agents
+})
 
 const openEditDrawer = async (row) => {
   resetEditDrawerState()

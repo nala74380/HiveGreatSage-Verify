@@ -372,156 +372,129 @@
     </el-dialog>
 
     <!-- 编辑用户 -->
-    <el-dialog v-model="editDialog.visible" title="编辑用户" width="880px" destroy-on-close>
-      <el-form ref="editFormRef" :model="editDialog.form" label-width="105px">
-        <el-divider content-position="left">账号主体</el-divider>
-
-        <el-form-item label="用户名">
-          <span class="readonly-val">{{ editDialog.row?.username }}</span>
-        </el-form-item>
-
-        <el-form-item label="创建信息">
-          <div>
-            <el-tag
-              size="small"
-              effect="plain"
-              :type="editDialog.row?.created_by_type === 'agent' ? 'warning' : 'danger'"
-            >
+    <el-drawer v-model="editDialog.visible" title="编辑用户" size="700px" destroy-on-close>
+      <template #header>
+        <div class="drawer-header-row">
+          <div class="drawer-avatar">{{ (editDialog.row?.username || '?').charAt(0).toUpperCase() }}</div>
+          <div class="drawer-meta">
+            <div class="drawer-name">{{ editDialog.row?.username }}</div>
+            <div class="drawer-sub">
+              ID: {{ editDialog.row?.id }}
+              <span class="dot">·</span>
               {{ editDialog.row?.created_by_display }}
-            </el-tag>
-            <span class="sub-text" style="margin-left:8px">
-              {{ formatDatetime(editDialog.row?.created_at) }}
-            </span>
+              <span class="dot">·</span>
+              {{ editDialog.row?.status === 'active' ? '正常' : editDialog.row?.status === 'suspended' ? '已停用' : '已过期' }}
+            </div>
           </div>
-        </el-form-item>
-
-        <el-form-item label="账号状态">
-          <el-select v-model="editDialog.form.status" size="small" style="width:150px">
-            <el-option label="正常" value="active" />
-            <el-option label="已停用" value="suspended" />
-            <el-option label="已过期" value="expired" />
-          </el-select>
-        </el-form-item>
-
-        <el-divider content-position="left">密码</el-divider>
-
-        <el-form-item label="新密码">
-          <el-input
-            v-model="editDialog.password.new_password"
-            type="password"
-            show-password
-            placeholder="手动输入新密码，至少 6 位"
-          />
-        </el-form-item>
-
-        <el-form-item label="确认密码">
-          <el-input
-            v-model="editDialog.password.confirm_password"
-            type="password"
-            show-password
-            placeholder="再次输入新密码"
-          />
-        </el-form-item>
-
-        <el-form-item>
-          <el-button
-            type="primary"
-            :loading="editDialog.passwordLoading"
-            @click="submitPassword(false)"
-          >
-            修改密码
-          </el-button>
-
-          <el-button
-            v-if="auth.isAdmin"
-            type="warning"
-            plain
-            :loading="editDialog.passwordLoading"
-            @click="submitPassword(true)"
-          >
-            自动生成新密码
-          </el-button>
-        </el-form-item>
-
-        <el-alert
-          v-if="editDialog.generatedPassword"
-          type="success"
-          show-icon
-          :closable="false"
-          class="small-alert"
-        >
-          <template #title>
-            新密码：
-            <strong class="generated-password">{{ editDialog.generatedPassword }}</strong>
-            <el-button text size="small" @click="copyPassword">复制</el-button>
-          </template>
-        </el-alert>
-
-        <el-divider content-position="left">项目授权情况</el-divider>
-
-        <el-table :data="editDialog.auths" size="small" empty-text="暂无授权项目" stripe>
-          <el-table-column label="项目" min-width="140" prop="game_project_name" />
-
-          <el-table-column label="等级" width="85">
-            <template #default="{ row }">
-              <LevelTag :level="row.user_level" />
-            </template>
-          </el-table-column>
-
-          <el-table-column label="授权设备" width="90">
-            <template #default="{ row }">{{ displayDeviceLimit(row.authorized_devices) }}</template>
-          </el-table-column>
-
-          <el-table-column label="已激活" width="75" prop="activated_devices" />
-
-          <el-table-column label="未激活" width="75">
-            <template #default="{ row }">{{ displayInactiveDevices(row) }}</template>
-          </el-table-column>
-
-          <el-table-column label="到期" min-width="145">
-            <template #default="{ row }">
-              <span v-if="!row.valid_until" class="expiry-permanent">永久</span>
-              <span v-else>{{ formatDate(row.valid_until) }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="状态" width="75">
-            <template #default="{ row }">
-              <el-tag :type="authStatusType(row)" size="small" effect="light">
-                {{ authStatusText(row) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="操作" width="90" fixed="right">
-            <template #default="{ row }">
-              <el-button text size="small" @click="openAuthEditDialog(row)">编辑</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="unauth-block">
-          <div class="section-title">未授权项目</div>
-          <div v-if="unauthorizedProjects.length" class="project-tags">
-            <el-tag
-              v-for="p in unauthorizedProjects"
-              :key="p.id"
-              size="small"
-              effect="plain"
-              type="info"
-            >
-              {{ p.display_name }}
-            </el-tag>
-          </div>
-          <span v-else class="no-auth">无</span>
         </div>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="editDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="editDialog.loading" @click="submitEdit">保存账号状态</el-button>
       </template>
-    </el-dialog>
+
+      <el-tabs v-model="editDialog.activeTab">
+        <el-tab-pane label="基础信息" name="base">
+          <el-form ref="editFormRef" :model="editDialog.form" label-width="100px">
+            <el-form-item label="用户名">
+              <span class="readonly-val">{{ editDialog.row?.username }}</span>
+            </el-form-item>
+            <el-form-item label="创建信息">
+              <el-tag size="small" effect="plain" :type="editDialog.row?.created_by_type === 'agent' ? 'warning' : 'danger'">
+                {{ editDialog.row?.created_by_display }}
+              </el-tag>
+              <span class="sub-text" style="margin-left:8px">{{ formatDatetime(editDialog.row?.created_at) }}</span>
+            </el-form-item>
+            <el-form-item label="账号状态">
+              <el-select v-model="editDialog.form.status" style="width:160px">
+                <el-option label="正常" value="active" />
+                <el-option label="已停用" value="suspended" />
+                <el-option label="已过期" value="expired" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="editDialog.loading" @click="submitEdit">保存</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
+        <el-tab-pane label="密码" name="password">
+          <el-form label-width="100px">
+            <el-form-item label="新密码">
+              <el-input v-model="editDialog.password.new_password" type="password" show-password placeholder="至少 6 位" />
+            </el-form-item>
+            <el-form-item label="确认密码">
+              <el-input v-model="editDialog.password.confirm_password" type="password" show-password placeholder="再次输入" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="editDialog.passwordLoading" @click="submitPassword(false)">修改密码</el-button>
+              <el-button type="primary" :loading="editDialog.passwordLoading" @click="submitPassword(false)">修改密码</el-button>
+              <el-button v-if="auth.isAdmin" type="warning" plain :loading="editDialog.passwordLoading" @click="submitPassword(true)">查询密码（生成新密码并复制）</el-button>
+            </el-form-item>
+          </el-form>
+          <el-alert v-if="editDialog.generatedPassword" type="success" show-icon :closable="false" class="small-alert">
+            <template #title>
+              新密码：<strong class="generated-password">{{ editDialog.generatedPassword }}</strong>
+              <el-button text size="small" @click="copyPassword">复制</el-button>
+            </template>
+          </el-alert>
+        </el-tab-pane>
+
+        <el-tab-pane label="项目授权" name="auths">
+          <div class="auth-section-title">
+            已授权项目
+            <el-button size="small" :icon="Refresh" @click="loadEditAuths" style="margin-left:8px" />
+          </div>
+          <el-table :data="editDialog.auths" size="small" empty-text="暂无授权" stripe style="margin-bottom:16px">
+            <el-table-column label="项目" min-width="120" prop="game_project_name" />
+            <el-table-column label="等级" width="75">
+              <template #default="{ row }"><LevelTag :level="row.user_level" /></template>
+            </el-table-column>
+            <el-table-column label="设备" width="80">
+              <template #default="{ row }">{{ displayDeviceLimit(row.authorized_devices) }}</template>
+            </el-table-column>
+            <el-table-column label="到期" width="130">
+              <template #default="{ row }">
+                <span v-if="!row.valid_until" class="expiry-permanent">永久</span>
+                <span v-else>{{ formatDate(row.valid_until) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="70">
+              <template #default="{ row }">
+                <el-tag :type="authStatusType(row)" size="small" effect="light">{{ authStatusText(row) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="70">
+              <template #default="{ row }">
+                <el-button text size="small" @click="openAuthEditDialog(row)">编辑</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="unauthorizedProjects.length" class="unauth-block">
+            <div class="section-title">未授权项目 — 可授权</div>
+            <div class="project-tags">
+              <el-tag v-for="p in unauthorizedProjects" :key="p.id" size="small" effect="plain" type="info" style="margin:4px">
+                {{ p.display_name }}
+                <el-button text size="small" style="margin-left:4px" @click="quickGrantAuth(p)">+ 授权</el-button>
+              </el-tag>
+            </div>
+          </div>
+          <span v-else class="no-auth">所有项目已授权</span>
+
+          <el-divider />
+          <el-form :inline="true" :model="editDialog.grantForm" label-width="0" @submit.prevent>
+            <el-select v-model="editDialog.grantForm.project_id" filterable placeholder="选择项目" style="width:180px">
+              <el-option v-for="p in allProjects" :key="p.id" :label="p.display_name" :value="p.id" />
+            </el-select>
+            <el-select v-model="editDialog.grantForm.user_level" style="width:110px;margin-left:8px">
+              <el-option label="试用" value="trial" />
+              <el-option label="普通" value="normal" />
+              <el-option label="VIP" value="vip" />
+              <el-option label="SVIP" value="svip" />
+              <el-option v-if="auth.isAdmin" label="测试" value="tester" />
+            </el-select>
+            <el-input-number v-model="editDialog.grantForm.authorized_devices" :min="1" style="width:100px;margin-left:8px" placeholder="设备数" />
+            <el-button type="primary" size="small" :loading="editDialog.grantLoading" @click="quickGrantDo" style="margin-left:8px">授权</el-button>
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
+    </el-drawer>
 
     <!-- 项目授权弹窗 -->
     <el-dialog
@@ -927,9 +900,9 @@ const pagination = reactive({
 })
 
 onMounted(async () => {
-  const tasks = [loadUsers()]
+  const tasks = [loadUsers(), loadProjects()]
   if (auth.isAdmin) {
-    tasks.push(loadProjects(), loadAllAgents())
+    tasks.push(loadAllAgents())
   }
   await Promise.all(tasks)
 })
@@ -1193,7 +1166,10 @@ const editDialog = reactive({
   editId: null,
   row: null,
   auths: [],
+  activeTab: 'base',
   generatedPassword: '',
+  grantForm: { project_id: null, user_level: 'normal', authorized_devices: 20 },
+  grantLoading: false,
   form: {
     status: 'active',
   },
@@ -1336,6 +1312,40 @@ const loadUserAuths = async () => {
     projectAuthDialog.auths = res.data.authorizations || []
   } finally {
     projectAuthDialog.listLoading = false
+  }
+}
+
+const loadEditAuths = async () => {
+  if (!editDialog.row?.id) return
+  try {
+    const res = await userApi.detail(editDialog.row.id)
+    editDialog.auths = res.data.authorizations || []
+  } catch { /* 静默 */ }
+}
+
+const quickGrantAuth = (p) => {
+  editDialog.grantForm.project_id = p.id
+  editDialog.grantForm.user_level = 'normal'
+  editDialog.grantForm.authorized_devices = 20
+}
+
+const quickGrantDo = async () => {
+  if (!editDialog.row?.id || !editDialog.grantForm.project_id) return
+  editDialog.grantLoading = true
+  try {
+    await userApi.grantAuth(editDialog.row.id, {
+      game_project_id: editDialog.grantForm.project_id,
+      user_level: editDialog.grantForm.user_level,
+      authorized_devices: editDialog.grantForm.authorized_devices,
+      valid_until: auth.isAdmin ? null : new Date(Date.now() + 30*86400000).toISOString(),
+    })
+    ElMessage.success('授权成功')
+    editDialog.grantForm.project_id = null
+    await loadEditAuths()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.detail || '授权失败')
+  } finally {
+    editDialog.grantLoading = false
   }
 }
 
@@ -1766,4 +1776,11 @@ const openCreatorDetail = async (agentId) => {
   font-size: 12px;
   color: #475569;
 }
+
+.drawer-header-row { display: flex; align-items: center; gap: 14px; padding: 4px 0; }
+.drawer-avatar { width:44px; height:44px; border-radius:50%; background:#2563eb; color:#fff; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:600; flex-shrink:0; }
+.drawer-meta { display: flex; flex-direction: column; gap: 2px; }
+.drawer-name { font-size: 16px; font-weight: 600; color: #1e293b; }
+.drawer-sub { font-size: 13px; color: #64748b; }
+.dot { margin: 0 6px; color: #cbd5e1; }
 </style>

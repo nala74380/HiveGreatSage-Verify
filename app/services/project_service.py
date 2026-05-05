@@ -360,6 +360,7 @@ def _auth_to_response(
         agent_id=auth.agent_id,
         project_id=auth.project_id,
         project_display_name=project.display_name,
+        project_code_name=project.code_name,
         project_type=project.project_type,
         valid_until=auth.valid_until,
         status=auth.status,

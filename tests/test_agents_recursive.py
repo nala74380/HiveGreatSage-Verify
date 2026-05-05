@@ -58,7 +58,6 @@ async def _create_agent(
         "username": username,
         "password": "Agent@2026!",
         "parent_agent_id": parent_agent_id,
-        "max_users": 100,
     }, headers=admin_headers)
     assert r.status_code == 201, f"创建代理失败: {r.text}"
     return r.json()
@@ -345,7 +344,11 @@ class TestRevokeAll:
 
         await client.post(
             f"/api/users/{user_id}/authorizations",
-            json={"game_project_id": project_id},
+            json={
+                "game_project_id": project_id,
+                "user_level": "normal",
+                "authorized_devices": 20,
+            },
             headers=admin_headers,
         )
 

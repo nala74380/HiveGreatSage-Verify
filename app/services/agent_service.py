@@ -452,7 +452,7 @@ async def _agent_to_response(
     agent: Agent,
     db: AsyncSession,
 ) -> AgentResponse:
-    """将 Agent ORM 对象转换为 AgentResponse，附带有效直属用户数统计。"""
+    """将 Agent ORM 对象转换为 AgentResponse，附带有效直属用户数统计和项目授权。"""
     count_result = await db.execute(
         select(func.count(User.id)).where(
             User.created_by_agent_id == agent.id,
@@ -460,6 +460,31 @@ async def _agent_to_response(
         )
     )
     users_count = count_result.scalar_one()
+
+    # 查询代理的项目授权
+    from app.models.main.models import AgentProjectAuth, GameProject
+    auth_result = await db.execute(
+        select(AgentProjectAuth, GameProject)
+        .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
+        .where(AgentProjectAuth.agent_id == agent.id)
+        .order_by(GameProject.display_name)
+    )
+    authorized_projects = [
+        {
+            "id": proj.id,
+            "project_id": proj.id,
+            "display_name": proj.display_name,
+            "project_name": proj.display_name,
+            "code_name": proj.code_name,
+            "project_code": proj.code_name,
+            "project_type": proj.project_type,
+            "status": auth.status,
+            "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
+            "granted_at": auth.granted_at.isoformat() if auth.granted_at else None,
+            "source": auth.source,
+        }
+        for auth, proj in auth_result.all()
+    ]
 
     return AgentResponse(
         id=agent.id,
@@ -472,6 +497,7 @@ async def _agent_to_response(
         created_at=agent.created_at,
         updated_at=agent.updated_at,
         users_count=users_count,
+        authorized_projects=authorized_projects,
     )
 
 

@@ -22,9 +22,15 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
     assert r.status_code == 201, f"用户创建失败: {r.status_code} | {r.text}"
     user_id = r.json()["id"]
 
-    r2 = await client.post(f"/api/users/{user_id}/authorizations",
-                           json={"game_project_id": project_id},
-                           headers=admin_headers)
+    r2 = await client.post(
+        f"/api/users/{user_id}/authorizations",
+        json={
+            "game_project_id": project_id,
+            "user_level": "normal",
+            "authorized_devices": 20,
+        },
+        headers=admin_headers,
+    )
     assert r2.status_code == 201, f"授权失败: {r2.status_code} | {r2.text}"
 
     device_fp = f"dev_{uuid.uuid4().hex[:12]}"

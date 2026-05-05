@@ -115,9 +115,15 @@ class TestUserManagement:
         user_id = r.json()["id"]
 
         # 授权
-        r = await client.post(f"/api/users/{user_id}/authorizations",
-                              json={"game_project_id": project_id},
-                              headers=admin_headers)
+        r = await client.post(
+            f"/api/users/{user_id}/authorizations",
+            json={
+                "game_project_id": project_id,
+                "user_level": "normal",
+                "authorized_devices": 20,
+            },
+            headers=admin_headers,
+        )
         assert r.status_code == 201
         auth_id = r.json()["id"]
 
@@ -146,12 +152,10 @@ class TestAgentManagement:
         r = await client.post("/api/agents/", json={
             "username": f"agent_{suffix}",
             "password": "Agent@2026!",
-            "max_users": 50,
         }, headers=admin_headers)
         assert r.status_code == 201
         data = r.json()
         assert data["level"] == 1
-        assert data["max_users"] == 50
         assert data["parent_agent_id"] is None
 
     async def test_create_sub_agent(self, client, admin_headers):
@@ -178,7 +182,6 @@ class TestAgentManagement:
         r = await client.post("/api/agents/", json={
             "username": f"aglogin_{suffix}",
             "password": "Agent@2026!",
-            "max_users": 10,
         }, headers=admin_headers)
         assert r.status_code == 201
         agent_id = r.json()["id"]
@@ -246,10 +249,12 @@ class TestAgentManagement:
         }, headers=admin_headers)
         agent_id = r.json()["id"]
 
-        r = await client.patch(f"/api/agents/{agent_id}",
-                               json={"status": "suspended", "max_users": 200},
-                               headers=admin_headers)
+        r = await client.patch(
+            f"/api/agents/{agent_id}",
+            json={"status": "suspended", "commission_rate": 12.5},
+            headers=admin_headers,
+        )
         assert r.status_code == 200
         data = r.json()
         assert data["status"] == "suspended"
-        assert data["max_users"] == 200
+        assert data["commission_rate"] == 12.5

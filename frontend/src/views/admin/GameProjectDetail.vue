@@ -746,6 +746,32 @@
               />
             </el-card>
           </el-tab-pane>
+
+          <!-- 用户功能 -->
+          <el-tab-pane label="用户功能" name="features">
+            <el-alert
+              title="各授权等级在不同项目类型下的功能权限。游戏项目支持完整功能，验证项目仅支持基础验证。"
+              type="info" show-icon :closable="false" class="inner-alert"
+            />
+            <el-table :data="featureTable" border size="small" style="margin-top:16px">
+              <el-table-column prop="feature" label="功能 / 权限" width="160" fixed />
+              <el-table-column label="试用" width="100" align="center">
+                <template #default="{ row }">{{ row.trial }}</template>
+              </el-table-column>
+              <el-table-column label="普通" width="100" align="center">
+                <template #default="{ row }">{{ row.normal }}</template>
+              </el-table-column>
+              <el-table-column label="VIP" width="100" align="center">
+                <template #default="{ row }">{{ row.vip }}</template>
+              </el-table-column>
+              <el-table-column label="SVIP" width="100" align="center">
+                <template #default="{ row }">{{ row.svip }}</template>
+              </el-table-column>
+              <el-table-column label="测试" width="100" align="center">
+                <template #default="{ row }">{{ row.tester }}</template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
         </el-tabs>
       </el-card>
 
@@ -890,6 +916,23 @@ const PRESETS = {
 const loading = ref(false)
 const activeTab = ref('overview')
 const project = ref(null)
+
+const featureTable = computed(() => {
+  const isGame = project.value?.project_type === 'game'
+  return [
+    { feature: '基础验证登录', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
+    { feature: 'Token 自动刷新', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
+    { feature: '设备心跳上报', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
+    { feature: '脚本参数同步', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
+    { feature: '热更新检查', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
+    { feature: 'PC 中控连接', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✓' },
+    { feature: '游戏自动化脚本', trial: isGame ? '✓' : '✗', normal: isGame ? '✓' : '✗', vip: isGame ? '✓' : '✗', svip: isGame ? '✓' : '✗', tester: isGame ? '✓' : '✗' },
+    { feature: '设备数量上限', trial: '100', normal: '500', vip: '1000', svip: '无限', tester: '无限' },
+    { feature: '代理可见', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✗' },
+    { feature: '代理可管理', trial: '✓', normal: '✓', vip: '✓', svip: '✓', tester: '✗' },
+    { feature: '代理可计费', trial: '✓', normal: '✓', vip: '✓', svip: '✗', tester: '✗' },
+  ]
+})
 
 const projectId = computed(() => Number(route.params.id))
 

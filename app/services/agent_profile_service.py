@@ -17,7 +17,7 @@ r"""
 
 from datetime import datetime
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -215,10 +215,36 @@ async def _get_or_create_profile(
     return profile
 
 
+async def _ensure_level_policies(db: AsyncSession) -> None:
+    """自动创建默认等级策略（Lv.1 - Lv.4），幂等。"""
+    defaults: list[dict] = [
+        {"level": 1, "level_name": "Lv.1 初级代理", "default_credit_limit": 100.0, "max_credit_limit": 500.0,
+         "can_create_sub_agents": False, "max_sub_agents": 0, "can_auto_open_project": False,
+         "auto_open_project_limit": 0, "review_priority": 0, "is_active": True},
+        {"level": 2, "level_name": "Lv.2 中级代理", "default_credit_limit": 500.0, "max_credit_limit": 2000.0,
+         "can_create_sub_agents": True, "max_sub_agents": 5, "can_auto_open_project": False,
+         "auto_open_project_limit": 0, "review_priority": 1, "is_active": True},
+        {"level": 3, "level_name": "Lv.3 高级代理", "default_credit_limit": 2000.0, "max_credit_limit": 10000.0,
+         "can_create_sub_agents": True, "max_sub_agents": 20, "can_auto_open_project": True,
+         "auto_open_project_limit": 3, "review_priority": 2, "is_active": True},
+        {"level": 4, "level_name": "Lv.4 顶级代理", "default_credit_limit": 10000.0, "max_credit_limit": 50000.0,
+         "can_create_sub_agents": True, "max_sub_agents": 100, "can_auto_open_project": True,
+         "auto_open_project_limit": 10, "review_priority": 3, "is_active": True},
+    ]
+    for d in defaults:
+        result = await db.execute(
+            select(AgentLevelPolicy).where(AgentLevelPolicy.level == d["level"])
+        )
+        if not result.scalar_one_or_none():
+            db.add(AgentLevelPolicy(**d))
+    await db.flush()
+
+
 async def _get_level_policy_or_404(
     level: int,
     db: AsyncSession,
 ) -> AgentLevelPolicy:
+    await _ensure_level_policies(db)
     result = await db.execute(
         select(AgentLevelPolicy).where(AgentLevelPolicy.level == level)
     )

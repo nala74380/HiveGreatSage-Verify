@@ -36,7 +36,10 @@ from app.models.main.models import Admin, GameProject, VersionRecord
 
 router = APIRouter()
 
-_ALLOWED_EXTENSIONS = {".lrj", ".zip", ".apk", ".exe"}
+_ALLOWED_EXTENSIONS_BY_CLIENT = {
+    "android": {".lrj", ".apk"},
+    "pc": {".zip", ".exe"},
+}
 _MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
 
 
@@ -86,9 +89,10 @@ async def upload_version_endpoint(
     if not file.filename:
         raise HTTPException(status_code=422, detail="文件名不能为空")
     ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
-    if ext not in _ALLOWED_EXTENSIONS:
+    allowed_extensions = _ALLOWED_EXTENSIONS_BY_CLIENT[client_type]
+    if ext not in allowed_extensions:
         raise HTTPException(status_code=422,
-                            detail=f"不支持的格式 '{ext}'，允许：{', '.join(_ALLOWED_EXTENSIONS)}")
+                            detail=f"不支持的 {client_type} 包格式 '{ext}'，允许：{', '.join(sorted(allowed_extensions))}")
 
     file_data = await file.read()
     if not file_data:

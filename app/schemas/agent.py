@@ -115,6 +115,10 @@ class AgentResponse(BaseModel):
         default=0,
         description="该代理直接创建的用户数量，仅作统计，不作为配额限制",
     )
+    authorized_projects: list[dict] = Field(
+        default_factory=list,
+        description="该代理已授权的项目列表",
+    )
 
     model_config = {"from_attributes": True}
 

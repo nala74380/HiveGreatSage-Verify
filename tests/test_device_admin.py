@@ -48,7 +48,11 @@ async def _create_and_login(
 
     await client.post(
         f"/api/users/{user_id}/authorizations",
-        json={"game_project_id": project_id},
+        json={
+            "game_project_id": project_id,
+            "user_level": "normal",
+            "authorized_devices": 20,
+        },
         headers=admin_headers,
     )
 
@@ -106,7 +110,6 @@ class TestAdminDeviceList:
         r = await client.post("/api/agents/", json={
             "username": agent_name,
             "password": "Agent@2026!",
-            "max_users": 10,
         }, headers=admin_headers)
         assert r.status_code == 201
 

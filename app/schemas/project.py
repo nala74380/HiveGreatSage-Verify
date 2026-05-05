@@ -103,6 +103,7 @@ class AgentProjectAuthResponse(BaseModel):
     agent_id: int
     project_id: int
     project_display_name: str
+    project_code_name: str = Field(default="", description="项目代码名")
     project_type: str
     valid_until: datetime | None
     status: str
