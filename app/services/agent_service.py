@@ -480,7 +480,7 @@ async def _agent_to_response(
             "project_type": proj.project_type,
             "status": auth.status,
             "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
-            "granted_at": auth.granted_at.isoformat() if auth.granted_at else None,
+            "granted_at": auth.granted_at.isoformat() if getattr(auth, 'granted_at', None) else None,
             "source": auth.source,
         }
         for auth, proj in auth_result.all()
@@ -556,7 +556,7 @@ async def _fetch_subtree_flat(
         {
             "id": row["id"],
             "username": row["username"],
-            "hierarchy_depth": row["level"],
+            "hierarchy_depth": int(row._mapping.get("level", row[2])),
             "parent_agent_id": row["parent_agent_id"],
             "status": row["status"],
             "commission_rate": float(row["commission_rate"]) if row["commission_rate"] else None,
@@ -620,7 +620,7 @@ def _build_tree(
         node_map[row["id"]] = AgentTreeNode(
             id=row["id"],
             username=row["username"],
-            hierarchy_depth=row["level"],
+            hierarchy_depth=int(row._mapping.get("level", row[2])),
             parent_agent_id=row["parent_agent_id"],
             status=row["status"],
             commission_rate=row["commission_rate"],

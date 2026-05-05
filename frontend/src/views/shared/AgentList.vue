@@ -936,7 +936,7 @@ const loadAgents = async () => {
   loading.value = true
 
   try {
-    await loadLevelPolicies()
+    if (auth.isAdmin) await loadLevelPolicies()
 
     let rows = []
     if (auth.isAdmin) {
