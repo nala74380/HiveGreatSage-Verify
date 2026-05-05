@@ -22,7 +22,4 @@ export const adminUserApi = {
   unbindDevice(userId, bindingId) {
     return http.delete(`/admin/api/users/${userId}/devices/${bindingId}`)
   },
-  delete(userId) {
-    return http.delete(`/admin/api/users/${userId}`)
-  },
 }

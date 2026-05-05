@@ -10,16 +10,14 @@ r"""
     当前测试口径:
       1. 授权创建请求必须显式传入 Authorization.user_level。
       2. 授权创建请求必须显式传入 Authorization.authorized_devices。
-      3. 登录响应中的 user_level 当前仍来自 Authorization.user_level。
+      3. 登录响应中的 authorization_level 当前来自 Authorization.user_level。
       4. Refresh Token 刷新必须重新校验 Authorization。
       5. /api/auth/me 必须返回当前项目 Authorization 授权摘要。
       6. 软删除用户不得登录。
       7. 软删除用户不得使用 Refresh Token 刷新 Access Token。
 
-    当前仍未整改的边界:
-      1. LoginResponse 仍保留 user_level / game_project_code 旧字段名。
-      2. Access Token payload 仍保留 level / project 字段名。
-      3. Admin / Agent Token 服务端吊销不在本文件测试范围内。
+    当前仍未覆盖的边界:
+      1. Admin / Agent Token 服务端吊销不在本文件测试范围内。
 
 改进历史:
     V1.2.0 (2026-05-02) - 同步 /api/auth/me 授权摘要结构。

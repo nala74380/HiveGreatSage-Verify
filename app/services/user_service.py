@@ -29,7 +29,7 @@ r"""
     - 删除用户返点只处理存在授权扣点快照的代理扣点授权。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -52,6 +52,7 @@ from app.schemas.user import (
     AuthorizationInfo,
     AuthorizationResponse,
     AuthorizationUpdateRequest,
+    AuthorizationUpgradePreviewResponse,
     CreatorAgentDetailResponse,
     UserCreateRequest,
     UserListResponse,
@@ -61,7 +62,10 @@ from app.schemas.user import (
     UserUpdateRequest,
 )
 from app.services.accounting_service import (
+    BILLING_RULES,
     LEVEL_NAMES,
+    _ceil_hours,
+    calculate_authorization_cost,
     consume_agent_authorization_points,
     refund_user_authorization_points_on_delete,
 )
@@ -614,6 +618,71 @@ async def revoke_authorization(
     await db.flush()
 
 
+async def preview_authorization_upgrade(
+    user_id: int,
+    auth_id: int,
+    additional_devices: int,
+    mode: str,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationUpgradePreviewResponse:
+    """预览授权升级结果。
+
+    该函数是授权升级预览的唯一业务入口。
+    Router 只负责鉴权和参数接收，不再直接拼计费逻辑。
+    """
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    project = await _get_project_or_404(auth.game_project_id, db)
+
+    old_devices = int(auth.authorized_devices or 0)
+    new_devices = old_devices + additional_devices
+    now = datetime.now(timezone.utc)
+
+    if auth.valid_until and _ensure_aware(auth.valid_until) <= now:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="授权已到期，请重新授权")
+
+    level_rule = BILLING_RULES.get(auth.user_level, {})
+    period_hours = int(level_rule.get("period_hours", 720))
+    valid_until_for_cost = auth.valid_until
+
+    if mode == "average":
+        old_remaining = _ceil_hours(now, auth.valid_until) if auth.valid_until else 0
+        new_devices_hours = additional_devices * period_hours
+        avg_hours = int((old_devices * old_remaining + new_devices_hours) / new_devices)
+        valid_until_for_cost = now + timedelta(hours=avg_hours)
+
+    if agent is not None:
+        cost = await calculate_authorization_cost(
+            project_id=project.id,
+            user_level=auth.user_level,
+            authorized_devices=additional_devices,
+            start_at=now,
+            valid_until=valid_until_for_cost,
+            db=db,
+        )
+        consumed_points = float(cost.get("total_cost") or 0.0)
+        unit_price = float(cost.get("unit_price") or 0.0)
+        period_hours = int(cost.get("billing_period_hours") or period_hours)
+    else:
+        consumed_points = 0.0
+        unit_price = 0.0
+
+    return AuthorizationUpgradePreviewResponse(
+        old_devices=old_devices,
+        new_devices=new_devices,
+        additional_devices=additional_devices,
+        mode=mode,
+        consumed_points=consumed_points,
+        new_expiry=valid_until_for_cost,
+        unit_price=unit_price,
+        period_hours=period_hours,
+    )
+
+
 async def upgrade_authorization(
     user_id: int,
     auth_id: int,
@@ -649,7 +718,6 @@ async def upgrade_authorization(
 
     if body.mode == "average":
         # 平均模式：新到期 = 加权平均
-        from app.services.accounting_service import BILLING_RULES, _ceil_hours
         if auth.valid_until:
             old_remaining = _ceil_hours(now, auth.valid_until)
         else:
@@ -676,7 +744,6 @@ async def upgrade_authorization(
         # 追加模式：到期不变
         if agent is not None and auth.valid_until:
             # 按剩余比例计算
-            from app.services.accounting_service import _ceil_hours, BILLING_RULES
             remaining = _ceil_hours(now, auth.valid_until)
             level_rule = BILLING_RULES.get(auth.user_level, {})
             period_hours = level_rule.get("period_hours", 720)

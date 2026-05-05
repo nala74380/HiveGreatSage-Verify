@@ -78,6 +78,17 @@ class AuthorizationUpgradeRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class AuthorizationUpgradePreviewResponse(BaseModel):
+    old_devices: int
+    new_devices: int
+    additional_devices: int
+    mode: str
+    consumed_points: float
+    new_expiry: datetime | None = None
+    unit_price: float
+    period_hours: int
+
+
 class AuthorizationUpgradeResponse(BaseModel):
     authorization: "AuthorizationResponse"
     consumed_points: float

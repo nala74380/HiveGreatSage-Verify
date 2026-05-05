@@ -30,8 +30,8 @@ export const adminProjectApi = {
   update(projectId, data) {
     return http.patch(`/admin/api/projects/${projectId}`, data)
   },
-  delete(projectId) {
-    return http.delete(`/admin/api/projects/${projectId}`)
+  disable(projectId) {
+    return http.patch(`/admin/api/projects/${projectId}`, { is_active: false })
   },
 
   // ── 代理项目授权 ─────────────────────────────────────────

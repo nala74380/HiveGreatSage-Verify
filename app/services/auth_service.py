@@ -17,12 +17,13 @@ r"""
       3. 用户登录以 Authorization.valid_until 作为项目授权有效期判断。
       4. Refresh Token 刷新不再读取 User.user_level。
       5. Refresh Token 刷新必须重新校验项目与 Authorization。
-      6. Access Token 中的 user_level 来自 Authorization.user_level。
+      6. Access Token 中的 authorization_level 来自 Authorization.user_level。
+      7. Access Token 项目字段统一为 project_code。
 
-    当前仍保留的历史字段边界:
-      1. LoginResponse 仍返回 user_level / game_project_code。
-      2. Access Token 当前仍写入 user_level / game_project_code。
-      3. 这些字段属于后续 schema / token payload 收口任务，本文件本轮不扩展响应结构。
+    当前字段口径:
+      1. LoginResponse 返回 authorization_level / game_project_code。
+      2. Token payload 返回 authorization_level / project_code。
+      3. User.user_level / max_devices / expired_at 不再作为业务字段。
 
     关联文档:
       [[01-网络验证系统/架构设计]]
@@ -36,9 +37,8 @@ r"""
 
 调试信息:
     已知问题:
-      1. LoginResponse / Token payload 仍保留旧字段名 user_level / game_project_code。
-      2. Admin / Agent Token 尚未接入服务端吊销闭环。
-      3. token_version 尚未落地。
+      1. Admin / Agent Token 尚未接入服务端吊销闭环。
+      2. token_version 尚未落地。
 """
 
 from datetime import datetime, timezone
@@ -297,7 +297,7 @@ async def refresh_access_token(
       3. RT 中的 game_project_code 必须能找到 active GameProject。
       4. 用户必须仍拥有该项目 active Authorization。
       5. Authorization.valid_until 未过期。
-      6. 新 Access Token 的 user_level 来自 Authorization.user_level。
+      6. 新 Access Token 的 authorization_level 来自 Authorization.user_level。
 
     重要整改：
       Refresh Token 刷新不得再读取 User.user_level。

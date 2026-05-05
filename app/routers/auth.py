@@ -19,10 +19,10 @@ r"""
       4. /api/auth/me 返回 Authorization.user_level / authorized_devices / valid_until。
       5. /api/auth/me 对软删除用户直接拒绝。
 
-    当前仍保留的历史边界:
-      1. 登录响应 LoginResponse 仍返回 user_level / game_project_code。
-      2. Access Token payload 仍使用 level / project 字段。
-      3. 这些字段后续单独做 token/schema 收口。
+    当前字段口径:
+      1. LoginResponse 返回 authorization_level / game_project_code。
+      2. Access Token payload 使用 authorization_level / project_code。
+      3. User.user_level 已不再作为授权等级来源。
 
 改进历史:
     V1.1.0 (2026-05-02) - /me 改为 Authorization 授权摘要口径。

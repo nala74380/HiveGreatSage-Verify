@@ -68,11 +68,11 @@ export const agentApi = {
   },
 
   /**
-   * 删除代理
-   * 注意：代理涉及用户、授权、流水，生产使用前应优先停用。
+   * 停用代理。
+   * 开发期不保留旧硬删除接口；代理涉及用户、授权、流水，只允许状态停用。
    */
-  delete(agentId) {
-    return http.delete(`/admin/api/agents/${agentId}`)
+  suspend(agentId) {
+    return http.patch(`/api/agents/${agentId}`, { status: 'suspended' })
   },
 
   /**

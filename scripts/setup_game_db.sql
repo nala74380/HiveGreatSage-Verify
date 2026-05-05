@@ -71,7 +71,7 @@ FROM pg_database
 WHERE datname = :'hgs_game_db';
 
 -- 如果上一条查询无结果，请先通过管理后台项目创建流程、
--- 或开发抢修脚本 scripts/setup_game_db.py 创建游戏库。
+-- 或开发抢修脚本 scripts/provision_game_db.py 创建游戏库。
 
 -- ------------------------------------------------------------
 -- 步骤 3：授予数据库 CONNECT 权限

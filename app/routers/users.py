@@ -43,6 +43,7 @@ from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationResponse,
     AuthorizationUpdateRequest,
+    AuthorizationUpgradePreviewResponse,
     AuthorizationUpgradeRequest,
     AuthorizationUpgradeResponse,
     CreatorAgentDetailResponse,
@@ -59,6 +60,7 @@ from app.services.user_service import (
     get_user,
     grant_authorization,
     list_users,
+    preview_authorization_upgrade,
     revoke_authorization,
     soft_delete_user,
     update_authorization,
@@ -68,13 +70,20 @@ from app.services.user_service import (
 )
 
 router = APIRouter()
-_http_bearer = HTTPBearer()
+_http_bearer = HTTPBearer(auto_error=False)
 
 
 async def _resolve_caller(
-    credentials: HTTPAuthorizationCredentials = Depends(_http_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_http_bearer),
     db: AsyncSession = Depends(get_main_db),
 ) -> tuple[Admin | None, Agent | None]:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="需要管理员或代理身份才能访问",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     token = credentials.credentials
 
     try:
@@ -313,6 +322,7 @@ async def revoke_auth_endpoint(
 
 @router.get(
     "/{user_id}/authorizations/{auth_id}/upgrade/preview",
+    response_model=AuthorizationUpgradePreviewResponse,
     summary="预览升级扣点",
 )
 async def upgrade_preview_endpoint(
@@ -320,55 +330,20 @@ async def upgrade_preview_endpoint(
     auth_id: int,
     additional_devices: int = Query(..., gt=0),
     mode: str = Query(default="append", pattern="^(append|average)$"),
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
-) -> dict:
+) -> AuthorizationUpgradePreviewResponse:
     """预览升级后的到期时间和扣点，不实际执行升级。"""
-    from app.services.user_service import _get_user_or_404, _get_authorization_or_404, _get_project_or_404, _ensure_aware
-    from app.services.accounting_service import BILLING_RULES, calculate_authorization_cost, _ceil_hours
-    from app.models.main.models import ProjectPrice
-    from datetime import datetime, timedelta, timezone
-    from decimal import Decimal
-    from sqlalchemy import select
-
-    await _get_user_or_404(user_id, db)
-    auth = await _get_authorization_or_404(user_id, auth_id, db)
-
-    old_devices = int(auth.authorized_devices or 0)
-    new_devices = old_devices + additional_devices
-    now = datetime.now(timezone.utc)
-    remaining = _ceil_hours(now, auth.valid_until) if auth.valid_until else 0
-    level_rule = BILLING_RULES.get(auth.user_level, {})
-    period_hours = level_rule.get("period_hours", 720)
-
-    price_result = await db.execute(
-        select(ProjectPrice).where(
-            ProjectPrice.project_id == auth.game_project_id,
-            ProjectPrice.user_level == auth.user_level,
-        )
+    admin, agent = caller
+    return await preview_authorization_upgrade(
+        user_id=user_id,
+        auth_id=auth_id,
+        additional_devices=additional_devices,
+        mode=mode,
+        db=db,
+        admin=admin,
+        agent=agent,
     )
-    price = price_result.scalar_one_or_none()
-    unit_price = Decimal(str(price.points_per_device)) if price else Decimal("0")
-
-    if mode == "average":
-        periods = 1  # 整周期
-        consumed = float(unit_price * Decimal(str(additional_devices)))
-        avg_hours = int((old_devices * remaining + additional_devices * period_hours) / new_devices)
-        new_expiry = (now + timedelta(hours=avg_hours)).isoformat()
-    else:
-        periods = max(1, (remaining + period_hours - 1) // period_hours)
-        consumed = float(unit_price * Decimal(str(additional_devices)) * Decimal(str(periods)))
-        new_expiry = auth.valid_until.isoformat() if auth.valid_until else None
-
-    return {
-        "old_devices": old_devices,
-        "new_devices": new_devices,
-        "additional_devices": additional_devices,
-        "mode": mode,
-        "consumed_points": consumed,
-        "new_expiry": new_expiry,
-        "unit_price": float(unit_price),
-        "period_hours": period_hours,
-    }
 
 
 @router.post(
