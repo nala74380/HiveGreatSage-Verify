@@ -47,7 +47,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="上级代理">
             <span v-if="profile.parent_agent">
-              {{ profile.parent_agent.username }} (Lv.{{ profile.parent_agent.level }})
+              {{ profile.parent_agent.username }} (Lv.{{ profile.parent_agent.hierarchy_depth }})
             </span>
             <span v-else class="text-muted">顶级代理（管理员直属）</span>
           </el-descriptions-item>

@@ -63,6 +63,16 @@ export const userApi = {
     return http.delete(`/api/users/${userId}/authorizations/${authId}`)
   },
 
+  upgradeAuth(userId, authId, data) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/upgrade`, data)
+  },
+
+  upgradePreview(userId, authId, additionalDevices, mode) {
+    return http.get(`/api/users/${userId}/authorizations/${authId}/upgrade/preview`, {
+      params: { additional_devices: additionalDevices, mode },
+    })
+  },
+
   // ── 创建者详情 ────────────────────────────────────────────
   creatorAgentDetail(agentId, params = {}) {
     return http.get(`/api/users/creators/agents/${agentId}`, { params })

@@ -50,7 +50,9 @@ async def admin_dashboard(
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
     """平台统计概览（总用户数、总代理数、活跃游戏项目数）。"""
-    user_count = (await db.execute(select(func.count(User.id)))).scalar_one()
+    user_count = (await db.execute(
+        select(func.count(User.id)).where(User.is_deleted == False)  # noqa: E712
+    )).scalar_one()
     agent_count = (await db.execute(select(func.count(Agent.id)))).scalar_one()
     project_count = (await db.execute(
         select(func.count(GameProject.id)).where(GameProject.is_active == True)

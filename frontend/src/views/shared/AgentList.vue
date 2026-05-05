@@ -312,7 +312,7 @@
               <div class="drawer-sub">
                 ID: {{ editDrawer.agent.id }}
                 <span class="dot">·</span>
-                组织层级 Lv.{{ editDrawer.agent.level }}
+                组织层级 Lv.{{ editDrawer.agent.hierarchy_depth }}
                 <span class="dot">·</span>
                 {{ editDrawer.agent.status === 'active' ? '正常' : '已停用' }}
               </div>
@@ -343,7 +343,7 @@
                 </el-form-item>
 
                 <el-form-item label="组织层级">
-                  <el-tag type="info" effect="plain">Lv.{{ editDrawer.agent.level }}</el-tag>
+                  <el-tag type="info" effect="plain">Lv.{{ editDrawer.agent.hierarchy_depth }}</el-tag>
                   <div class="field-hint">组织层级由代理树决定，不在这里直接修改。</div>
                 </el-form-item>
 

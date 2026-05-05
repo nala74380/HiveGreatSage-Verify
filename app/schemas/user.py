@@ -69,6 +69,24 @@ class AuthorizationUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+# ── 升级请求/响应 ────────────────────────────────────────────
+
+class AuthorizationUpgradeRequest(BaseModel):
+    additional_devices: int = Field(..., gt=0, description="新增设备数")
+    mode: str = Field(default="append", pattern="^(append|average)$")
+
+    model_config = {"extra": "forbid"}
+
+
+class AuthorizationUpgradeResponse(BaseModel):
+    authorization: "AuthorizationResponse"
+    consumed_points: float
+    mode: str
+    old_devices: int
+    new_devices: int
+    new_expiry: datetime | None = None
+
+
 # ── 响应模型 ──────────────────────────────────────────────────
 
 class AuthorizationInfo(BaseModel):

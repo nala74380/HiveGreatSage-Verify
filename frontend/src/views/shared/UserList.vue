@@ -767,7 +767,7 @@
               <div class="creator-meta">
                 <div class="creator-name">
                   {{ creatorDialog.agent.username }}
-                  <el-tag type="warning" size="small" effect="light">Lv.{{ creatorDialog.agent.level }}</el-tag>
+                  <el-tag type="warning" size="small" effect="light">Lv.{{ creatorDialog.agent.hierarchy_depth }}</el-tag>
                   <el-tag
                     :type="creatorDialog.agent.status === 'active' ? 'success' : 'danger'"
                     size="small"

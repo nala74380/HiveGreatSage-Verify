@@ -34,7 +34,7 @@
               </el-tag>
 
               <el-tag type="info" effect="plain" size="small">
-                组织层级 Lv.{{ agent.level }}
+                组织层级 Lv.{{ agent.hierarchy_depth }}
               </el-tag>
 
               <el-tag v-if="profile" type="primary" effect="light" size="small">
@@ -239,7 +239,7 @@
               </el-table-column>
 
               <el-table-column label="组织层级" width="90">
-                <template #default="{ row }">Lv.{{ row.level }}</template>
+                <template #default="{ row }">Lv.{{ row.hierarchy_depth }}</template>
               </el-table-column>
 
               <el-table-column label="状态" width="90">

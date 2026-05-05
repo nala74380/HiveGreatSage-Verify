@@ -178,7 +178,7 @@ async def create_agent(
         username=body.username,
         password_hash=hash_password(body.password),
         parent_agent_id=body.parent_agent_id,
-        level=level,
+        hierarchy_depth=level,
         created_by_admin_id=admin.id,
         commission_rate=body.commission_rate,
         status="active",
@@ -222,7 +222,7 @@ async def list_agents(
         AgentResponse(
             id=a.id,
             username=a.username,
-            level=a.level,
+            hierarchy_depth=int(a.level),
             parent_agent_id=a.parent_agent_id,
             created_by_admin_id=a.created_by_admin_id,
             commission_rate=float(a.commission_rate) if a.commission_rate else None,
@@ -391,7 +391,7 @@ async def list_agents_in_scope(
         AgentResponse(
             id=a.id,
             username=a.username,
-            level=a.level,
+            hierarchy_depth=int(a.level),
             parent_agent_id=a.parent_agent_id,
             created_by_admin_id=a.created_by_admin_id,
             commission_rate=float(a.commission_rate) if a.commission_rate else None,
@@ -556,7 +556,7 @@ async def _fetch_subtree_flat(
         {
             "id": row["id"],
             "username": row["username"],
-            "level": row["level"],
+            "hierarchy_depth": row["level"],
             "parent_agent_id": row["parent_agent_id"],
             "status": row["status"],
             "commission_rate": float(row["commission_rate"]) if row["commission_rate"] else None,
@@ -620,7 +620,7 @@ def _build_tree(
         node_map[row["id"]] = AgentTreeNode(
             id=row["id"],
             username=row["username"],
-            level=row["level"],
+            hierarchy_depth=row["level"],
             parent_agent_id=row["parent_agent_id"],
             status=row["status"],
             commission_rate=row["commission_rate"],

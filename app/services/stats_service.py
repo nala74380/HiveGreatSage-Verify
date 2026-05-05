@@ -244,9 +244,14 @@ async def get_agent_project_summary(
 
 async def get_platform_summary(db: AsyncSession) -> PlatformSummaryResponse:
     """管理员全平台概览统计（首页 Dashboard）。"""
-    total_users   = (await db.execute(select(func.count(User.id)))).scalar_one()
+    total_users   = (await db.execute(
+        select(func.count(User.id)).where(User.is_deleted == False)  # noqa: E712
+    )).scalar_one()
     active_users  = (await db.execute(
-        select(func.count(User.id)).where(User.status == "active")
+        select(func.count(User.id)).where(
+            User.status == "active",
+            User.is_deleted == False,  # noqa: E712
+        )
     )).scalar_one()
     total_agents  = (await db.execute(select(func.count(Agent.id)))).scalar_one()
     total_proj    = (await db.execute(

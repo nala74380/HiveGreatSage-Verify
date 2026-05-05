@@ -108,9 +108,10 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right">
+          <el-table-column label="操作" width="160" fixed="right">
             <template #default="{ row }">
               <el-button text size="small" type="primary" @click="openEditAuthDialog(row)">编辑</el-button>
+              <el-button text size="small" type="success" :disabled="row.status !== 'active'" @click="openUpgradeDialog(row)">升级</el-button>
               <el-button text size="small" type="danger" :disabled="row.status !== 'active'" @click="revokeAuth(row)">停用</el-button>
             </template>
           </el-table-column>
@@ -298,6 +299,28 @@
         <el-button type="primary" :loading="authEditDialog.loading" @click="submitEditAuth">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 升级授权 -->
+    <el-dialog v-model="upgradeDialog.visible" title="升级设备数" width="400px" destroy-on-close>
+      <el-form label-width="100px" v-if="upgradeDialog.row">
+        <el-form-item label="当前项目">{{ upgradeDialog.row.game_project_name }}</el-form-item>
+        <el-form-item label="当前设备">{{ upgradeDialog.row.authorized_devices }} 台</el-form-item>
+        <el-form-item label="新增数量">
+          <el-input-number v-model="upgradeDialog.form.additional_devices" :min="1" style="width:140px" />
+          <div style="margin-top:4px">
+            <el-button size="small" @click="upgradeDialog.form.additional_devices=10">+10</el-button>
+            <el-button size="small" @click="upgradeDialog.form.additional_devices=20">+20</el-button>
+            <el-button size="small" @click="upgradeDialog.form.additional_devices=50">+50</el-button>
+            <el-button size="small" @click="upgradeDialog.form.additional_devices=100">+100</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="升级后">{{ (upgradeDialog.row.authorized_devices||0) + (upgradeDialog.form.additional_devices||0) }} 台</el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="upgradeDialog.visible=false">取消</el-button>
+        <el-button type="primary" :loading="upgradeDialog.loading" @click="submitUpgrade">确认</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -414,6 +437,34 @@ const openEditAuthDialog = (row) => {
   authEditDialog.form = { user_level: row.user_level, authorized_devices: row.authorized_devices, valid_until: row.valid_until }
   authEditDialog.visible = true
 }
+const upgradeDialog = reactive({
+  visible: false, loading: false, row: null,
+  form: { additional_devices: 10 },
+})
+
+const openUpgradeDialog = (row) => {
+  upgradeDialog.row = row
+  upgradeDialog.form = { additional_devices: 10 }
+  upgradeDialog.visible = true
+}
+
+const submitUpgrade = async () => {
+  if (!upgradeDialog.row || !upgradeDialog.form.additional_devices) return
+  upgradeDialog.loading = true
+  try {
+    await userApi.updateAuth(user.value.id, upgradeDialog.row.id, {
+      authorized_devices: (upgradeDialog.row.authorized_devices || 0) + upgradeDialog.form.additional_devices,
+    })
+    ElMessage.success(`已升级到 ${(upgradeDialog.row.authorized_devices || 0) + upgradeDialog.form.additional_devices} 台`)
+    upgradeDialog.visible = false
+    await loadUser()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.detail || '升级失败')
+  } finally {
+    upgradeDialog.loading = false
+  }
+}
+
 const submitEditAuth = async () => {
   if (!authEditDialog.row) return
   authEditDialog.loading = true

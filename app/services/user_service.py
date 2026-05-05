@@ -580,6 +580,111 @@ async def revoke_authorization(
     await db.flush()
 
 
+async def upgrade_authorization(
+    user_id: int,
+    auth_id: int,
+    body: "AuthorizationUpgradeRequest",
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> "AuthorizationUpgradeResponse":
+    """
+    升级授权设备数。
+
+    追加模式：新设备继承旧到期，按剩余时长比例扣点。
+    平均模式：旧剩余点数 + 新购点数 → 统一折算为新到期时间。
+    管理端操作不走扣点。
+    """
+    from app.schemas.user import AuthorizationUpgradeRequest, AuthorizationUpgradeResponse
+
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    project = await _get_project_or_404(auth.game_project_id, db)
+
+    old_devices = int(auth.authorized_devices or 0)
+    new_devices = old_devices + body.additional_devices
+    now = datetime.now(timezone.utc)
+
+    # 检查到期
+    if auth.valid_until and _ensure_aware(auth.valid_until) <= now:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="授权已到期，请重新授权")
+
+    consumed_points = 0.0
+
+    if body.mode == "average":
+        # 平均模式：新到期 = 加权平均
+        from app.services.accounting_service import BILLING_RULES, _ceil_hours
+        if auth.valid_until:
+            old_remaining = _ceil_hours(now, auth.valid_until)
+        else:
+            old_remaining = 0
+        period_hours = BILLING_RULES.get(auth.user_level, {}).get("period_hours", 720)
+        new_devices_hours = body.additional_devices * period_hours
+        avg_hours = int((old_devices * old_remaining + new_devices_hours) / new_devices)
+        auth.valid_until = now + timedelta(hours=avg_hours)
+
+        if agent is not None:
+            cost = await calculate_authorization_cost(
+                project_id=project.id, user_level=auth.user_level,
+                authorized_devices=body.additional_devices,
+                start_at=now, valid_until=auth.valid_until, db=db,
+            )
+            consumed_points = cost["total_cost"]
+            await consume_agent_authorization_points(
+                agent_id=agent.id, user_id=user.id, project_id=project.id,
+                authorization_id=auth.id, user_level=auth.user_level,
+                authorized_devices=body.additional_devices,
+                start_at=now, valid_until=auth.valid_until, db=db,
+            )
+    else:
+        # 追加模式：到期不变
+        if agent is not None and auth.valid_until:
+            # 按剩余比例计算
+            from app.services.accounting_service import _ceil_hours, BILLING_RULES
+            remaining = _ceil_hours(now, auth.valid_until)
+            level_rule = BILLING_RULES.get(auth.user_level, {})
+            period_hours = level_rule.get("period_hours", 720)
+            periods = max(1, (remaining + period_hours - 1) // period_hours)
+            # 取单价
+            from app.models.main.models import ProjectPrice
+            price_result = await db.execute(
+                select(ProjectPrice).where(
+                    ProjectPrice.project_id == project.id,
+                    ProjectPrice.user_level == auth.user_level,
+                )
+            )
+            price = price_result.scalar_one_or_none()
+            if not price:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"项目未设置 {auth.user_level} 级别定价")
+
+            from decimal import Decimal
+            unit_price = Decimal(str(price.points_per_device))
+            total_cost = unit_price * Decimal(str(body.additional_devices)) * Decimal(str(periods))
+            consumed_points = float(total_cost)
+
+            await consume_agent_authorization_points(
+                agent_id=agent.id, user_id=user.id, project_id=project.id,
+                authorization_id=auth.id, user_level=auth.user_level,
+                authorized_devices=body.additional_devices,
+                start_at=now, valid_until=auth.valid_until, db=db,
+            )
+
+    auth.authorized_devices = new_devices
+    await db.flush()
+
+    return AuthorizationUpgradeResponse(
+        authorization=_authorization_to_response(auth, project, consumed_points),
+        consumed_points=consumed_points,
+        mode=body.mode,
+        old_devices=old_devices,
+        new_devices=new_devices,
+        new_expiry=auth.valid_until,
+    )
+
+
 # ═══════════════════════════════════════════════════════════════
 # 创建者详情
 # ═══════════════════════════════════════════════════════════════
