@@ -1,12 +1,12 @@
 r"""
 文件位置: app/routers/device.py
 文件名称: device.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
+作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-04-22
 版本: V1.0.0
 功能说明:
     设备数据路由（薄层）：
-      POST /api/device/heartbeat  — 安卓脚本心跳上报（D5 限流：同 Token ≤4次/分钟）
+      POST /api/device/heartbeat  — 安卓脚本心跳上报（按 user + project + device 限流）
       GET  /api/device/list       — PC 中控拉取当前用户所有设备状态
       GET  /api/device/data       — PC 中控拉取单台设备运行数据详情
       POST /api/device/imsi       — 安卓脚本上传当前项目设备 IMSI
@@ -55,7 +55,7 @@ from app.services.device_service import (
 
 router = APIRouter()
 
-# D5 决策：心跳接口同 Token 每分钟 ≤ 4 次
+# 心跳接口按 user + project + device 每分钟 ≤ 4 次
 _HEARTBEAT_RATE_LIMIT = 4
 _HEARTBEAT_RATE_WINDOW = 60
 
@@ -71,13 +71,14 @@ async def heartbeat(
     """
     安卓脚本心跳上报接口。
     写入 Redis 缓冲层后立即返回，不等待落库（Celery 异步处理）。
-    D5 限流：同 user_id 每分钟 ≤ 4 次（对应 30 秒上报间隔）。
+    限流粒度：同 user + project + device 每分钟 ≤ 4 次。
+    一个账号可绑定多台设备，不能再按 user_id 单独限流。
     """
-    # D5 限流：按 user_id 计数，防止异常频率上报
+    heartbeat_identifier = f"{current_user.id}:{game_project_code}:{body.device_fingerprint}"
     allowed, count = await incr_rate_limit(
         redis,
         endpoint_tag="heartbeat",
-        identifier=str(current_user.id),
+        identifier=heartbeat_identifier,
         limit=_HEARTBEAT_RATE_LIMIT,
         window_seconds=_HEARTBEAT_RATE_WINDOW,
     )
