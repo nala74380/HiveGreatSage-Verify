@@ -3,11 +3,14 @@ r"""
 文件名称: agent_profile.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-04-29
-版本: V1.1.0
+版本: V1.2.0
 功能说明:
     代理业务等级、代理业务画像、代理密码重置相关 Schema。
 
 当前业务口径:
+    - 代理组织层级统一使用 hierarchy_depth。
+    - 代理业务等级统一使用 tier_level。
+    - 不兼容旧字段 hierarchy_level / level。
     - 代理等级策略只表达授信、下级代理、自动开通和审核优先级。
     - 用户数量仅作为统计展示。
     - 代理业务能力由授信、下级代理能力、自动开通能力、风险状态等字段表达。
@@ -68,7 +71,7 @@ class AgentBusinessProfileResponse(BaseModel):
     agent_id: int
     username: str
 
-    hierarchy_level: int = Field(description="代理组织层级 / 代理树深度")
+    hierarchy_depth: int = Field(description="代理组织层级 / 代理树深度，不是业务等级")
     tier_level: int = Field(description="代理业务等级 Lv.1 - Lv.4")
     tier_name: str
 
@@ -87,6 +90,7 @@ class AgentBusinessProfileResponse(BaseModel):
 
     can_auto_open_project: bool
     auto_open_project_limit: int
+    review_priority: int
 
     level_policy: AgentLevelPolicyAdminResponse | None = None
 
