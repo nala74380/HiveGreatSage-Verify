@@ -2,8 +2,8 @@ r"""
 文件位置: app/routers/accounting.py
 文件名称: accounting.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-30
-版本: V1.1.0
+日期/时间: 2026-05-07
+版本: V1.2.0
 功能说明:
     账务中心正式路由。
 
@@ -16,14 +16,17 @@ r"""
     - 代理钱包
     - 充值
     - 授信
-    - 冻结授信
-    - 解冻授信
+    - 冻结 / 解冻
     - 授权扣点快照
     - 删除返点记录
     - 初始化开发期账务基线
     - 运行对账
     - 对账批次列表
     - 对账批次详情
+
+改进历史:
+    V1.2.0 (2026-05-07): 充值、授信、冻结、解冻接入 audit_log。
+    V1.1.0 (2026-04-30): 账务中心正式路由。
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -54,6 +57,7 @@ from app.services.accounting_service import (
     recharge_agent,
     unfreeze_credit,
 )
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
 
@@ -61,6 +65,28 @@ router = APIRouter()
 class AccountingAmountRequest(BaseModel):
     amount: float = Field(..., gt=0, description="点数金额，必须大于 0")
     description: str | None = Field(default=None, description="备注 / 原因")
+
+
+def _audit_wallet_metadata(
+    *,
+    agent_id: int,
+    amount: float,
+    description: str | None,
+    wallet: dict,
+) -> dict:
+    """生成账务写操作审计元数据。"""
+    return {
+        "agent_id": agent_id,
+        "amount": amount,
+        "description": description,
+        "charged_balance": wallet.get("charged_balance"),
+        "credit_balance": wallet.get("credit_balance"),
+        "frozen_credit": wallet.get("frozen_credit"),
+        "available_credit": wallet.get("available_credit"),
+        "available_total": wallet.get("available_total"),
+        "wallet_status": wallet.get("status"),
+        "risk_status": wallet.get("risk_status"),
+    }
 
 
 @router.get("/overview", summary="账务中心总览")
@@ -150,13 +176,29 @@ async def recharge(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    return await recharge_agent(
+    result = await recharge_agent(
         agent_id=agent_id,
         amount=body.amount,
         description=body.description,
         admin_id=current_admin.id,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="accounting.recharge",
+        target_type="accounting_wallet",
+        target_id=agent_id,
+        summary=f"给代理 {agent_id} 充值 {body.amount} 点",
+        metadata=_audit_wallet_metadata(
+            agent_id=agent_id,
+            amount=body.amount,
+            description=body.description,
+            wallet=result,
+        ),
+    )
+    return result
 
 
 @router.post("/agents/{agent_id}/credit", summary="给代理授信")
@@ -166,13 +208,29 @@ async def credit(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    return await credit_agent(
+    result = await credit_agent(
         agent_id=agent_id,
         amount=body.amount,
         description=body.description,
         admin_id=current_admin.id,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="accounting.credit",
+        target_type="accounting_wallet",
+        target_id=agent_id,
+        summary=f"给代理 {agent_id} 授信 {body.amount} 点",
+        metadata=_audit_wallet_metadata(
+            agent_id=agent_id,
+            amount=body.amount,
+            description=body.description,
+            wallet=result,
+        ),
+    )
+    return result
 
 
 @router.post("/agents/{agent_id}/freeze", summary="冻结代理授信")
@@ -182,13 +240,29 @@ async def freeze(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    return await freeze_credit(
+    result = await freeze_credit(
         agent_id=agent_id,
         amount=body.amount,
         description=body.description,
         admin_id=current_admin.id,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="accounting.freeze",
+        target_type="accounting_wallet",
+        target_id=agent_id,
+        summary=f"冻结代理 {agent_id} 授信 {body.amount} 点",
+        metadata=_audit_wallet_metadata(
+            agent_id=agent_id,
+            amount=body.amount,
+            description=body.description,
+            wallet=result,
+        ),
+    )
+    return result
 
 
 @router.post("/agents/{agent_id}/unfreeze", summary="解冻代理授信")
@@ -198,13 +272,29 @@ async def unfreeze(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    return await unfreeze_credit(
+    result = await unfreeze_credit(
         agent_id=agent_id,
         amount=body.amount,
         description=body.description,
         admin_id=current_admin.id,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="accounting.unfreeze",
+        target_type="accounting_wallet",
+        target_id=agent_id,
+        summary=f"解冻代理 {agent_id} 授信 {body.amount} 点",
+        metadata=_audit_wallet_metadata(
+            agent_id=agent_id,
+            amount=body.amount,
+            description=body.description,
+            wallet=result,
+        ),
+    )
+    return result
 
 
 @router.get("/charges", summary="授权扣点快照")
