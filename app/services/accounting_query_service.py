@@ -2,8 +2,8 @@ r"""
 文件位置: app/services/accounting_query_service.py
 文件名称: accounting_query_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-30
-版本: V1.0.0
+日期/时间: 2026-05-07
+版本: V1.1.0
 功能说明:
     账务中心读模型 / 查询服务。
 
@@ -16,9 +16,10 @@ r"""
         负责账务中心页面需要的读模型：
         账务总览、代理钱包列表、扣点快照、返点记录。
 
-说明:
-    当前阶段以开发期直接重构为目标。
-    旧 balance 接口暂时保留兼容，新前端应逐步切换到 /admin/api/accounting。
+当前口径:
+    - 开发期不兼容旧 balance 字段。
+    - 钱包余额字段统一使用 charged_balance / credit_balance。
+    - 项目编码对外统一使用 game_project_code。
 """
 
 from datetime import datetime, timezone
@@ -53,35 +54,26 @@ def _wallet_row(wallet: AccountingWallet, agent: Agent | None = None) -> dict:
         "wallet_id": wallet.id,
         "agent_id": wallet.agent_id,
         "agent_username": agent.username if agent else None,
-        "agent_level": agent.hierarchy_depth if agent else None,
+        "agent_hierarchy_depth": agent.hierarchy_depth if agent else None,
         "agent_status": agent.status if agent else None,
-
         "charged_balance": _money(charged),
         "credit_balance": _money(credit),
         "frozen_credit": _money(frozen),
         "available_credit": _money(available_credit),
         "available_total": _money(available_total),
-
         "total_recharged": _money(wallet.total_recharged),
         "total_credited": _money(wallet.total_credited),
         "total_consumed": _money(wallet.total_consumed),
         "total_refunded": _money(wallet.total_refunded),
         "total_adjusted": _money(wallet.total_adjusted),
-
         "last_recharge_at": wallet.last_recharge_at,
         "last_credit_at": wallet.last_credit_at,
         "last_consume_at": wallet.last_consume_at,
         "last_refund_at": wallet.last_refund_at,
-
         "status": wallet.status,
         "risk_status": wallet.risk_status,
         "created_at": wallet.created_at,
         "updated_at": wallet.updated_at,
-
-        # 旧字段兼容
-        "charged_points": _money(charged),
-        "credit_points": _money(credit),
-        "recharge_balance": _money(charged),
     }
 
 
@@ -156,18 +148,14 @@ async def get_accounting_overview(db: AsyncSession) -> dict:
 
     return {
         "wallet_count": int(wallet_count or 0),
-
         "total_charged_balance": _money(total_charged_dec),
         "total_credit_balance": _money(total_credit_dec),
         "total_frozen_credit": _money(total_frozen_dec),
         "total_available_credit": _money(total_available_credit),
         "total_available_balance": _money(total_available),
-
         "total_consumed": _money(total_consumed),
         "total_refunded": _money(total_refunded),
-
         "refundable_snapshot_count": int(refundable_snapshot_count or 0),
-
         **today_summary,
     }
 
@@ -302,44 +290,34 @@ async def list_authorization_charge_snapshots(
             "charge_snapshot_id": snapshot.id,
             "document_id": snapshot.document_id,
             "authorization_id": snapshot.authorization_id,
-
             "agent_id": snapshot.agent_id,
             "agent_username": agent.username,
-
             "user_id": snapshot.user_id,
             "user_username": user.username,
-
             "project_id": snapshot.project_id,
             "project_name": project.display_name,
-            "project_code": project.code_name,
-
+            "game_project_code": project.code_name,
             "user_level": snapshot.user_level,
             "authorized_devices": snapshot.authorized_devices,
-
             "billing_period": snapshot.billing_period,
             "billing_period_hours": snapshot.billing_period_hours,
             "period_count": snapshot.period_count,
             "paid_hours": snapshot.paid_hours,
-
             "unit_price": _money(snapshot.unit_price),
             "original_cost": _money(snapshot.original_cost),
             "charged_consumed": _money(snapshot.charged_consumed),
             "credit_consumed": _money(snapshot.credit_consumed),
-
             "valid_from": snapshot.valid_from,
             "valid_until": snapshot.valid_until,
-
             "refund_status": snapshot.refund_status,
             "refunded_points": _money(snapshot.refunded_points),
             "refunded_charged": _money(snapshot.refunded_charged),
             "refunded_credit": _money(snapshot.refunded_credit),
             "refunded_at": snapshot.refunded_at,
-
             "last_refund_paid_hours": snapshot.last_refund_paid_hours,
             "last_refund_used_hours": snapshot.last_refund_used_hours,
             "last_refund_used_cost": _money(snapshot.last_refund_used_cost),
             "last_refund_points": _money(snapshot.last_refund_points),
-
             "created_at": snapshot.created_at,
         })
 
@@ -403,34 +381,26 @@ async def list_refund_records(
             "id": snapshot.id,
             "charge_snapshot_id": snapshot.id,
             "authorization_id": snapshot.authorization_id,
-
             "agent_id": snapshot.agent_id,
             "agent_username": agent.username,
-
             "user_id": snapshot.user_id,
             "user_username": user.username,
-
             "project_id": snapshot.project_id,
             "project_name": project.display_name,
-            "project_code": project.code_name,
-
+            "game_project_code": project.code_name,
             "user_level": snapshot.user_level,
             "authorized_devices": snapshot.authorized_devices,
-
             "original_cost": _money(snapshot.original_cost),
             "paid_hours": snapshot.paid_hours,
-
             "refunded_points": _money(snapshot.refunded_points),
             "refunded_charged": _money(snapshot.refunded_charged),
             "refunded_credit": _money(snapshot.refunded_credit),
             "refund_status": snapshot.refund_status,
             "refunded_at": snapshot.refunded_at,
-
             "last_refund_paid_hours": snapshot.last_refund_paid_hours,
             "last_refund_used_hours": snapshot.last_refund_used_hours,
             "last_refund_used_cost": _money(snapshot.last_refund_used_cost),
             "last_refund_points": _money(snapshot.last_refund_points),
-
             "created_at": snapshot.created_at,
         })
 
