@@ -3,7 +3,7 @@ r"""
 文件名称: accounting.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-07
-版本: V1.2.0
+版本: V1.3.0
 功能说明:
     账务中心正式路由。
 
@@ -25,6 +25,7 @@ r"""
     - 对账批次详情
 
 改进历史:
+    V1.3.0 (2026-05-07): 对账初始化、运行对账接入 audit_log。
     V1.2.0 (2026-05-07): 充值、授信、冻结、解冻接入 audit_log。
     V1.1.0 (2026-04-30): 账务中心正式路由。
 """
@@ -86,6 +87,19 @@ def _audit_wallet_metadata(
         "available_total": wallet.get("available_total"),
         "wallet_status": wallet.get("status"),
         "risk_status": wallet.get("risk_status"),
+    }
+
+
+def _audit_reconciliation_metadata(
+    *,
+    agent_id: int | None,
+    result: dict,
+) -> dict:
+    """生成对账操作审计元数据。"""
+    return {
+        "agent_id": agent_id,
+        "scope": "agent" if agent_id is not None else "all",
+        "result": result,
     }
 
 
@@ -345,11 +359,26 @@ async def reconciliation_init_baseline(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    return await initialize_reconciliation_baseline(
+    result = await initialize_reconciliation_baseline(
         db=db,
         admin_id=current_admin.id,
         agent_id=agent_id,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="accounting.reconciliation.init_baseline",
+        target_type="accounting_reconciliation",
+        target_id=agent_id if agent_id is not None else "all",
+        summary=(
+            f"初始化代理 {agent_id} 账务基线"
+            if agent_id is not None
+            else "初始化全部代理账务基线"
+        ),
+        metadata=_audit_reconciliation_metadata(agent_id=agent_id, result=result),
+    )
+    return result
 
 
 @router.post("/reconciliation/run", summary="运行账务对账")
@@ -358,11 +387,26 @@ async def reconciliation_run(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    return await run_reconciliation(
+    result = await run_reconciliation(
         db=db,
         admin_id=current_admin.id,
         agent_id=agent_id,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="accounting.reconciliation.run",
+        target_type="accounting_reconciliation",
+        target_id=agent_id if agent_id is not None else "all",
+        summary=(
+            f"运行代理 {agent_id} 账务对账"
+            if agent_id is not None
+            else "运行全部代理账务对账"
+        ),
+        metadata=_audit_reconciliation_metadata(agent_id=agent_id, result=result),
+    )
+    return result
 
 
 @router.get("/reconciliation/runs", summary="对账批次列表")
