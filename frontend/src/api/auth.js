@@ -2,19 +2,17 @@
  * 文件位置: src/api/auth.js
  * 功能说明: 认证相关接口
  *
- * 后端路由对照（严格对齐 app/routers/auth.py + app/routers/admin.py + app/routers/agents.py）：
+ * 后端路由对照：
  *
  *   管理员登录  POST /admin/api/auth/login
- *     Request:  AdminLoginRequest  { username, password }
- *     Response: AdminLoginResponse { access_token, token_type, expires_in, admin_id, username }
- *
  *   代理登录    POST /api/agents/auth/login
- *     Request:  AgentLoginRequest  { username, password }
- *     Response: AgentLoginResponse { access_token, token_type, expires_in, agent_id, username, level }
  *
- *   登出        POST /api/auth/logout   （需 Bearer + refresh_token）
- *     注意：管理后台 Admin/Agent Token 无 refresh_token，此接口暂不适用。
- *     登出直接清除本地存储即可。
+ *   管理员登出  POST /admin/api/session/logout
+ *   代理登出    POST /api/agents/session/logout
+ *
+ * 说明：
+ *   Admin / Agent 后台 Token 无 refresh_token。
+ *   登出时后端会将当前 access_token 的 jti 加入 Redis 黑名单。
  */
 
 import http from './http'
@@ -35,5 +33,15 @@ export const authApi = {
    */
   agentLogin(data) {
     return http.post('/api/agents/auth/login', data, { _skipAuthRedirect: true })
+  },
+
+  /** 管理员退出登录：服务端吊销当前 Admin Token。 */
+  adminLogout() {
+    return http.post('/admin/api/session/logout')
+  },
+
+  /** 代理退出登录：服务端吊销当前 Agent Token。 */
+  agentLogout() {
+    return http.post('/api/agents/session/logout')
   },
 }
