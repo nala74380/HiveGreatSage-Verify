@@ -33,6 +33,10 @@ export const agentApi = {
     return this.update(agentId, { status: 'suspended' })
   },
 
+  delete(agentId) {
+    return http.delete(`/api/agents/${agentId}`)
+  },
+
   me() {
     return http.get('/api/agents/me')
   },

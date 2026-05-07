@@ -3,7 +3,7 @@ r"""
 文件名称: agents.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-08
-版本: V1.6.0
+版本: V1.6.1
 功能说明:
     代理管理路由（薄层优先，历史接口逐步收敛）。
 
@@ -15,6 +15,7 @@ r"""
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
     - Agent 登录成功 / 失败写入 audit_log，不记录密码或 Token。
     - Agent Token 可访问 /scope/* 范围接口，只能查看/操作自己代理子树范围内的代理。
+    - 开发期支持管理员硬删除代理，但必须先通过外键与账务事实阻断检查。
 
 路由注册顺序:
     静态路径和 /scope/* 必须在 /{agent_id} 之前注册。
@@ -29,6 +30,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_admin, get_current_agent
 from app.core.utils import get_agent_scope_ids
 from app.database import get_main_db
+from app.models.main.accounting import (
+    AccountingAdjustmentRequest,
+    AccountingDocument,
+    AccountingLedgerEntry,
+    AccountingReconciliationItem,
+    AgentMonthlyBill,
+    AuthorizationChargeSnapshot,
+)
 from app.models.main.agent_profile import AgentBusinessProfile
 from app.models.main.models import Admin, Agent, AgentProjectAuth, GameProject, User
 from app.models.main.project_access import AgentLevelPolicy
@@ -74,6 +83,13 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+async def _count_rows(db: AsyncSession, model, *where_clauses) -> int:
+    result = await db.execute(
+        select(func.count()).select_from(model).where(*where_clauses)
+    )
+    return int(result.scalar_one() or 0)
+
+
 async def _assert_agent_in_scope(
     *,
     db: AsyncSession,
@@ -94,6 +110,33 @@ async def _assert_agent_in_scope(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="无权访问该代理",
         )
+
+
+async def _get_agent_delete_blockers(
+    *,
+    db: AsyncSession,
+    agent_id: int,
+) -> dict[str, int]:
+    """
+    获取代理硬删除阻断项。
+
+    硬删除边界:
+      - 有下级代理时不能删除，否则会破坏代理树。
+      - 有直属用户时不能删除，否则会破坏用户创建关系。
+      - 有不可变账务事实时不能删除，否则会破坏账务审计。
+      - 纯配置类关系如项目授权、业务画像、空钱包允许随 agent 删除级联清理。
+    """
+    blockers = {
+        "child_agents": await _count_rows(db, Agent, Agent.parent_agent_id == agent_id),
+        "direct_users": await _count_rows(db, User, User.created_by_agent_id == agent_id),
+        "accounting_documents": await _count_rows(db, AccountingDocument, AccountingDocument.agent_id == agent_id),
+        "ledger_entries": await _count_rows(db, AccountingLedgerEntry, AccountingLedgerEntry.agent_id == agent_id),
+        "authorization_charge_snapshots": await _count_rows(db, AuthorizationChargeSnapshot, AuthorizationChargeSnapshot.agent_id == agent_id),
+        "reconciliation_items": await _count_rows(db, AccountingReconciliationItem, AccountingReconciliationItem.agent_id == agent_id),
+        "adjustment_requests": await _count_rows(db, AccountingAdjustmentRequest, AccountingAdjustmentRequest.agent_id == agent_id),
+        "monthly_bills": await _count_rows(db, AgentMonthlyBill, AgentMonthlyBill.agent_id == agent_id),
+    }
+    return {key: value for key, value in blockers.items() if value > 0}
 
 
 # ── 登录 ──────────────────────────────────────────────────────
@@ -581,3 +624,62 @@ async def update_agent_endpoint(
         },
     )
     return result
+
+
+@router.delete("/{agent_id}", summary="管理员硬删除代理")
+async def delete_agent_endpoint(
+    agent_id: int,
+    current_admin: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    """
+    管理员硬删除代理。
+
+    说明:
+      - 本接口执行数据库硬删除，不做软删除。
+      - 为避免破坏代理树、用户归属和账务事实，只允许删除“无业务事实”的代理。
+      - 可级联清理的配置类记录包括 agent_project_auth、agent_business_profile、空钱包等。
+    """
+    agent = await db.get(Agent, agent_id)
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="代理不存在",
+        )
+
+    blockers = await _get_agent_delete_blockers(db=db, agent_id=agent_id)
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "该代理存在业务关联，不能硬删除。请先迁移或清理关联数据。",
+                "blockers": blockers,
+            },
+        )
+
+    metadata = {
+        "agent_id": agent.id,
+        "username": agent.username,
+        "parent_agent_id": agent.parent_agent_id,
+        "hierarchy_depth": agent.hierarchy_depth,
+        "status": agent.status,
+    }
+
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="agent.hard_delete",
+        target_type="agent",
+        target_id=agent.id,
+        summary=f"硬删除代理 {agent.username}",
+        metadata=metadata,
+    )
+    await db.delete(agent)
+    await db.flush()
+
+    return {
+        "deleted": True,
+        "agent_id": agent_id,
+        "username": metadata["username"],
+    }
