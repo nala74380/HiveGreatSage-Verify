@@ -2,14 +2,10 @@ r"""
 文件位置: app/routers/agents.py
 文件名称: agents.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-05-07
-版本: V1.5.0
+日期/时间: 2026-05-08
+版本: V1.6.0
 功能说明:
     代理管理路由（薄层优先，历史接口逐步收敛）。
-
-    ⚠️ 路由注册顺序规则：
-      静态路径必须在参数化路径之前注册，否则 FastAPI 会把静态段当作参数解析。
-      例如 /tree 必须在 /{agent_id} 之前，否则 FastAPI 会尝试把 "tree" 解析为 int。
 
 当前业务口径:
     - hierarchy_depth 表示代理组织层级 / 代理树深度。
@@ -18,10 +14,10 @@ r"""
     - 项目编码对外统一使用 game_project_code。
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
     - Agent 登录成功 / 失败写入 audit_log，不记录密码或 Token。
+    - Agent Token 可访问 /scope/* 范围接口，只能查看/操作自己代理子树范围内的代理。
 
-改进历史:
-    V1.5.0 (2026-05-07): Agent 登录成功 / 失败接入 audit_log。
-    V1.4.0 (2026-05-07): 代理创建、代理更新接入 audit_log。
+路由注册顺序:
+    静态路径和 /scope/* 必须在 /{agent_id} 之前注册。
 """
 
 from datetime import datetime, timezone
@@ -31,6 +27,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin, get_current_agent
+from app.core.utils import get_agent_scope_ids
 from app.database import get_main_db
 from app.models.main.agent_profile import AgentBusinessProfile
 from app.models.main.models import Admin, Agent, AgentProjectAuth, GameProject, User
@@ -75,6 +72,28 @@ def _aware(value: datetime | None) -> datetime | None:
 
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+async def _assert_agent_in_scope(
+    *,
+    db: AsyncSession,
+    current_agent: Agent,
+    target_agent_id: int,
+    allow_self: bool = True,
+) -> None:
+    """校验 target_agent_id 是否在当前代理权限子树内。"""
+    if not allow_self and target_agent_id == current_agent.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="代理不能在此入口操作自己的代理账号",
+        )
+
+    scope_ids = await get_agent_scope_ids(db, current_agent.id)
+    if target_agent_id not in scope_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权访问该代理",
+        )
 
 
 # ── 登录 ──────────────────────────────────────────────────────
@@ -140,12 +159,7 @@ async def get_my_profile(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentMeResponse:
-    """
-    代理获取自己的详细个人信息（Agent Token）。
-
-    返回当前代理基础信息、直属用户统计、已授权项目、上级代理，以及业务能力快照。
-    对外字段不再返回旧 hierarchy_level / level / code_name。
-    """
+    """代理获取自己的详细个人信息（Agent Token）。"""
     users_total = (
         await db.execute(
             select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id)
@@ -191,8 +205,6 @@ async def get_my_profile(
     policy = policy_result.scalar_one_or_none()
 
     if policy is None:
-        # 开发期兜底：避免等级策略缺失导致代理主页 500。
-        # 长期应由迁移或初始化脚本保证 AgentLevelPolicy 存在。
         policy = AgentLevelPolicy(
             level=profile.tier_level,
             level_name=f"Lv.{profile.tier_level}",
@@ -317,7 +329,6 @@ async def my_balance(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    """代理查询自己点数余额（Agent Token）。"""
     return await get_agent_balance(current_agent.id, db)
 
 
@@ -331,7 +342,6 @@ async def my_transactions(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    """代理查询自己的点数流水记录（Agent Token）。"""
     return await get_balance_transactions(
         agent_id=current_agent.id,
         db=db,
@@ -350,13 +360,7 @@ async def get_my_authorized_projects(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> list[dict]:
-    """
-    代理获取自己已授权的项目列表（Agent Token）。
-
-    用于前端在创建用户 / 用户项目授权时过滤可选项目。
-    只返回 status=active 且未过期的项目授权。
-    ⚠️ 必须在 /{agent_id} 之前注册。
-    """
+    """代理获取自己已授权的项目列表（Agent Token）。"""
     result = await db.execute(
         select(AgentProjectAuth, GameProject)
         .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
@@ -400,10 +404,7 @@ async def list_agents_in_scope_endpoint(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentFlatListResponse:
-    """
-    代理查看自己权限范围内的所有下级代理（Agent Token）。
-    ⚠️ 此端点必须注册在 /{agent_id} 之前。
-    """
+    """代理查看自己权限范围内的所有下级代理（Agent Token）。"""
     return await list_agents_in_scope(
         scope_agent_id=current_agent.id,
         db=db,
@@ -411,6 +412,62 @@ async def list_agents_in_scope_endpoint(
         page_size=page_size,
         status_filter=status_filter,
     )
+
+
+@router.get("/scope/{agent_id}", response_model=AgentResponse)
+async def get_agent_in_scope_endpoint(
+    agent_id: int,
+    current_agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_main_db),
+) -> AgentResponse:
+    """代理查看自己权限范围内的代理详情。"""
+    await _assert_agent_in_scope(db=db, current_agent=current_agent, target_agent_id=agent_id)
+    return await get_agent(agent_id=agent_id, db=db)
+
+
+@router.get("/scope/{agent_id}/subtree", response_model=AgentSubtreeResponse)
+async def get_agent_subtree_in_scope_endpoint(
+    agent_id: int,
+    current_agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_main_db),
+) -> AgentSubtreeResponse:
+    """代理查看自己权限范围内某个代理的子树。"""
+    await _assert_agent_in_scope(db=db, current_agent=current_agent, target_agent_id=agent_id)
+    return await get_agent_subtree(root_agent_id=agent_id, db=db)
+
+
+@router.patch("/scope/{agent_id}", response_model=AgentResponse)
+async def update_agent_in_scope_endpoint(
+    agent_id: int,
+    body: AgentUpdateRequest,
+    current_agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_main_db),
+) -> AgentResponse:
+    """代理更新自己权限范围内的下级代理基础信息。"""
+    await _assert_agent_in_scope(
+        db=db,
+        current_agent=current_agent,
+        target_agent_id=agent_id,
+        allow_self=False,
+    )
+    result = await update_agent(agent_id=agent_id, body=body, db=db)
+    await create_audit_log(
+        db=db,
+        actor_type="agent",
+        actor_id=current_agent.id,
+        action="agent.scope.update",
+        target_type="agent",
+        target_id=result.id,
+        summary=f"代理 {current_agent.username} 更新下级代理 {result.username}",
+        metadata={
+            "operator_agent_id": current_agent.id,
+            "target_agent_id": result.id,
+            "changed_fields": body.model_dump(exclude_unset=True),
+            "status": result.status,
+            "commission_rate": result.commission_rate,
+        },
+    )
+    return result
 
 
 # ── 创建 / 列表（Admin）──────────────────────────────────────
@@ -421,7 +478,6 @@ async def create_agent_endpoint(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentResponse:
-    """创建代理（需管理员身份）。"""
     result = await create_agent(body=body, admin=current_admin, db=db)
     await create_audit_log(
         db=db,
@@ -452,7 +508,6 @@ async def list_agents_endpoint(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentListResponse:
-    """查询全部代理列表（管理员可见全部，支持状态过滤，分页）。"""
     return await list_agents(
         db=db,
         page=page,
@@ -468,10 +523,6 @@ async def get_full_agent_tree(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> list[AgentSubtreeResponse]:
-    """
-    查询全部代理树（Admin Token）。
-    ⚠️ 此端点必须注册在 /{agent_id} 之前。
-    """
     result = await db.execute(
         select(Agent).where(Agent.parent_agent_id.is_(None)).order_by(Agent.id)
     )
@@ -493,7 +544,6 @@ async def get_agent_endpoint(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentResponse:
-    """查询指定代理详情（含直属用户数统计）。"""
     return await get_agent(agent_id=agent_id, db=db)
 
 
@@ -503,7 +553,6 @@ async def get_agent_subtree_endpoint(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentSubtreeResponse:
-    """查询指定代理及其所有下级代理的树形结构（WITH RECURSIVE）。"""
     return await get_agent_subtree(root_agent_id=agent_id, db=db)
 
 
@@ -514,7 +563,6 @@ async def update_agent_endpoint(
     current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentResponse:
-    """更新代理状态或佣金比例（需管理员身份）。"""
     result = await update_agent(agent_id=agent_id, body=body, db=db)
     await create_audit_log(
         db=db,
