@@ -2,8 +2,8 @@ r"""
 文件位置: app/models/main/models.py
 文件名称: models.py
 作者: HiveGreatSage Dev
-日期/时间: 2026-04-29
-版本: v2.0.0
+日期/时间: 2026-05-07
+版本: v2.1.0
 功能说明:
     hive_platform 主库的全部 ORM 模型。
 
@@ -25,6 +25,10 @@ r"""
       - BalanceTransaction → AccountingLedgerEntry
 
 重要模型调整:
+    v2.1.0 (2026-05-07):
+      - VersionRecord 新增 released_by_admin_id / original_filename / file_size / request_id。
+      - 热更新发布链路补充发布审计字段。
+
     v2.0.0 (2026-05-03):
       - 删除 AuthorizationCharge / AgentBalance / BalanceTransaction ORM 模型（D018）。
       - 账务模型迁移至 app/models/main/accounting.py。
@@ -383,10 +387,6 @@ class AgentProjectAuth(Base):
         server_default=func.now(),
     )
 
-    # 项目授权来源:
-    # admin_manual      = 管理员手动开通
-    # request_approved = 管理员批准代理申请
-    # auto_approved    = 系统自动开通
     source: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -585,6 +585,7 @@ class VersionRecord(Base):
             "client_type",
             "is_active",
         ),
+        Index("idx_version_record_released_by_admin", "released_by_admin_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -614,9 +615,35 @@ class VersionRecord(Base):
         server_default=func.now(),
     )
 
+    released_by_admin_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("admin.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="发布该热更新包的管理员 ID",
+    )
+    original_filename: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="上传原始文件名，仅保留安全文件名，不含路径",
+    )
+    file_size: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment="上传文件大小，单位 byte",
+    )
+    request_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="发布请求 ID，待 RequestIdMiddleware 落地后写入",
+    )
+
     project: Mapped["GameProject"] = relationship(
         "GameProject",
         back_populates="version_records",
+    )
+    released_by_admin: Mapped["Admin | None"] = relationship(
+        "Admin",
+        foreign_keys=[released_by_admin_id],
     )
 
     def __repr__(self) -> str:
