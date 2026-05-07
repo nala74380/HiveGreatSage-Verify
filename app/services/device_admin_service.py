@@ -3,7 +3,7 @@ r"""
 名称: 管理后台设备监控服务层
 作者: 蜂巢·大圣 (Hive-GreatSage)
 时间: 2026-05-07
-版本: V1.1.0
+版本: V1.2.0
 功能说明:
     T026 — 管理后台设备监控，支持 Admin / Agent 两种权限视角。
 
@@ -24,11 +24,12 @@ r"""
       3. 合并后用主库 user 表关联用户名
 
 敏感字段口径:
-    - device_id 当前暂保留原文以兼容现有前端。
-    - 新增 device_id_masked / device_id_hash 供前端迁移。
-    - 后续前端完成迁移后，可移除 device_id 原文。
+    - 后台项目维度设备列表不返回 device_id 原文。
+    - 只返回 device_id_masked / device_id_hash 供展示与排障关联。
+    - 原文仅在服务内部用于 Redis key、游戏库查询和业务匹配。
 
 改进历史:
+    V1.2.0 - 项目维度设备列表移除 device_id 原文输出
     V1.1.0 - 项目维度设备列表增加 device_id masked/hash 字段
     V1.0.0 - 初始版本（T026）
 """
@@ -137,9 +138,9 @@ async def get_agent_device_list(
 
 
 def _device_identity_fields(device_id: str | None) -> dict:
-    """生成设备标识的兼容原文 + 脱敏字段。"""
+    """生成设备标识的脱敏字段，不返回原文。"""
     return {
-        "device_id": device_id,
+        "device_id": None,
         "device_id_masked": mask_device_fingerprint(device_id),
         "device_id_hash": hash_sensitive_value(device_id),
     }
