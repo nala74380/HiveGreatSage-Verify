@@ -3,7 +3,7 @@ r"""
 文件名称: 0018_merge_user_legacy_audit_heads.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-07
-版本: V1.0.0
+版本: V1.0.1
 功能说明:
     合并 Alembic 迁移分叉。
 
@@ -19,12 +19,15 @@ r"""
 说明:
     本迁移不修改任何表结构，只负责把两个 head 合并为单一 head，
     使 `alembic upgrade head` 恢复为确定路径。
+
+注意:
+    alembic_version.version_num 默认是 VARCHAR(32)，revision ID 必须控制长度。
 """
 
 from alembic import op
 
 
-revision = "0018_merge_user_legacy_audit_heads"
+revision = "0018_merge_heads"
 down_revision = ("0016_user_legacy_fields", "0017_audit_log")
 branch_labels = None
 depends_on = None
