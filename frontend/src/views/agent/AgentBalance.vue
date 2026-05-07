@@ -23,7 +23,7 @@
       <el-col :span="6">
         <div class="stat-card main">
           <div class="stat-label">可用充值点数</div>
-          <div class="stat-value">{{ fmt(balance.recharge_balance) }}</div>
+          <div class="stat-value">{{ fmt(balance.charged_balance) }}</div>
           <div class="stat-sub">授权扣点时优先消耗</div>
         </div>
       </el-col>
@@ -246,15 +246,15 @@
  * 文件位置: src/views/agent/AgentBalance.vue
  * 名称: 代理端我的余额
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
- * 时间: 2026-04-29
- * 版本: V1.2.0
+ * 时间: 2026-05-07
+ * 版本: V1.3.0
  * 功能说明:
  *   展示代理余额、授权扣点流水、删除用户返点流水，并解释扣点/返点公式。
  *
- * 已确认规则:
- *   - 授权扣点按项目授权独立计算。
- *   - 删除用户返点按项目授权独立计算。
- *   - 实际使用时间不足 1 小时，按 1 小时计算。
+ * 当前字段口径:
+ *   - charged_balance 表示充值点数余额。
+ *   - credit_balance 表示授信点数余额。
+ *   - 不兼容旧字段 recharge_balance / charged_points / credit_points。
  */
 
 import { computed, onMounted, ref } from 'vue'
@@ -267,7 +267,7 @@ const txLoading = ref(false)
 const error = ref('')
 
 const balance = ref({
-  recharge_balance: 0,
+  charged_balance: 0,
   credit_balance: 0,
   frozen_credit: 0,
 })
@@ -279,7 +279,7 @@ const pageSize = ref(20)
 const txType = ref('')
 
 const totalAvailable = computed(() => {
-  return Number(balance.value.recharge_balance || 0) + Number(balance.value.credit_balance || 0)
+  return Number(balance.value.charged_balance || 0) + Number(balance.value.credit_balance || 0)
 })
 
 const fmt = (val) => Number(val || 0).toFixed(2)
@@ -300,7 +300,7 @@ const getErrorMessage = (err, actionName) => {
 const fetchBalance = async () => {
   const res = await agentBalanceApi.myBalance()
   balance.value = {
-    recharge_balance: res.data.recharge_balance ?? 0,
+    charged_balance: res.data.charged_balance ?? 0,
     credit_balance: res.data.credit_balance ?? 0,
     frozen_credit: res.data.frozen_credit ?? 0,
   }
