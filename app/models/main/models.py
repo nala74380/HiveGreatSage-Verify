@@ -3,7 +3,7 @@ r"""
 文件名称: models.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-05-07
-版本: v2.1.0
+版本: v2.2.0
 功能说明:
     hive_platform 主库的全部 ORM 模型。
 
@@ -25,6 +25,10 @@ r"""
       - BalanceTransaction → AccountingLedgerEntry
 
 重要模型调整:
+    v2.2.0 (2026-05-07):
+      - LoginLog 新增 device_fingerprint_hash。
+      - 登录日志不再继续保存设备指纹原文，只保存 hash 供排障关联。
+
     v2.1.0 (2026-05-07):
       - VersionRecord 新增 released_by_admin_id / original_filename / file_size / request_id。
       - 热更新发布链路补充发布审计字段。
@@ -657,6 +661,7 @@ class LoginLog(Base):
     __table_args__ = (
         Index("idx_login_log_user", "user_id", "login_at"),
         Index("idx_login_log_ip", "ip_address"),
+        Index("idx_login_log_device_hash", "device_fingerprint_hash"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -666,7 +671,16 @@ class LoginLog(Base):
         ForeignKey("user.id"),
         nullable=True,
     )
-    device_fingerprint: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    device_fingerprint: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="历史兼容字段：新登录日志不再写入设备指纹原文",
+    )
+    device_fingerprint_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="设备指纹 HMAC-SHA256 哈希，用于非明文关联排障",
+    )
     ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
     client_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     game_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
