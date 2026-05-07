@@ -2,22 +2,22 @@ r"""
 文件位置: app/routers/admin.py
 文件名称: admin.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-22
-版本: V1.0.0
+日期/时间: 2026-05-07
+版本: V1.2.0
 功能说明:
     管理后台路由：
       POST /admin/api/auth/login   — 管理员登录，获取 Admin Token
       GET  /admin/api/dashboard    — 平台统计概览
 
 改进历史:
+    V1.2.0 (2026-05-07): 管理员手动解绑设备接入 audit_log。
+    V1.1.0 (2026-05-07): Admin 登录成功 / 失败接入 audit_log。
     V1.0.0 - 从存根重写，增加管理员登录和仪表盘统计
-调试信息:
-    已知问题: 无
 """
 
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from loguru import logger
 from sqlalchemy import and_, cast, func, select
 from sqlalchemy import Date as SADate
@@ -28,20 +28,69 @@ from app.database import get_main_db
 from app.models.main.models import Admin, Agent, DeviceBinding, GameProject, LoginLog, User
 from app.schemas.agent import AdminLoginRequest, AdminLoginResponse
 from app.services.agent_service import admin_login
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
 
 @router.post("/auth/login", response_model=AdminLoginResponse)
 async def admin_login_endpoint(
     body: AdminLoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_main_db),
 ) -> AdminLoginResponse:
     """
     管理员登录，返回 Admin Token（有效期 8 小时）。
     此接口无需鉴权，是唯一公开的 /admin/api 接口。
     """
-    return await admin_login(body=body, db=db)
+    client_ip = _client_ip(request)
+    user_agent = request.headers.get("user-agent")
+
+    try:
+        result = await admin_login(body=body, db=db)
+    except HTTPException as exc:
+        await create_audit_log(
+            db=db,
+            actor_type="admin",
+            actor_id=None,
+            action="auth.admin.login_failed",
+            target_type="admin",
+            target_id=body.username,
+            summary=f"管理员 {body.username} 登录失败",
+            metadata={
+                "username": body.username,
+                "success": False,
+                "status_code": exc.status_code,
+                "reason": str(exc.detail),
+            },
+            ip_address=client_ip,
+            user_agent=user_agent,
+        )
+        await db.commit()
+        raise
+
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=result.admin_id,
+        action="auth.admin.login_success",
+        target_type="admin",
+        target_id=result.admin_id,
+        summary=f"管理员 {result.username} 登录成功",
+        metadata={
+            "admin_id": result.admin_id,
+            "username": result.username,
+            "success": True,
+            "expires_in": result.expires_in,
+        },
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+    return result
 
 
 @router.get("/dashboard")
@@ -197,7 +246,8 @@ async def get_user_devices(
 async def unbind_device(
     user_id: int,
     binding_id: int,
-    _: Admin = Depends(get_current_admin),
+    request: Request,
+    current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> None:
     """解绑设备（软删除）。"""
@@ -210,5 +260,29 @@ async def unbind_device(
     binding = result.scalar_one_or_none()
     if not binding:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="设备绑定记录不存在")
+
+    old_status = binding.status
     binding.status = "unbound"
+
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="device_binding.admin_unbind",
+        target_type="device_binding",
+        target_id=binding.id,
+        summary=f"管理员解绑用户 {user_id} 设备 {binding.id}",
+        metadata={
+            "binding_id": binding.id,
+            "user_id": user_id,
+            "game_project_id": binding.game_project_id,
+            "device_fingerprint": binding.device_fingerprint,
+            "old_status": old_status,
+            "new_status": binding.status,
+            "last_seen_at": binding.last_seen_at.isoformat() if binding.last_seen_at else None,
+            "bound_at": binding.bound_at.isoformat() if binding.bound_at else None,
+        },
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     await db.commit()

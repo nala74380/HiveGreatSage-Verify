@@ -3,7 +3,7 @@ r"""
 文件名称: agents.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-07
-版本: V1.4.0
+版本: V1.5.0
 功能说明:
     代理管理路由（薄层优先，历史接口逐步收敛）。
 
@@ -17,14 +17,16 @@ r"""
     - 不兼容旧字段 level / hierarchy_level。
     - 项目编码对外统一使用 game_project_code。
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
+    - Agent 登录成功 / 失败写入 audit_log，不记录密码或 Token。
 
 改进历史:
+    V1.5.0 (2026-05-07): Agent 登录成功 / 失败接入 audit_log。
     V1.4.0 (2026-05-07): 代理创建、代理更新接入 audit_log。
 """
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,15 +73,64 @@ def _aware(value: datetime | None) -> datetime | None:
     return value
 
 
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 # ── 登录 ──────────────────────────────────────────────────────
 
 @router.post("/auth/login", response_model=AgentLoginResponse)
 async def agent_login_endpoint(
     body: AgentLoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentLoginResponse:
     """代理登录，返回 Agent Token（有效期 8 小时）。"""
-    return await agent_login(body=body, db=db)
+    ip = _client_ip(request)
+    user_agent = request.headers.get("user-agent")
+
+    try:
+        result = await agent_login(body=body, db=db)
+    except HTTPException as exc:
+        await create_audit_log(
+            db=db,
+            actor_type="agent",
+            actor_id=None,
+            action="auth.agent.login_failed",
+            target_type="agent",
+            target_id=body.username,
+            summary=f"代理 {body.username} 登录失败",
+            metadata={
+                "username": body.username,
+                "success": False,
+                "status_code": exc.status_code,
+                "reason": str(exc.detail),
+            },
+            ip_address=ip,
+            user_agent=user_agent,
+        )
+        await db.commit()
+        raise
+
+    await create_audit_log(
+        db=db,
+        actor_type="agent",
+        actor_id=result.agent_id,
+        action="auth.agent.login_success",
+        target_type="agent",
+        target_id=result.agent_id,
+        summary=f"代理 {result.username} 登录成功",
+        metadata={
+            "agent_id": result.agent_id,
+            "username": result.username,
+            "hierarchy_depth": result.hierarchy_depth,
+            "success": True,
+            "expires_in": result.expires_in,
+        },
+        ip_address=ip,
+        user_agent=user_agent,
+    )
+    return result
 
 
 # ── 代理个人主页（静态路径，必须在 /{agent_id} 之前）──────────

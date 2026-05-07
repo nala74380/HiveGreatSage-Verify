@@ -2,8 +2,8 @@ r"""
 文件位置: app/services/auth_service.py
 文件名称: auth_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-05-02
-版本: V1.1.0
+日期/时间: 2026-05-07
+版本: V1.2.0
 功能说明:
     认证服务层，包含全部认证业务逻辑：
       - login_user()           用户登录
@@ -19,6 +19,7 @@ r"""
       5. Refresh Token 刷新必须重新校验项目与 Authorization。
       6. Access Token 中的 authorization_level 来自 Authorization.user_level。
       7. Access Token 项目字段统一为 project_code。
+      8. Android 首次创建设备绑定时写入 audit_log。
 
     当前字段口径:
       1. LoginResponse 返回 authorization_level / game_project_code。
@@ -31,6 +32,7 @@ r"""
       [[01-网络验证系统/旧字段旧接口清理清单]]
 
 改进历史:
+    V1.2.0 (2026-05-07) - Android 首次创建设备绑定接入 audit_log。
     V1.1.0 (2026-05-02) - 登录与刷新过滤软删除用户；刷新改用 Authorization.user_level。
     V1.0.1 - 设备绑定改为用户 × 项目 × 设备维度，设备上限改用 Authorization.authorized_devices。
     V1.0.0 - 初始版本，从 routers/auth.py 迁移全部业务逻辑。
@@ -81,6 +83,7 @@ from app.schemas.auth import (
     RefreshRequest,
     TokenResponse,
 )
+from app.services.audit_service import create_audit_log
 
 
 # ─────────────────────────────────────────────────────────────
@@ -217,14 +220,35 @@ async def login_user(
                             detail=f"当前项目设备绑定数量已达上限（{limit} 台）",
                         )
 
-                db.add(
-                    DeviceBinding(
-                        user_id=user.id,
-                        game_project_id=game_project.id,
-                        device_fingerprint=body.device_fingerprint,
-                        last_seen_at=now,
-                        status="active",
-                    )
+                new_binding = DeviceBinding(
+                    user_id=user.id,
+                    game_project_id=game_project.id,
+                    device_fingerprint=body.device_fingerprint,
+                    last_seen_at=now,
+                    status="active",
+                )
+                db.add(new_binding)
+                await db.flush()
+
+                await create_audit_log(
+                    db=db,
+                    actor_type="user",
+                    actor_id=user.id,
+                    action="device_binding.bind",
+                    target_type="device_binding",
+                    target_id=new_binding.id,
+                    summary=f"用户 {user.id} 绑定项目 {game_project.code_name} 设备",
+                    metadata={
+                        "binding_id": new_binding.id,
+                        "user_id": user.id,
+                        "username": user.username,
+                        "game_project_id": game_project.id,
+                        "game_project_code": game_project.code_name,
+                        "device_fingerprint": body.device_fingerprint,
+                        "client_type": body.client_type,
+                        "authorized_devices": int(auth.authorized_devices or 0),
+                    },
+                    ip_address=client_ip,
                 )
 
         # Step 8：签发 Token
