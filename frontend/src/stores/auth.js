@@ -7,10 +7,15 @@
  *   1. 管理员：POST /admin/api/auth/login → AdminLoginResponse
  *      存储：role='admin', userInfo={ admin_id, username }
  *   2. 代理：  POST /api/agents/auth/login → AgentLoginResponse
- *      存储：role='agent', userInfo={ agent_id, username, level }
+ *      存储：role='agent', userInfo={ agent_id, username, hierarchy_depth }
  *
- *   登录时先尝试管理员接口，若返回 401/422 再尝试代理接口。
+ *   登录时先尝试管理员接口，若返回 401/403/422 再尝试代理接口。
  *   两者均失败则抛出错误，由登录页展示提示。
+ *
+ * 安全口径：
+ *   - Token / role / userInfo 从 sessionStorage 恢复，关闭标签页后清空。
+ *   - 不再从 localStorage 恢复 Token，避免后台 Token 长期驻留浏览器。
+ *   - logout() 负责清理当前标签页状态，并通过 storage.clearAll() 通知其他标签页。
  */
 
 import { defineStore } from 'pinia'
@@ -25,7 +30,7 @@ export const useAuthStore = defineStore('auth', {
     role: storage.getRole(),
     /**
      * Admin:  { admin_id: number, username: string }
-     * Agent:  { agent_id: number, username: string, level: number }
+     * Agent:  { agent_id: number, username: string, hierarchy_depth: number }
      * @type {object|null}
      */
     userInfo: storage.getUserInfo(),
@@ -40,13 +45,13 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     /**
-     * 统一登录入口：先尝试 Admin，再尝试 Agent
+     * 统一登录入口：先尝试 Admin，再尝试 Agent。
      * @param {{ username: string, password: string }} credentials
      * @throws {Error} 两种身份均失败时抛出错误
      */
     async login(credentials) {
-      // ① 先尝试管理员登录
-      // adminLogin 已加 _skipAuthRedirect，401/403/422 不会触发全局跳转
+      // ① 先尝试管理员登录。
+      // adminLogin 已加 _skipAuthRedirect，401/403/422 不会触发全局跳转。
       try {
         const res = await authApi.adminLogin(credentials)
         const data = res.data
@@ -57,14 +62,14 @@ export const useAuthStore = defineStore('auth', {
         return
       } catch (err) {
         const status = err.response?.status
-        // 401/403/422 = 账号密码错误或权限不匹配 → 继续尝试代理登录
+        // 401/403/422 = 账号密码错误或权限不匹配，继续尝试代理登录。
         if (status !== 401 && status !== 403 && status !== 422) {
-          throw err  // 其他错误（5xx、网络超时）直接抛出
+          throw err
         }
       }
 
-      // ② 再尝试代理登录
-      // agentLogin 已加 _skipAuthRedirect，失败时不会跳转登录页
+      // ② 再尝试代理登录。
+      // agentLogin 已加 _skipAuthRedirect，失败时不会跳转登录页。
       const res = await authApi.agentLogin(credentials)
       const data = res.data
       this._saveSession('agent', data.access_token, {
@@ -74,7 +79,7 @@ export const useAuthStore = defineStore('auth', {
       })
     },
 
-    /** 登出：清除状态 + 本地存储 */
+    /** 登出：清除状态 + sessionStorage，并广播其他标签页同步登出。 */
     logout() {
       this.token    = null
       this.role     = null
@@ -82,7 +87,7 @@ export const useAuthStore = defineStore('auth', {
       storage.clearAll()
     },
 
-    /** 内部：统一保存登录状态 */
+    /** 内部：统一保存登录状态。 */
     _saveSession(role, token, userInfo) {
       this.token    = token
       this.role     = role
