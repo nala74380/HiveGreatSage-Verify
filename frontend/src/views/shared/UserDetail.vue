@@ -50,12 +50,7 @@
             {{ user.active_authorization_count || 0 }} 个
           </el-descriptions-item>
           <el-descriptions-item label="已绑设备">
-            <span>
-              {{ user.device_binding_count }} 台
-            </span>
-            <span class="text-muted" style="margin-left:4px" v-if="false">
-              / -
-            </span>
+            <span>{{ user.device_binding_count }} 台</span>
           </el-descriptions-item>
           <el-descriptions-item label="创建方式">
             {{ user.created_by_admin ? '管理员创建' : `代理创建 — ${user.created_by_agent_username || `ID:${user.created_by_agent_id}`}` }}
@@ -118,8 +113,8 @@
         </el-table>
       </el-card>
 
-      <!-- 设备绑定记录 -->
-      <el-card shadow="never" class="inner-card">
+      <!-- 设备绑定记录：当前只允许管理员查看和解绑，代理端不再静默调用 Admin-only 接口 -->
+      <el-card v-if="authStore.isAdmin" shadow="never" class="inner-card">
         <template #header>
           <div class="card-header-row">
             <span class="card-title">
@@ -138,14 +133,10 @@
             </template>
           </el-table-column>
           <el-table-column label="绑定时间" width="155">
-            <template #default="{ row }">
-              {{ formatDatetime(row.bound_at) }}
-            </template>
+            <template #default="{ row }">{{ formatDatetime(row.bound_at) }}</template>
           </el-table-column>
           <el-table-column label="最后活跃" width="155">
-            <template #default="{ row }">
-              {{ row.last_seen_at ? formatRelativeTime(row.last_seen_at) : '—' }}
-            </template>
+            <template #default="{ row }">{{ row.last_seen_at ? formatRelativeTime(row.last_seen_at) : '—' }}</template>
           </el-table-column>
           <el-table-column label="状态" width="80">
             <template #default="{ row }">
@@ -163,10 +154,7 @@
                 @confirm="unbindDevice(row)"
               >
                 <template #reference>
-                  <el-button
-                    text size="small" type="danger"
-                    :disabled="row.status !== 'active'"
-                  >解绑</el-button>
+                  <el-button text size="small" type="danger" :disabled="row.status !== 'active'">解绑</el-button>
                 </template>
               </el-popconfirm>
             </template>
@@ -179,9 +167,7 @@
     <el-dialog v-model="editDialog.visible" title="编辑用户" width="880px" destroy-on-close>
       <el-form ref="editFormRef" :model="editDialog.form" label-width="105px" v-if="user">
         <el-divider content-position="left">账号主体</el-divider>
-        <el-form-item label="用户名">
-          <span class="readonly-val">{{ user.username }}</span>
-        </el-form-item>
+        <el-form-item label="用户名"><span class="readonly-val">{{ user.username }}</span></el-form-item>
         <el-form-item label="创建信息">
           <div>
             <el-tag size="small" effect="plain" :type="user.created_by_type === 'agent' ? 'warning' : 'danger'">
@@ -196,8 +182,7 @@
             <el-option label="已停用" value="suspended" />
           </el-select>
         </el-form-item>
-        <el-alert type="info" show-icon :closable="false" class="small-alert"
-          title="用户等级、设备数、到期时间请在项目授权里分别设置。" />
+        <el-alert type="info" show-icon :closable="false" class="small-alert" title="用户等级、设备数、到期时间请在项目授权里分别设置。" />
 
         <el-divider content-position="left">
           项目授权
@@ -207,25 +192,10 @@
         </el-divider>
         <el-table :data="user.authorizations" size="small" empty-text="暂无授权" stripe>
           <el-table-column label="项目" min-width="120" prop="game_project_name" />
-          <el-table-column label="等级" width="75">
-            <template #default="{ row: a }">
-              <LevelTag :level="a.user_level" />
-            </template>
-          </el-table-column>
+          <el-table-column label="等级" width="75"><template #default="{ row: a }"><LevelTag :level="a.user_level" /></template></el-table-column>
           <el-table-column label="设备" width="70" prop="authorized_devices" />
-          <el-table-column label="到期" min-width="120">
-            <template #default="{ row: a }">
-              <span v-if="!a.valid_until">永久</span>
-              <span v-else>{{ formatDate(a.valid_until) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="70">
-            <template #default="{ row: a }">
-              <el-tag :type="a.status === 'active' ? 'success' : 'info'" size="small" effect="light">
-                {{ a.status === 'active' ? '有效' : '已停用' }}
-              </el-tag>
-            </template>
-          </el-table-column>
+          <el-table-column label="到期" min-width="120"><template #default="{ row: a }"><span v-if="!a.valid_until">永久</span><span v-else>{{ formatDate(a.valid_until) }}</span></template></el-table-column>
+          <el-table-column label="状态" width="70"><template #default="{ row: a }"><el-tag :type="a.status === 'active' ? 'success' : 'info'" size="small" effect="light">{{ a.status === 'active' ? '有效' : '已停用' }}</el-tag></template></el-table-column>
         </el-table>
       </el-form>
       <template #footer>
@@ -287,12 +257,8 @@
             <el-option label="SVIP" value="svip" />
           </el-select>
         </el-form-item>
-        <el-form-item label="授权设备数">
-          <el-input-number v-model="authEditDialog.form.authorized_devices" :min="1" style="width:100%" />
-        </el-form-item>
-        <el-form-item label="到期时间">
-          <el-date-picker v-model="authEditDialog.form.valid_until" type="datetime" placeholder="不填为永久" style="width:100%" />
-        </el-form-item>
+        <el-form-item label="授权设备数"><el-input-number v-model="authEditDialog.form.authorized_devices" :min="1" style="width:100%" /></el-form-item>
+        <el-form-item label="到期时间"><el-date-picker v-model="authEditDialog.form.valid_until" type="datetime" placeholder="不填为永久" style="width:100%" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="authEditDialog.visible = false">取消</el-button>
@@ -301,23 +267,38 @@
     </el-dialog>
 
     <!-- 升级授权 -->
-    <el-dialog v-model="upgradeDialog.visible" title="升级设备数" width="400px" destroy-on-close>
+    <el-dialog v-model="upgradeDialog.visible" title="升级设备数" width="460px" destroy-on-close>
       <el-form label-width="100px" v-if="upgradeDialog.row">
         <el-form-item label="当前项目">{{ upgradeDialog.row.game_project_name }}</el-form-item>
         <el-form-item label="当前设备">{{ upgradeDialog.row.authorized_devices }} 台</el-form-item>
         <el-form-item label="新增数量">
-          <el-input-number v-model="upgradeDialog.form.additional_devices" :min="1" style="width:140px" />
+          <el-input-number v-model="upgradeDialog.form.additional_devices" :min="1" style="width:140px" @change="loadUpgradePreview" />
           <div style="margin-top:4px">
-            <el-button size="small" @click="upgradeDialog.form.additional_devices=10">+10</el-button>
-            <el-button size="small" @click="upgradeDialog.form.additional_devices=20">+20</el-button>
-            <el-button size="small" @click="upgradeDialog.form.additional_devices=50">+50</el-button>
-            <el-button size="small" @click="upgradeDialog.form.additional_devices=100">+100</el-button>
+            <el-button size="small" @click="setUpgradeDevices(10)">+10</el-button>
+            <el-button size="small" @click="setUpgradeDevices(20)">+20</el-button>
+            <el-button size="small" @click="setUpgradeDevices(50)">+50</el-button>
+            <el-button size="small" @click="setUpgradeDevices(100)">+100</el-button>
           </div>
         </el-form-item>
-        <el-form-item label="升级后">{{ (upgradeDialog.row.authorized_devices||0) + (upgradeDialog.form.additional_devices||0) }} 台</el-form-item>
+        <el-form-item label="升级模式">
+          <el-radio-group v-model="upgradeDialog.form.mode" @change="loadUpgradePreview">
+            <el-radio-button label="append">追加</el-radio-button>
+            <el-radio-button label="average">均分</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="升级后">{{ (upgradeDialog.row.authorized_devices || 0) + (upgradeDialog.form.additional_devices || 0) }} 台</el-form-item>
+        <el-alert
+          v-if="upgradeDialog.preview"
+          type="info"
+          show-icon
+          :closable="false"
+          class="small-alert"
+          :title="`预计扣点 ${upgradeDialog.preview.consumed_points} 点，到期时间 ${upgradeDialog.preview.new_expiry ? formatDatetime(upgradeDialog.preview.new_expiry) : '永久'}`"
+        />
       </el-form>
       <template #footer>
         <el-button @click="upgradeDialog.visible=false">取消</el-button>
+        <el-button :loading="upgradeDialog.previewLoading" @click="loadUpgradePreview">刷新预览</el-button>
         <el-button type="primary" :loading="upgradeDialog.loading" @click="submitUpgrade">确认</el-button>
       </template>
     </el-dialog>
@@ -328,25 +309,21 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { userApi }    from '@/api/user'
-import { agentApi }   from '@/api/agent'
+import { userApi } from '@/api/user'
+import { agentApi } from '@/api/agent'
 import { adminProjectApi as projectApi } from '@/api/admin/project'
 import { useAuthStore } from '@/stores/auth'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import LevelTag from '@/components/common/LevelTag.vue'
-import {
-  formatDatetime, formatDate, formatRelativeTime,
-  expiryTagType, expiryLabel,
-} from '@/utils/format'
+import { formatDatetime, formatDate, formatRelativeTime, expiryTagType, expiryLabel } from '@/utils/format'
 
-const route    = useRoute()
-const router   = useRouter()
+const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
-const userId   = Number(route.params.id)
+const userId = Number(route.params.id)
 
-// ── 页面数据 ─────────────────────────────────────────────────
-const pageLoading    = ref(false)
-const user           = ref(null)
+const pageLoading = ref(false)
+const user = ref(null)
 const deviceBindings = ref([])
 const bindingsLoading = ref(false)
 const availableProjects = ref([])
@@ -365,8 +342,7 @@ const loadUser = async () => {
 }
 
 const loadDeviceBindings = async () => {
-  // 后端 Phase 2 提供设备绑定列表接口，当前用 detail 里的 device_binding_count 展示占位
-  // 此处先尝试调用，失败静默
+  if (!authStore.isAdmin) return
   bindingsLoading.value = true
   try {
     const res = await userApi.deviceBindings(userId)
@@ -396,7 +372,6 @@ onMounted(async () => {
   loadDeviceBindings()
 })
 
-// ── 启用 / 停用 ─────────────────────────────────────────────
 const toggleStatus = async () => {
   const newStatus = user.value.status === 'active' ? 'suspended' : 'active'
   await userApi.update(userId, { status: newStatus })
@@ -404,13 +379,10 @@ const toggleStatus = async () => {
   loadUser()
 }
 
-// ── 编辑 ─────────────────────────────────────────────────────
 const editDialog = reactive({ visible: false, loading: false, form: {} })
 
 const openEditDialog = () => {
-  editDialog.form = {
-    status: user.value.status,
-  }
+  editDialog.form = { status: user.value.status }
   editDialog.visible = true
 }
 
@@ -426,10 +398,19 @@ const submitEdit = async () => {
   }
 }
 
-// ── 项目授权 ─────────────────────────────────────────────────
 const grantFormRef = ref(null)
-const grantDialog  = reactive({ visible: false, loading: false, form: { game_project_id: null, user_level: 'normal', authorized_devices: 20, valid_until: null } })
-const grantRules   = { game_project_id: [{ required: true, message: '请选择项目', trigger: 'change' }], user_level: [{ required: true, message: '请选择等级', trigger: 'change' }] }
+const defaultGrantForm = () => ({
+  game_project_id: null,
+  user_level: 'normal',
+  authorized_devices: 20,
+  valid_until: null,
+})
+const grantDialog = reactive({ visible: false, loading: false, form: defaultGrantForm() })
+const grantRules = {
+  game_project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
+  user_level: [{ required: true, message: '请选择等级', trigger: 'change' }],
+  authorized_devices: [{ required: true, type: 'number', min: 1, message: '请输入授权设备数', trigger: 'change' }],
+}
 
 const authEditDialog = reactive({ visible: false, loading: false, form: { user_level: 'normal', authorized_devices: 20, valid_until: null }, row: null })
 const openEditAuthDialog = (row) => {
@@ -437,25 +418,59 @@ const openEditAuthDialog = (row) => {
   authEditDialog.form = { user_level: row.user_level, authorized_devices: row.authorized_devices, valid_until: row.valid_until }
   authEditDialog.visible = true
 }
+
 const upgradeDialog = reactive({
-  visible: false, loading: false, row: null,
-  form: { additional_devices: 10 },
+  visible: false,
+  loading: false,
+  previewLoading: false,
+  row: null,
+  preview: null,
+  form: { additional_devices: 10, mode: 'append' },
 })
 
-const openUpgradeDialog = (row) => {
+const openUpgradeDialog = async (row) => {
   upgradeDialog.row = row
-  upgradeDialog.form = { additional_devices: 10 }
+  upgradeDialog.form = { additional_devices: 10, mode: 'append' }
+  upgradeDialog.preview = null
   upgradeDialog.visible = true
+  await loadUpgradePreview()
+}
+
+const setUpgradeDevices = async (count) => {
+  upgradeDialog.form.additional_devices = count
+  await loadUpgradePreview()
+}
+
+const loadUpgradePreview = async () => {
+  if (!upgradeDialog.row || !upgradeDialog.form.additional_devices) return
+  upgradeDialog.previewLoading = true
+  try {
+    const res = await userApi.upgradePreview(
+      user.value.id,
+      upgradeDialog.row.id,
+      upgradeDialog.form.additional_devices,
+      upgradeDialog.form.mode,
+    )
+    upgradeDialog.preview = res.data
+  } catch (err) {
+    upgradeDialog.preview = null
+    ElMessage.error(err.response?.data?.detail || '升级预览失败')
+  } finally {
+    upgradeDialog.previewLoading = false
+  }
 }
 
 const submitUpgrade = async () => {
   if (!upgradeDialog.row || !upgradeDialog.form.additional_devices) return
   upgradeDialog.loading = true
   try {
-    await userApi.updateAuth(user.value.id, upgradeDialog.row.id, {
-      authorized_devices: (upgradeDialog.row.authorized_devices || 0) + upgradeDialog.form.additional_devices,
+    if (!upgradeDialog.preview) await loadUpgradePreview()
+    const res = await userApi.upgradeAuth(user.value.id, upgradeDialog.row.id, {
+      additional_devices: upgradeDialog.form.additional_devices,
+      mode: upgradeDialog.form.mode,
     })
-    ElMessage.success(`已升级到 ${(upgradeDialog.row.authorized_devices || 0) + upgradeDialog.form.additional_devices} 台`)
+    const newDevices = res.data?.new_devices ?? ((upgradeDialog.row.authorized_devices || 0) + upgradeDialog.form.additional_devices)
+    ElMessage.success(`已升级到 ${newDevices} 台`)
     upgradeDialog.visible = false
     await loadUser()
   } catch (err) {
@@ -479,7 +494,7 @@ const submitEditAuth = async () => {
 }
 
 const openGrantDialog = async () => {
-  grantDialog.form    = { game_project_id: null, valid_until: null }
+  grantDialog.form = defaultGrantForm()
   grantDialog.visible = true
   loadAvailableProjects()
 }
@@ -509,7 +524,6 @@ const revokeAuth = async (auth) => {
   loadUser()
 }
 
-// ── 解绑设备 ─────────────────────────────────────────────────
 const unbindDevice = async (binding) => {
   try {
     await userApi.unbindDevice(userId, binding.id)
@@ -525,12 +539,8 @@ const unbindDevice = async (binding) => {
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 16px; }
 .breadcrumb { margin-bottom: 4px; font-size: 13px; }
-
-/* 用户头部 */
 .info-card { border-radius: 10px; }
-.user-header {
-  display: flex; align-items: center; gap: 16px;
-}
+.user-header { display: flex; align-items: center; gap: 16px; }
 .user-avatar {
   width: 52px; height: 52px; border-radius: 50%;
   background: linear-gradient(135deg, #2563eb, #7c3aed);
@@ -542,14 +552,13 @@ const unbindDevice = async (binding) => {
 .user-name { font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
 .user-tags { display: flex; align-items: center; }
 .user-actions { display: flex; gap: 8px; flex-shrink: 0; }
-
 .mono { font-family: 'Cascadia Code', monospace; font-size: 12px; }
 .text-success { color: #10b981; font-size: 13px; }
-.text-muted   { color: #94a3b8; }
+.text-muted { color: #94a3b8; }
 .text-warning { color: #f59e0b; font-weight: 600; }
-.field-hint   { font-size: 11px; color: #94a3b8; }
-
+.field-hint { font-size: 11px; color: #94a3b8; }
 .inner-card { border-radius: 10px; }
-.card-title  { font-size: 14px; font-weight: 600; color: #1e293b; }
+.card-title { font-size: 14px; font-weight: 600; color: #1e293b; }
 .card-header-row { display: flex; align-items: center; justify-content: space-between; }
+.small-alert { margin-top: 8px; }
 </style>

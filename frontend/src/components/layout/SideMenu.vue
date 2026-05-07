@@ -35,8 +35,8 @@
  * 文件位置: src/components/layout/SideMenu.vue
  * 名称: 左侧菜单
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
- * 时间: 2026-04-30
- * 版本: V1.5.0
+ * 时间: 2026-05-06
+ * 版本: V1.6.0
  * 功能说明:
  *   根据管理员 / 代理身份显示不同菜单。
  *
@@ -45,6 +45,7 @@
  *   - 项目定价、项目准入、授权申请已收敛到项目详情页。
  *   - 账务中心是平台内部点数资产治理统一入口。
  *   - 旧“点数流水”不再作为菜单名出现。
+ *   - 代理管理入口不再硬按 tier_level 推断，而是读取后端 can_create_sub_agents 能力字段。
  */
 
 import { computed, ref, onMounted } from 'vue'
@@ -60,6 +61,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const appStore = useAppStore()
 const tierLevel = ref(1)
+const canCreateSubAgents = ref(false)
 
 onMounted(async () => {
   if (auth.isAgent) {
@@ -67,6 +69,7 @@ onMounted(async () => {
       const { agentApi } = await import('@/api/agent')
       const res = await agentApi.me()
       tierLevel.value = res.data?.tier_level || 1
+      canCreateSubAgents.value = Boolean(res.data?.can_create_sub_agents)
     } catch { /* keep default */ }
   }
 })
@@ -83,8 +86,7 @@ const menuItems = computed(() => {
       { label: '设备监控', path: '/devices', icon: Monitor },
       { label: '我的余额', path: '/balance', icon: Wallet },
     ]
-    // Lv.2+ 可开下级代理 → 显示代理管理入口
-    if (tierLevel.value >= 2) {
+    if (canCreateSubAgents.value) {
       items.splice(3, 0, { label: '代理管理', path: '/agents', icon: Share })
     }
     return items
