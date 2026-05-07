@@ -2,8 +2,8 @@ r"""
 文件位置: app/routers/users.py
 文件名称: users.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-29
-版本: V1.2.1
+日期/时间: 2026-05-07
+版本: V1.3.0
 功能说明:
     用户管理路由。
 
@@ -23,11 +23,17 @@ r"""
       POST   /api/users/{user_id}/authorizations
       PATCH  /api/users/{user_id}/authorizations/{auth_id}
       DELETE /api/users/{user_id}/authorizations/{auth_id}
+      GET    /api/users/{user_id}/authorizations/{auth_id}/upgrade/preview
+      POST   /api/users/{user_id}/authorizations/{auth_id}/upgrade
 
 鉴权:
     - Admin Token：操作所有用户。
     - Agent Token：操作自己创建的用户。
     - 创建者详情目前仅 Admin Token 可访问。
+
+改进历史:
+    V1.3.0 (2026-05-07): 用户创建、更新、删除、密码重置、授权增改停用升级接入 audit_log。
+    V1.2.1 (2026-04-29): 项目授权接口整理。
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -54,6 +60,7 @@ from app.schemas.user import (
     UserResponse,
     UserUpdateRequest,
 )
+from app.services.audit_service import create_audit_log
 from app.services.user_service import (
     create_user,
     get_creator_agent_detail,
@@ -113,6 +120,49 @@ async def _resolve_caller(
     )
 
 
+def _actor(caller: tuple[Admin | None, Agent | None]) -> tuple[str, int | None]:
+    """将调用方转换为 audit_log actor_type / actor_id。"""
+    admin, agent = caller
+    if admin is not None:
+        return "admin", admin.id
+    if agent is not None:
+        return "agent", agent.id
+    return "system", None
+
+
+def _actor_metadata(caller: tuple[Admin | None, Agent | None]) -> dict:
+    """生成调用方审计元数据。"""
+    admin, agent = caller
+    if admin is not None:
+        return {
+            "caller_type": "admin",
+            "caller_id": admin.id,
+            "caller_username": admin.username,
+        }
+    if agent is not None:
+        return {
+            "caller_type": "agent",
+            "caller_id": agent.id,
+            "caller_username": agent.username,
+            "caller_hierarchy_depth": agent.hierarchy_depth,
+        }
+    return {"caller_type": "system"}
+
+
+def _authorization_metadata(auth: AuthorizationResponse) -> dict:
+    """生成项目授权审计元数据。"""
+    return {
+        "authorization_id": auth.id,
+        "user_id": auth.user_id,
+        "game_project_id": auth.game_project_id,
+        "game_project_name": getattr(auth, "game_project_name", None),
+        "user_level": auth.user_level,
+        "authorized_devices": auth.authorized_devices,
+        "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
+        "status": auth.status,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 # 用户基础
 # ═══════════════════════════════════════════════════════════════
@@ -124,7 +174,26 @@ async def create_user_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> UserResponse:
     admin, agent = caller
-    return await create_user(body=body, db=db, admin=admin, agent=agent)
+    result = await create_user(body=body, db=db, admin=admin, agent=agent)
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user.create",
+        target_type="user",
+        target_id=result.id,
+        summary=f"创建用户 {result.username}",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": result.id,
+            "username": result.username,
+            "status": result.status,
+            "created_by_admin": result.created_by_admin,
+            "created_by_agent_id": result.created_by_agent_id,
+        },
+    )
+    return result
 
 
 @router.get("/", response_model=UserListResponse)
@@ -199,13 +268,31 @@ async def update_user_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> UserResponse:
     admin, agent = caller
-    return await update_user(
+    result = await update_user(
         user_id=user_id,
         body=body,
         db=db,
         admin=admin,
         agent=agent,
     )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user.update",
+        target_type="user",
+        target_id=result.id,
+        summary=f"更新用户 {result.username}",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": result.id,
+            "username": result.username,
+            "changed_fields": body.model_dump(exclude_unset=True),
+            "status": result.status,
+        },
+    )
+    return result
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -234,6 +321,20 @@ async def delete_user_endpoint(
         admin=admin,
         agent=agent,
     )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user.soft_delete",
+        target_type="user",
+        target_id=user_id,
+        summary=f"软删除用户 {user_id}",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": user_id,
+        },
+    )
 
 
 @router.patch("/{user_id}/password", response_model=UserPasswordUpdateResponse)
@@ -244,13 +345,29 @@ async def update_user_password_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> UserPasswordUpdateResponse:
     admin, agent = caller
-    return await update_user_password(
+    result = await update_user_password(
         user_id=user_id,
         body=body,
         db=db,
         admin=admin,
         agent=agent,
     )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user.password_update",
+        target_type="user",
+        target_id=user_id,
+        summary=f"更新用户 {user_id} 密码",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": user_id,
+            "auto_generate": getattr(body, "auto_generate", None),
+        },
+    )
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -269,13 +386,28 @@ async def grant_auth_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationResponse:
     admin, agent = caller
-    return await grant_authorization(
+    result = await grant_authorization(
         user_id=user_id,
         body=body,
         db=db,
         admin=admin,
         agent=agent,
     )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.grant",
+        target_type="authorization",
+        target_id=result.id,
+        summary=f"为用户 {user_id} 授权项目 {result.game_project_id}",
+        metadata={
+            **_actor_metadata(caller),
+            **_authorization_metadata(result),
+        },
+    )
+    return result
 
 
 @router.patch(
@@ -290,7 +422,7 @@ async def update_auth_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationResponse:
     admin, agent = caller
-    return await update_authorization(
+    result = await update_authorization(
         user_id=user_id,
         auth_id=auth_id,
         body=body,
@@ -298,6 +430,22 @@ async def update_auth_endpoint(
         admin=admin,
         agent=agent,
     )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.update",
+        target_type="authorization",
+        target_id=result.id,
+        summary=f"更新用户 {user_id} 授权 {auth_id}",
+        metadata={
+            **_actor_metadata(caller),
+            **_authorization_metadata(result),
+            "changed_fields": body.model_dump(exclude_unset=True),
+        },
+    )
+    return result
 
 
 @router.delete(
@@ -317,6 +465,21 @@ async def revoke_auth_endpoint(
         db=db,
         admin=admin,
         agent=agent,
+    )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.revoke",
+        target_type="authorization",
+        target_id=auth_id,
+        summary=f"停用用户 {user_id} 授权 {auth_id}",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": user_id,
+            "authorization_id": auth_id,
+        },
     )
 
 
@@ -368,7 +531,7 @@ async def upgrade_auth_endpoint(
         按模式计算扣点后升级。
     """
     admin, agent = caller
-    return await upgrade_authorization(
+    result = await upgrade_authorization(
         user_id=user_id,
         auth_id=auth_id,
         body=body,
@@ -376,3 +539,23 @@ async def upgrade_auth_endpoint(
         admin=admin,
         agent=agent,
     )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.upgrade",
+        target_type="authorization",
+        target_id=auth_id,
+        summary=f"升级用户 {user_id} 授权 {auth_id}",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": user_id,
+            "authorization_id": auth_id,
+            "additional_devices": body.additional_devices,
+            "mode": body.mode,
+            "new_devices": result.new_devices,
+            "consumed_points": result.consumed_points,
+        },
+    )
+    return result

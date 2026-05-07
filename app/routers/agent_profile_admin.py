@@ -2,13 +2,16 @@ r"""
 文件位置: app/routers/agent_profile_admin.py
 文件名称: agent_profile_admin.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-29
-版本: V1.0.0
+日期/时间: 2026-05-07
+版本: V1.1.0
 功能说明:
     管理员端代理业务等级、业务画像、密码重置接口。
 
 挂载建议:
     app.include_router(agent_profile_admin.router, prefix="/admin/api", tags=["代理业务管理"])
+
+改进历史:
+    V1.1.0 (2026-05-07): 等级策略更新、业务画像更新、代理密码重置接入 audit_log。
 """
 
 from fastapi import APIRouter, Depends
@@ -32,6 +35,7 @@ from app.services.agent_profile_service import (
     update_agent_business_profile,
     update_agent_level_policy,
 )
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
 
@@ -56,14 +60,31 @@ async def agent_level_policies(
 async def update_level_policy(
     level: int,
     body: AgentLevelPolicyUpdateRequest,
-    _: Admin = Depends(get_current_admin),
+    current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentLevelPolicyAdminResponse:
-    return await update_agent_level_policy(
+    result = await update_agent_level_policy(
         level=level,
         body=body,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="agent_level_policy.update",
+        target_type="agent_level_policy",
+        target_id=result.id,
+        summary=f"更新代理等级策略 Lv.{level}",
+        metadata={
+            "level": level,
+            "policy_id": result.id,
+            "level_name": result.level_name,
+            "changed_fields": body.model_dump(exclude_unset=True),
+            "is_active": result.is_active,
+        },
+    )
+    return result
 
 
 @router.get(
@@ -90,14 +111,33 @@ async def agent_business_profile(
 async def update_business_profile(
     agent_id: int,
     body: AgentBusinessProfileUpdateRequest,
-    _: Admin = Depends(get_current_admin),
+    current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentBusinessProfileResponse:
-    return await update_agent_business_profile(
+    result = await update_agent_business_profile(
         agent_id=agent_id,
         body=body,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="agent_business_profile.update",
+        target_type="agent_business_profile",
+        target_id=agent_id,
+        summary=f"更新代理 {result.username} 业务画像",
+        metadata={
+            "agent_id": agent_id,
+            "username": result.username,
+            "changed_fields": body.model_dump(exclude_unset=True),
+            "hierarchy_depth": result.hierarchy_depth,
+            "tier_level": result.tier_level,
+            "tier_name": result.tier_name,
+            "risk_status": result.risk_status,
+        },
+    )
+    return result
 
 
 @router.post(
@@ -108,11 +148,26 @@ async def update_business_profile(
 async def reset_password(
     agent_id: int,
     body: AgentPasswordResetRequest,
-    _: Admin = Depends(get_current_admin),
+    current_admin: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentPasswordResetResponse:
-    return await reset_agent_password(
+    result = await reset_agent_password(
         agent_id=agent_id,
         body=body,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="agent.password_reset",
+        target_type="agent",
+        target_id=agent_id,
+        summary=f"重置代理 {result.username} 密码",
+        metadata={
+            "agent_id": agent_id,
+            "username": result.username,
+            "auto_generate": body.auto_generate,
+        },
+    )
+    return result

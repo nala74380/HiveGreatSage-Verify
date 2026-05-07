@@ -3,7 +3,7 @@ r"""
 文件名称: agents.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-07
-版本: V1.3.0
+版本: V1.4.0
 功能说明:
     代理管理路由（薄层优先，历史接口逐步收敛）。
 
@@ -17,6 +17,9 @@ r"""
     - 不兼容旧字段 level / hierarchy_level。
     - 项目编码对外统一使用 game_project_code。
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
+
+改进历史:
+    V1.4.0 (2026-05-07): 代理创建、代理更新接入 audit_log。
 """
 
 from datetime import datetime, timezone
@@ -51,6 +54,7 @@ from app.services.agent_service import (
     list_agents_in_scope,
     update_agent,
 )
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
 
@@ -367,7 +371,26 @@ async def create_agent_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentResponse:
     """创建代理（需管理员身份）。"""
-    return await create_agent(body=body, admin=current_admin, db=db)
+    result = await create_agent(body=body, admin=current_admin, db=db)
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="agent.create",
+        target_type="agent",
+        target_id=result.id,
+        summary=f"创建代理 {result.username}",
+        metadata={
+            "agent_id": result.id,
+            "username": result.username,
+            "parent_agent_id": result.parent_agent_id,
+            "hierarchy_depth": result.hierarchy_depth,
+            "commission_rate": result.commission_rate,
+            "status": result.status,
+            "created_by_admin_id": result.created_by_admin_id,
+        },
+    )
+    return result
 
 
 @router.get("/", response_model=AgentListResponse)
@@ -441,4 +464,21 @@ async def update_agent_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentResponse:
     """更新代理状态或佣金比例（需管理员身份）。"""
-    return await update_agent(agent_id=agent_id, body=body, db=db)
+    result = await update_agent(agent_id=agent_id, body=body, db=db)
+    await create_audit_log(
+        db=db,
+        actor_type="admin",
+        actor_id=current_admin.id,
+        action="agent.update",
+        target_type="agent",
+        target_id=result.id,
+        summary=f"更新代理 {result.username}",
+        metadata={
+            "agent_id": result.id,
+            "username": result.username,
+            "changed_fields": body.model_dump(exclude_unset=True),
+            "status": result.status,
+            "commission_rate": result.commission_rate,
+        },
+    )
+    return result
