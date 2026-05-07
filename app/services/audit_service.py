@@ -3,7 +3,7 @@ r"""
 文件名称: audit_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-07
-版本: V1.0.0
+版本: V1.1.0
 功能说明:
     平台通用审计日志服务。
 
@@ -16,6 +16,10 @@ r"""
 边界:
     - 本服务负责创建 AuditLog 对象并 flush。
     - 事务 commit 仍由调用方控制。
+
+改进历史:
+    V1.1.0 (2026-05-07): 敏感字段过滤从精确匹配增强为名称片段 / 后缀匹配。
+    V1.0.0 (2026-05-07): 初始版本。
 """
 
 from __future__ import annotations
@@ -29,22 +33,44 @@ from app.models.main.audit import AuditLog
 
 ActorType = Literal["admin", "agent", "user", "system"]
 
-_SENSITIVE_KEYS = {
-    "password",
-    "password_hash",
-    "new_password",
-    "old_password",
-    "token",
-    "access_token",
-    "refresh_token",
+_SENSITIVE_EXACT_KEYS = {
     "authorization",
-    "secret",
-    "secret_key",
-    "api_key",
-    "private_key",
     "file_data",
     "file_content",
 }
+
+_SENSITIVE_KEY_PARTS = {
+    "password",
+    "passwd",
+    "pwd",
+    "token",
+    "secret",
+    "api_key",
+    "apikey",
+    "private_key",
+    "credential",
+    "credentials",
+}
+
+_SENSITIVE_KEY_SUFFIXES = {
+    "_key",
+    "_secret",
+    "_token",
+    "_password",
+    "_hash",
+}
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """判断 metadata key 是否属于敏感字段。"""
+    normalized = key.strip().lower().replace("-", "_")
+    if normalized in _SENSITIVE_EXACT_KEYS:
+        return True
+
+    if any(part in normalized for part in _SENSITIVE_KEY_PARTS):
+        return True
+
+    return any(normalized.endswith(suffix) for suffix in _SENSITIVE_KEY_SUFFIXES)
 
 
 def _sanitize_metadata(value: Any) -> Any:
@@ -53,7 +79,7 @@ def _sanitize_metadata(value: Any) -> Any:
         clean: dict[str, Any] = {}
         for key, item in value.items():
             key_text = str(key)
-            if key_text.lower() in _SENSITIVE_KEYS:
+            if _is_sensitive_key(key_text):
                 clean[key_text] = "<redacted>"
             else:
                 clean[key_text] = _sanitize_metadata(item)
