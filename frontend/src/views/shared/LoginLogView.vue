@@ -4,7 +4,7 @@
       <div>
         <h2>登录日志</h2>
         <p class="page-desc">
-          登录日志用于查看用户端登录记录、客户端来源、IP 地址、设备指纹和失败原因。该页面只读，不允许删除。
+          登录日志用于查看用户端登录记录、客户端来源、IP 地址、设备 Hash 和失败原因。该页面只读，不允许删除。
         </p>
       </div>
       <el-tag type="info" effect="plain" size="small">只读 · 不可删除</el-tag>
@@ -136,9 +136,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="设备指纹" min-width="180" show-overflow-tooltip>
+        <el-table-column label="设备 Hash" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="mono text-muted">{{ row.device_fingerprint ?? '—' }}</span>
+            <span class="mono text-muted">{{ shortHash(row.device_fingerprint_hash) }}</span>
           </template>
         </el-table-column>
 
@@ -182,18 +182,14 @@
  * 文件位置: src/views/shared/LoginLogView.vue
  * 名称: 登录日志
  * 作者: 蜂巢·大圣 (HiveGreatSage)
- * 时间: 2026-04-30
- * 版本: V1.1.0
+ * 时间: 2026-05-07
+ * 版本: V1.2.0
  * 功能说明:
  *   查看用户端登录记录。
  *
- * 修复说明:
- *   1. 修复 PC 中控显示成安卓脚本的问题。
- *      后端 client_type 合法值是 pc / android，不是 pc_control。
- *   2. pc 和历史兼容值 pc_control 都显示为 PC 中控。
- *   3. android 显示为安卓脚本。
- *   4. 未知客户端显示原始值，避免误判。
- *   5. 失败原因兼容当前后端 fail_xxx 口径。
+ * 本版改进:
+ *   1. 不再展示 device_fingerprint 原文。
+ *   2. 展示 device_fingerprint_hash 短码，便于与审计日志 / 设备列表做关联排障。
  */
 
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -203,7 +199,6 @@ import { formatDatetime } from '@/utils/format'
 
 // 失败原因中文映射：兼容新旧口径
 const failReasonMap = {
-  // 当前后端 auth_service.py 使用的 fail_xxx 口径
   fail_auth: '用户名或密码错误',
   fail_suspended: '账号已停用',
   fail_expired: '账号已过期',
@@ -212,8 +207,6 @@ const failReasonMap = {
   fail_auth_expired: '项目授权已过期',
   fail_device_limit: '设备已达上限',
   fail_unknown: '未知错误',
-
-  // 旧页面 / 旧文档口径兼容
   wrong_password: '密码错误',
   user_not_found: '用户不存在',
   user_suspended: '账号已停用',
@@ -258,6 +251,8 @@ const clientTypeMeta = (clientType) => {
 const failReasonLabel = (reason) => {
   return failReasonMap[reason] || reason || '—'
 }
+
+const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
 
 // ── 日期快捷选项 ─────────────────────────────────────────────
 const dateShortcuts = [
@@ -406,7 +401,6 @@ onMounted(loadLogs)
   border-radius: 10px;
 }
 
-/* 统计摘要 */
 .summary-card {
   background: #fff;
   border-radius: 10px;
