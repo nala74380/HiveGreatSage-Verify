@@ -3,7 +3,7 @@ r"""
 名称: 热更新管理路由（管理员专用）
 作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-05-07
-版本: V2.1.0
+版本: V2.2.0
 功能说明:
     POST   /admin/api/updates/{project_id}/{client_type}         上传并发布热更新包
     GET    /admin/api/updates/{project_id}/{client_type}/latest  获取当前活跃版本
@@ -18,13 +18,15 @@ r"""
     - 超过 500MB 立即中止并清理临时文件。
     - 临时文件写完后交给存储层 save_file_from_path() 原子落盘。
     - 数据库写入失败时尝试删除已保存文件，避免孤儿包。
+    - VersionRecord 记录发布管理员、原始文件名、文件大小。
 
 改进内容:
+    V2.2.0 (2026-05-07) - VersionRecord 写入发布审计字段
     V2.1.0 (2026-05-07) - 上传包改为流式读取 + 临时文件 + 原子落盘
     V2.0.0 (2026-04-26) - 版本记录改存主库，支持验证项目热更新
     V1.0.0 - 初始版本（仅支持游戏项目）
 调试信息:
-    已知问题: VersionRecord 尚未补 released_by_admin_id / original_filename / file_size / request_id 字段，需迁移后继续治理。
+    已知问题: request_id 待 RequestIdMiddleware 落地后写入。
 """
 
 import hashlib
@@ -68,6 +70,10 @@ def _record_to_dict(r: VersionRecord, project_code: str) -> dict:
         "checksum_sha256": r.checksum_sha256,
         "package_path":    r.package_path,
         "released_at":     r.released_at.isoformat() if r.released_at else None,
+        "released_by_admin_id": r.released_by_admin_id,
+        "original_filename": r.original_filename,
+        "file_size": r.file_size,
+        "request_id": r.request_id,
         "is_active":       r.is_active,
         "game_project_code": project_code,
     }
@@ -186,32 +192,37 @@ async def upload_version_endpoint(
         )
 
         if existing:
-            existing.package_path    = saved_path
+            existing.package_path = saved_path
             existing.checksum_sha256 = checksum
-            existing.release_notes   = release_notes
-            existing.force_update    = force_update
-            existing.is_active       = True
-            existing.released_at     = datetime.now(timezone.utc)
+            existing.release_notes = release_notes
+            existing.force_update = force_update
+            existing.is_active = True
+            existing.released_at = datetime.now(timezone.utc)
+            existing.released_by_admin_id = current_admin.id
+            existing.original_filename = original_filename
+            existing.file_size = file_size
+            existing.request_id = None
             await db.flush()
             record = existing
             msg = f"版本 {version} 已重新发布"
         else:
             record = VersionRecord(
-                game_project_id = project_id,
-                client_type     = client_type,
-                version         = version,
-                package_path    = saved_path,
-                checksum_sha256 = checksum,
-                release_notes   = release_notes,
-                force_update    = force_update,
-                is_active       = True,
+                game_project_id=project_id,
+                client_type=client_type,
+                version=version,
+                package_path=saved_path,
+                checksum_sha256=checksum,
+                release_notes=release_notes,
+                force_update=force_update,
+                is_active=True,
+                released_by_admin_id=current_admin.id,
+                original_filename=original_filename,
+                file_size=file_size,
+                request_id=None,
             )
             db.add(record)
             await db.flush()
             msg = f"版本 {version} 发布成功"
-
-        # 当前 VersionRecord 尚无发布人 / 文件大小字段，先保留局部变量避免误报未使用。
-        _ = current_admin.id, file_size
 
         # 主动清除 Redis 版本缓存（game 项目的客户端检查缓存）
         cache_key = f"update:latest:{project.code_name}:{client_type}"
