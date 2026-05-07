@@ -282,18 +282,53 @@ async def delete_project_price(project_id: int, user_level: str, db: AsyncSessio
 # 钱包与账本底层
 # ─────────────────────────────────────────────────────────────
 
-async def get_or_create_wallet(agent_id: int, db: AsyncSession) -> AccountingWallet:
-    result = await db.execute(
-        select(AccountingWallet).where(AccountingWallet.agent_id == agent_id)
-    )
+async def get_or_create_wallet(
+    agent_id: int,
+    db: AsyncSession,
+    *,
+    for_update: bool = False,
+) -> AccountingWallet:
+    """
+    获取或创建代理钱包。
+
+    并发规则:
+        - 只读查询默认不加锁。
+        - 充值、授信、冻结、解冻、扣点、返点等写操作必须传 for_update=True。
+        - 当钱包不存在且 for_update=True 时，先锁定 Agent 行，再二次检查钱包，避免并发创建重复钱包。
+    """
+    stmt = select(AccountingWallet).where(AccountingWallet.agent_id == agent_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+
+    result = await db.execute(stmt)
     wallet = result.scalar_one_or_none()
 
     if wallet:
         return wallet
 
-    agent = await db.get(Agent, agent_id)
+    if for_update:
+        agent_result = await db.execute(
+            select(Agent)
+            .where(Agent.id == agent_id)
+            .with_for_update()
+        )
+        agent = agent_result.scalar_one_or_none()
+    else:
+        agent = await db.get(Agent, agent_id)
+
     if not agent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
+
+    if for_update:
+        # 二次检查：避免另一个事务在锁 Agent 前已经创建了钱包。
+        result = await db.execute(
+            select(AccountingWallet)
+            .where(AccountingWallet.agent_id == agent_id)
+            .with_for_update()
+        )
+        wallet = result.scalar_one_or_none()
+        if wallet:
+            return wallet
 
     wallet = AccountingWallet(agent_id=agent_id)
     db.add(wallet)
@@ -419,10 +454,6 @@ def _wallet_response(wallet: AccountingWallet) -> dict:
         "status": wallet.status,
         "risk_status": wallet.risk_status,
 
-        # 旧前端兼容字段
-        "charged_points": float(charged),
-        "credit_points": float(credit),
-        "recharge_balance": float(charged),
     }
 
 
@@ -446,7 +477,7 @@ async def recharge_agent(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="充值金额必须大于 0")
 
     amount_dec = _money(amount)
-    wallet = await get_or_create_wallet(agent_id, db)
+    wallet = await get_or_create_wallet(agent_id, db, for_update=True)
 
     document = await _create_document(
         document_type="recharge",
@@ -497,7 +528,7 @@ async def credit_agent(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="授信金额必须大于 0")
 
     amount_dec = _money(amount)
-    wallet = await get_or_create_wallet(agent_id, db)
+    wallet = await get_or_create_wallet(agent_id, db, for_update=True)
 
     document = await _create_document(
         document_type="credit",
@@ -548,7 +579,7 @@ async def freeze_credit(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="冻结金额必须大于 0")
 
     amount_dec = _money(amount)
-    wallet = await get_or_create_wallet(agent_id, db)
+    wallet = await get_or_create_wallet(agent_id, db, for_update=True)
 
     credit = _money(wallet.credit_balance)
     frozen = _money(wallet.frozen_credit)
@@ -607,7 +638,7 @@ async def unfreeze_credit(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="解冻金额必须大于 0")
 
     amount_dec = _money(amount)
-    wallet = await get_or_create_wallet(agent_id, db)
+    wallet = await get_or_create_wallet(agent_id, db, for_update=True)
 
     frozen = _money(wallet.frozen_credit)
 
@@ -745,7 +776,7 @@ async def consume_agent_authorization_points(
             "credit_consumed": 0.0,
         }
 
-    wallet = await get_or_create_wallet(agent_id, db)
+    wallet = await get_or_create_wallet(agent_id, db, for_update=True)
 
     charged = _money(wallet.charged_balance)
     credit = _money(wallet.credit_balance)
@@ -907,6 +938,7 @@ async def refund_user_authorization_points_on_delete(
             AuthorizationChargeSnapshot.valid_until > now,
         )
         .order_by(AuthorizationChargeSnapshot.id.asc())
+        .with_for_update()
     )
     snapshots = result.scalars().all()
 
@@ -956,7 +988,7 @@ async def refund_user_authorization_points_on_delete(
         refund_charged = _money(refund_points * charged_base / total_base)
         refund_credit = _money(refund_points - refund_charged)
 
-        wallet = await get_or_create_wallet(snapshot.agent_id, db)
+        wallet = await get_or_create_wallet(snapshot.agent_id, db, for_update=True)
 
         document = await _create_document(
             document_type="delete_refund",
@@ -1291,8 +1323,7 @@ async def get_agents_with_balance_and_projects(
                 "project_id": auth.project_id,
                 "project_name": project.display_name,
                 "project_display_name": project.display_name,
-                "project_code": project.code_name,
-                "project_code_name": project.code_name,
+                "game_project_code": project.code_name,
                 "project_type": project.project_type,
                 "status": auth.status,
                 "valid_until": auth.valid_until,
@@ -1326,9 +1357,6 @@ async def get_agents_with_balance_and_projects(
                 "total_consumed": 0.0,
                 "total_refunded": 0.0,
                 "total_adjusted": 0.0,
-                "charged_points": 0.0,
-                "credit_points": 0.0,
-                "recharge_balance": 0.0,
             }
 
         # 统计直属用户数（不含已删除）
@@ -1355,9 +1383,9 @@ async def get_agents_with_balance_and_projects(
             "project_auths": auth_map.get(agent.id, []),
             "authorized_projects": auth_map.get(agent.id, []),
 
-            # 常用余额字段平铺，兼容列表页
-            "charged_points": balance["charged_points"],
-            "credit_points": balance["credit_points"],
+            # 常用余额字段平铺
+            "charged_balance": balance["charged_balance"],
+            "credit_balance": balance["credit_balance"],
             "frozen_credit": balance["frozen_credit"],
             "available_credit": balance["available_credit"],
             "available_total": balance["available_total"],
