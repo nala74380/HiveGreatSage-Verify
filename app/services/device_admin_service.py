@@ -2,8 +2,8 @@ r"""
 文件位置: app/services/device_admin_service.py
 名称: 管理后台设备监控服务层
 作者: 蜂巢·大圣 (Hive-GreatSage)
-时间: 2026-04-25
-版本: V1.0.0
+时间: 2026-05-07
+版本: V1.1.0
 功能说明:
     T026 — 管理后台设备监控，支持 Admin / Agent 两种权限视角。
 
@@ -23,25 +23,25 @@ r"""
       2. 查游戏库 device_runtime 表补充离线设备记录
       3. 合并后用主库 user 表关联用户名
 
-关联文档:
-    [[01-网络验证系统/待决策清单]] T026
-    [[01-网络验证系统/架构设计]] 9. API 端点清单
+敏感字段口径:
+    - device_id 当前暂保留原文以兼容现有前端。
+    - 新增 device_id_masked / device_id_hash 供前端迁移。
+    - 后续前端完成迁移后，可移除 device_id 原文。
 
 改进历史:
+    V1.1.0 - 项目维度设备列表增加 device_id masked/hash 字段
     V1.0.0 - 初始版本（T026）
-调试信息:
-    已知问题: 游戏库未初始化时 Redis 数据仍正常返回（优雅降级）
 """
 
 import logging
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
-from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_all_heartbeats_for_game
+from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint
 from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids, get_game_project_by_code as _get_game_project_or_404
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime
@@ -49,9 +49,6 @@ from app.models.main.models import Agent, GameProject, User
 
 logger = logging.getLogger(__name__)
 
-
-# ── 响应数据结构（轻量，不引入额外 Pydantic 导入循环）────────
-# 由 router 层直接构造 dict 后经 response_model 序列化
 
 async def get_admin_device_list(
     game_project_code: str,
@@ -81,7 +78,7 @@ async def get_admin_device_list(
         game_project=game_project,
         main_db=main_db,
         redis=redis,
-        allowed_user_ids=None,   # None = 不限制，查所有用户
+        allowed_user_ids=None,
         user_id_filter=user_id_filter,
         status_filter=status_filter,
         online_only=online_only,
@@ -108,10 +105,8 @@ async def get_agent_device_list(
     """
     game_project = await _get_game_project_or_404(main_db, game_project_code)
 
-    # 用 WITH RECURSIVE 获取代理权限范围内所有代理 ID
     scope_agent_ids = await _get_agent_scope_ids(main_db, agent.id)
 
-    # 查这些代理创建的用户 ID
     result = await main_db.execute(
         select(User.id).where(
             User.created_by_agent_id.in_(scope_agent_ids),
@@ -141,6 +136,14 @@ async def get_agent_device_list(
 # ─────────────────────────────────────────────────────────────
 
 
+def _device_identity_fields(device_id: str | None) -> dict:
+    """生成设备标识的兼容原文 + 脱敏字段。"""
+    return {
+        "device_id": device_id,
+        "device_id_masked": mask_device_fingerprint(device_id),
+        "device_id_hash": hash_sensitive_value(device_id),
+    }
+
 
 async def _build_device_list(
     game_project: GameProject,
@@ -168,7 +171,7 @@ async def _build_device_list(
 
     # Step 1: 一次性 SCAN 当前项目的 Redis 在线设备
     redis_heartbeats = await get_all_heartbeats_for_game(redis, game_id)
-    online_map: dict[str, dict] = {}   # device_fp → heartbeat data
+    online_map: dict[str, dict] = {}
     for hb in redis_heartbeats:
         uid = hb["user_id"]
         if allowed_user_ids is not None and uid not in allowed_user_ids:
@@ -193,11 +196,10 @@ async def _build_device_list(
     # Step 3: 合并设备列表
     all_devices: list[dict] = []
 
-    # 在线设备
     for device_fp, data in online_map.items():
         last_seen_ts = data.get("last_seen", 0)
         all_devices.append({
-            "device_id": device_fp,
+            **_device_identity_fields(device_fp),
             "user_id": data.get("user_id"),
             "status": data.get("status"),
             "last_seen": datetime.fromtimestamp(last_seen_ts, tz=timezone.utc).isoformat()
@@ -207,10 +209,10 @@ async def _build_device_list(
             "source": "redis",
         })
 
-    # 离线设备
     for rec in offline_records:
+        device_id = rec["device_id"]
         all_devices.append({
-            "device_id": rec["device_id"],
+            **_device_identity_fields(device_id),
             "user_id": rec["user_id"],
             "status": rec.get("status") or "offline",
             "last_seen": rec["last_seen"].isoformat() if rec["last_seen"] else None,
