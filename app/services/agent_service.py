@@ -1,9 +1,9 @@
 r"""
 文件位置: app/services/agent_service.py
 文件名称: agent_service.py
-作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-30
-版本: V1.1.1
+作者: HiveGreatSage Dev
+日期/时间: 2026-05-08
+版本: V1.1.2
 功能说明:
     代理管理及登录服务层，包含：
       - admin_login()           管理员登录，签发 Admin Token
@@ -20,10 +20,11 @@ r"""
     WITH RECURSIVE 查询说明（D007 决策）：
       PostgreSQL 的 WITH RECURSIVE 支持在 SQL 层面完成树的遍历，
       不需要在 Python 层多次查询，效率远高于 N+1 循环。
-      查询结果为扁平列表（含 depth 字段），再由 Python 组装成树形结构。
+      查询结果为扁平列表（含 hierarchy_depth 字段），再由 Python 组装成树形结构。
 
 当前业务口径:
-    - Agent.level 表示代理组织层级 / 代理树深度。
+    - Agent.hierarchy_depth 表示代理组织层级 / 代理树深度。
+    - 数据库列名仍为 agent.level，ORM 属性名为 hierarchy_depth。
     - AgentBusinessProfile.tier_level 表示代理业务等级。
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
     - 业务统计默认只统计未软删除用户。
@@ -31,10 +32,10 @@ r"""
     - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
 
 本版修复:
-    V1.1.1:
-      - 修复代理直属用户数统计包含已软删除用户的问题。
-      - 修复代理树 total_users / subtree_user_count 包含已软删除用户的问题。
-      - 所有代理业务用户统计统一过滤 User.is_deleted == False。
+    V1.1.2:
+      - 修复 _fetch_subtree_flat() 使用 result.mappings() 后仍按 row[2] 取值导致 500 的问题。
+      - 修复 _build_tree() 对 dict row 继续使用 row[2] 的问题。
+      - 新建子代理时统一使用 parent.hierarchy_depth，不再访问不存在/不稳定的 parent.level。
 
 关联文档:
     [[01-网络验证系统/数据库设计]]
@@ -43,6 +44,7 @@ r"""
     [[01-网络验证系统/代理点数计费与返点规则]]
 
 改进历史:
+    V1.1.2 (2026-05-08) - 修复代理树 mapping row 读取错误。
     V1.1.1 (2026-04-30) - 代理用户统计排除已软删除用户。
     V1.1.0 (2026-04-29) - 移除旧账号数量限制口径，用户数量仅作统计。
     V1.0.1 (2026-04-25) - 新增 Phase 2 递归查询：get_agent_subtree /
@@ -162,23 +164,23 @@ async def create_agent(
     创建代理（仅管理员可调用）。
 
     规则:
-      - parent_agent_id=None → 顶级代理，level=1。
-      - 指定父代理 → level = parent.level + 1。
+      - parent_agent_id=None → 顶级代理，hierarchy_depth=1。
+      - 指定父代理 → hierarchy_depth = parent.hierarchy_depth + 1。
       - 用户数量不再作为代理配额硬约束。
       - 新建代理只创建代理账号主体；业务等级通过 AgentBusinessProfile 管理。
     """
     await _assert_agent_username_unique(body.username, db)
 
-    level = 1
+    hierarchy_depth = 1
     if body.parent_agent_id is not None:
         parent = await _get_agent_or_404(body.parent_agent_id, db)
-        level = parent.level + 1
+        hierarchy_depth = int(parent.hierarchy_depth) + 1
 
     agent = Agent(
         username=body.username,
         password_hash=hash_password(body.password),
         parent_agent_id=body.parent_agent_id,
-        hierarchy_depth=level,
+        hierarchy_depth=hierarchy_depth,
         created_by_admin_id=admin.id,
         commission_rate=body.commission_rate,
         status="active",
@@ -480,7 +482,7 @@ async def _agent_to_response(
             "project_type": proj.project_type,
             "status": auth.status,
             "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
-            "granted_at": auth.granted_at.isoformat() if getattr(auth, 'granted_at', None) else None,
+            "granted_at": auth.granted_at.isoformat() if getattr(auth, "granted_at", None) else None,
             "source": auth.source,
         }
         for auth, proj in auth_result.all()
@@ -518,7 +520,7 @@ async def _fetch_subtree_flat(
             SELECT
                 id,
                 username,
-                level,
+                level AS hierarchy_depth,
                 parent_agent_id,
                 status,
                 commission_rate,
@@ -533,7 +535,7 @@ async def _fetch_subtree_flat(
             SELECT
                 a.id,
                 a.username,
-                a.level,
+                a.level AS hierarchy_depth,
                 a.parent_agent_id,
                 a.status,
                 a.commission_rate,
@@ -545,7 +547,7 @@ async def _fetch_subtree_flat(
         )
         SELECT *
         FROM subtree
-        ORDER BY level, id
+        ORDER BY hierarchy_depth, id
         """
     )
 
@@ -556,7 +558,7 @@ async def _fetch_subtree_flat(
         {
             "id": row["id"],
             "username": row["username"],
-            "hierarchy_depth": int(row[2]),
+            "hierarchy_depth": int(row["hierarchy_depth"]),
             "parent_agent_id": row["parent_agent_id"],
             "status": row["status"],
             "commission_rate": float(row["commission_rate"]) if row["commission_rate"] else None,
@@ -620,7 +622,7 @@ def _build_tree(
         node_map[row["id"]] = AgentTreeNode(
             id=row["id"],
             username=row["username"],
-            hierarchy_depth=int(row[2]),
+            hierarchy_depth=int(row["hierarchy_depth"]),
             parent_agent_id=row["parent_agent_id"],
             status=row["status"],
             commission_rate=row["commission_rate"],
