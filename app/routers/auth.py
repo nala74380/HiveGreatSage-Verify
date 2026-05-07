@@ -3,7 +3,7 @@ r"""
 文件名称: auth.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-05-07
-版本: V1.3.0
+版本: V1.4.0
 功能说明:
     认证路由薄层：
       POST /api/auth/login      — 登录
@@ -18,9 +18,10 @@ r"""
       3. User.user_level 已不再作为授权等级来源。
       4. 登录成功 / 失败写入 audit_log。
       5. 登出 / 踢出所有会话成功或失败写入 audit_log。
-      6. 审计日志不记录密码、Token、Refresh Token 或密码哈希。
+      6. 审计日志不记录密码、Token、Refresh Token、密码哈希或设备指纹原文。
 
 改进历史:
+    V1.4.0 (2026-05-07) - User 登录审计移除设备指纹原文，改写 masked/hash。
     V1.3.0 (2026-05-07) - User 登出 / 踢出所有会话接入 audit_log。
     V1.2.0 (2026-05-07) - User 登录成功 / 失败接入 audit_log。
     V1.1.0 (2026-05-02) - /me 改为 Authorization 授权摘要口径。
@@ -40,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user
 from app.core.redis_client import get_redis, incr_rate_limit
 from app.core.security import decode_access_token
+from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint
 from app.database import get_main_db
 from app.models.main.models import GameProject, User
 from app.schemas.auth import (
@@ -74,12 +76,14 @@ def _client_ip(request: Request) -> str:
 
 
 def _login_metadata(body: LoginRequest, *, client_ip: str, success: bool, reason: str | None = None) -> dict:
-    """生成用户登录审计元数据。严禁记录 password / token。"""
+    """生成用户登录审计元数据。严禁记录 password / token / device_fingerprint 原文。"""
+    device_fingerprint = getattr(body, "device_fingerprint", None)
     return {
         "username": body.username,
         "client_ip": client_ip,
         "client_type": getattr(body, "client_type", None),
-        "device_fingerprint": getattr(body, "device_fingerprint", None),
+        "device_fingerprint_masked": mask_device_fingerprint(device_fingerprint),
+        "device_fingerprint_hash": hash_sensitive_value(device_fingerprint),
         "game_project_code": getattr(body, "game_project_code", None) or getattr(body, "project_code", None),
         "success": success,
         "reason": reason,

@@ -3,13 +3,14 @@ r"""
 文件名称: admin.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-05-07
-版本: V1.3.0
+版本: V1.4.0
 功能说明:
     管理后台路由：
       POST /admin/api/auth/login   — 管理员登录，获取 Admin Token
       GET  /admin/api/dashboard    — 平台统计概览
 
 改进历史:
+    V1.4.0 (2026-05-07): 登录日志列表读取 device_fingerprint_hash，不再尝试从原文计算 hash。
     V1.3.0 (2026-05-07): 用户设备列表与解绑审计中的设备指纹脱敏。
     V1.2.0 (2026-05-07): 管理员手动解绑设备接入 audit_log。
     V1.1.0 (2026-05-07): Admin 登录成功 / 失败接入 audit_log。
@@ -45,6 +46,15 @@ def _device_fingerprint_fields(value: str | None) -> dict:
         "device_fingerprint": None,
         "device_fingerprint_masked": mask_device_fingerprint(value),
         "device_fingerprint_hash": hash_sensitive_value(value),
+    }
+
+
+def _login_log_device_fields(log: LoginLog) -> dict:
+    """登录日志设备字段。新日志直接读取 device_fingerprint_hash，历史原文已清空。"""
+    return {
+        "device_fingerprint": None,
+        "device_fingerprint_masked": mask_device_fingerprint(log.device_fingerprint),
+        "device_fingerprint_hash": log.device_fingerprint_hash,
     }
 
 
@@ -169,7 +179,7 @@ async def list_login_logs(
             "id":                 log.id,
             "user_id":            log.user_id,
             "username":           user.username if user else None,
-            **_device_fingerprint_fields(log.device_fingerprint),
+            **_login_log_device_fields(log),
             "ip_address":         str(log.ip_address) if log.ip_address else None,
             "client_type":        log.client_type,
             "game_project_id":    log.game_project_id,
