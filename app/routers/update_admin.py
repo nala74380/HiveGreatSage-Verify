@@ -3,7 +3,7 @@ r"""
 名称: 热更新管理路由（管理员专用）
 作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-05-07
-版本: V2.3.0
+版本: V2.4.0
 功能说明:
     POST   /admin/api/updates/{project_id}/{client_type}         上传并发布热更新包
     GET    /admin/api/updates/{project_id}/{client_type}/latest  获取当前活跃版本
@@ -19,8 +19,10 @@ r"""
     - 临时文件写完后交给存储层 save_file_from_path() 原子落盘。
     - 数据库写入失败时尝试删除已保存文件，避免孤儿包。
     - VersionRecord 记录发布管理员、原始文件名、文件大小和 request_id。
+    - 发布成功后写入 audit_log。
 
 改进内容:
+    V2.4.0 (2026-05-07) - 热更新发布接入 audit_log
     V2.3.0 (2026-05-07) - request_id 改为从 RequestIdMiddleware 上下文读取
     V2.2.0 (2026-05-07) - VersionRecord 写入发布审计字段
     V2.1.0 (2026-05-07) - 上传包改为流式读取 + 临时文件 + 原子落盘
@@ -46,6 +48,7 @@ from app.core.request_context import get_request_id
 from app.core.storage import get_storage
 from app.database import get_main_db
 from app.models.main.models import Admin, GameProject, VersionRecord
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
 
@@ -181,6 +184,7 @@ async def upload_version_endpoint(
             )
         )
         existing = existing_result.scalar_one_or_none()
+        is_republish = existing is not None
 
         await db.execute(
             update(VersionRecord)
@@ -224,6 +228,29 @@ async def upload_version_endpoint(
             db.add(record)
             await db.flush()
             msg = f"版本 {version} 发布成功"
+
+        await create_audit_log(
+            db=db,
+            actor_type="admin",
+            actor_id=current_admin.id,
+            action="update.publish",
+            target_type="version_record",
+            target_id=record.id,
+            summary=f"发布热更新 {project.code_name}/{client_type} v{version}",
+            metadata={
+                "game_project_id": project.id,
+                "game_project_code": project.code_name,
+                "client_type": client_type,
+                "version": version,
+                "force_update": force_update,
+                "is_republish": is_republish,
+                "original_filename": original_filename,
+                "file_size": file_size,
+                "checksum_sha256": checksum,
+                "package_path": saved_path,
+            },
+            request_id=request_id,
+        )
 
         # 主动清除 Redis 版本缓存（game 项目的客户端检查缓存）
         cache_key = f"update:latest:{project.code_name}:{client_type}"
