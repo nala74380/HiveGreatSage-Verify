@@ -1,14 +1,15 @@
 r"""
 文件位置: app/services/device_service.py
 文件名称: device_service.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-22
-版本: V1.0.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+日期/时间: 2026-05-07
+版本: V1.1.0
 功能说明:
-    设备数据服务层，包含三个业务逻辑：
+    设备数据服务层，包含四个业务逻辑：
       - process_heartbeat()  安卓脚本心跳上报（写 Redis）
       - get_device_list()    PC 中控拉取设备列表（Redis + 游戏库回落）
       - get_device_data()    PC 中控拉取单台设备详情
+      - upload_imsi()        安卓脚本上传 IMSI
 
     设计要点：
       1. 心跳只写 Redis，不直接写 PostgreSQL；落库由 Celery 任务异步完成。
@@ -16,19 +17,16 @@ r"""
       3. 游戏库会话通过 _get_game_engine / _game_session_factories 在服务层内部
          创建，不通过 FastAPI 依赖注入（因为 code_name 在运行时才能确定）。
       4. 所有跨库引用（user_id, device_id）在应用层校验，不依赖数据库外键。
-
-    P1: 后续如需拆分数据访问层，再按实际重复度引入 repository 抽象。
+      5. IMSI 上传响应不回显 IMSI 或设备指纹原文，只返回 masked/hash。
 
 关联文档:
     [[01-网络验证系统/Redis心跳落库策略]]
     [[01-网络验证系统/架构设计]] 第七节 Redis 使用策略
 
 改进历史:
+    V1.1.0 (2026-05-07) - upload_imsi 响应移除 IMSI / 设备指纹原文回显。
     V1.0.1 - 设备绑定校验改为用户 × 项目 × 设备维度
     V1.0.0 - 初始版本
-调试信息:
-    已知问题: 无
-    游戏库会话使用内部工厂方法，确保已调用 _get_game_engine 初始化引擎。
 """
 
 import logging
@@ -45,10 +43,11 @@ from app.core.redis_client import (
     get_user_heartbeats,
     set_heartbeat,
 )
+from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint, mask_imsi
 from app.core.utils import get_game_project_by_code as _get_game_project
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime
-from app.models.main.models import DeviceBinding, GameProject, User
+from app.models.main.models import DeviceBinding, User
 
 logger = logging.getLogger(__name__)
 from app.schemas.device import (
@@ -338,7 +337,7 @@ async def _get_device_runtime_from_db(
             return result.scalar_one_or_none()
     except Exception as exc:
         logger.warning("游戏库设备运行时查询失败 (%s, uid=%s, fp=%s): %s",
-                       game_project_code, user_id, device_fingerprint[:16], exc)
+                       game_project_code, user_id, mask_device_fingerprint(device_fingerprint), exc)
         return None
 
 
@@ -349,7 +348,7 @@ async def _get_devices_from_main_db(
     exclude_device_ids: set[str],
 ) -> list[DeviceStatus]:
     """
-    第三层山山：从主库 DeviceBinding 表查询用户的设备绑定记录。
+    第三层兜底：从主库 DeviceBinding 表查询用户的设备绑定记录。
 
     登录时就会创建 DeviceBinding，所以即使还没有心跳，
     也能展示已绑定的设备列表（状态显示为离线）。
@@ -423,6 +422,8 @@ async def upload_imsi(
 
     return ImsiUploadResponse(
         message="IMSI 上传成功",
-        device_fingerprint=body.device_fingerprint,
-        imsi=body.imsi,
+        device_fingerprint_masked=mask_device_fingerprint(body.device_fingerprint),
+        device_fingerprint_hash=hash_sensitive_value(body.device_fingerprint),
+        imsi_masked=mask_imsi(body.imsi),
+        imsi_hash=hash_sensitive_value(body.imsi),
     )
