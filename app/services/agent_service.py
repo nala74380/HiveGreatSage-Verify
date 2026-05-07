@@ -3,7 +3,7 @@ r"""
 文件名称: agent_service.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-05-08
-版本: V1.1.2
+版本: V1.1.3
 功能说明:
     代理管理及登录服务层，包含：
       - admin_login()           管理员登录，签发 Admin Token
@@ -29,9 +29,14 @@ r"""
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
     - 业务统计默认只统计未软删除用户。
     - 已软删除用户保留在数据库中用于审计，不进入代理业务统计。
-    - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
+    - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和授权扣点规则控制。
+    - 代理列表接口必须返回 authorized_projects 的稳定项目展示字段，避免前端出现 undefined。
 
 本版修复:
+    V1.1.3:
+      - list_agents() / list_agents_in_scope() 批量补齐 authorized_projects。
+      - authorized_projects 统一返回 display_name / project_name / project_display_name。
+      - 避免代理管理页面“已授权项目”列显示 undefined。
     V1.1.2:
       - 修复 _fetch_subtree_flat() 使用 result.mappings() 后仍按 row[2] 取值导致 500 的问题。
       - 修复 _build_tree() 对 dict row 继续使用 row[2] 的问题。
@@ -44,6 +49,7 @@ r"""
     [[01-网络验证系统/代理点数计费与返点规则]]
 
 改进历史:
+    V1.1.3 (2026-05-08) - 代理列表批量返回稳定项目展示字段。
     V1.1.2 (2026-05-08) - 修复代理树 mapping row 读取错误。
     V1.1.1 (2026-04-30) - 代理用户统计排除已软删除用户。
     V1.1.0 (2026-04-29) - 移除旧账号数量限制口径，用户数量仅作统计。
@@ -66,7 +72,7 @@ from app.core.security import (
     verify_password,
 )
 from app.core.utils import get_agent_scope_ids
-from app.models.main.models import Admin, Agent, User
+from app.models.main.models import Admin, Agent, AgentProjectAuth, GameProject, User
 from app.schemas.agent import (
     AdminLoginRequest,
     AdminLoginResponse,
@@ -219,6 +225,7 @@ async def list_agents(
 
     agent_ids = [a.id for a in agents]
     user_count_map = await _batch_user_counts(agent_ids, db)
+    project_map = await _batch_authorized_projects(agent_ids, db)
 
     agent_responses = [
         AgentResponse(
@@ -232,6 +239,7 @@ async def list_agents(
             created_at=a.created_at,
             updated_at=a.updated_at,
             users_count=user_count_map.get(a.id, 0),
+            authorized_projects=project_map.get(a.id, []),
         )
         for a in agents
     ]
@@ -388,6 +396,7 @@ async def list_agents_in_scope(
 
     agent_ids = [a.id for a in agents]
     user_count_map = await _batch_user_counts(agent_ids, db)
+    project_map = await _batch_authorized_projects(agent_ids, db)
 
     agent_responses = [
         AgentResponse(
@@ -401,6 +410,7 @@ async def list_agents_in_scope(
             created_at=a.created_at,
             updated_at=a.updated_at,
             users_count=user_count_map.get(a.id, 0),
+            authorized_projects=project_map.get(a.id, []),
         )
         for a in agents
     ]
@@ -463,30 +473,7 @@ async def _agent_to_response(
     )
     users_count = count_result.scalar_one()
 
-    # 查询代理的项目授权
-    from app.models.main.models import AgentProjectAuth, GameProject
-    auth_result = await db.execute(
-        select(AgentProjectAuth, GameProject)
-        .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
-        .where(AgentProjectAuth.agent_id == agent.id)
-        .order_by(GameProject.display_name)
-    )
-    authorized_projects = [
-        {
-            "id": proj.id,
-            "project_id": proj.id,
-            "display_name": proj.display_name,
-            "project_name": proj.display_name,
-            "code_name": proj.code_name,
-            "project_code": proj.code_name,
-            "project_type": proj.project_type,
-            "status": auth.status,
-            "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
-            "granted_at": auth.granted_at.isoformat() if getattr(auth, "granted_at", None) else None,
-            "source": auth.source,
-        }
-        for auth, proj in auth_result.all()
-    ]
+    project_map = await _batch_authorized_projects([agent.id], db)
 
     return AgentResponse(
         id=agent.id,
@@ -499,7 +486,7 @@ async def _agent_to_response(
         created_at=agent.created_at,
         updated_at=agent.updated_at,
         users_count=users_count,
-        authorized_projects=authorized_projects,
+        authorized_projects=project_map.get(agent.id, []),
     )
 
 
@@ -601,6 +588,54 @@ async def _batch_user_counts(
         agent_id: cnt
         for agent_id, cnt in counts_result.all()
     }
+
+
+async def _batch_authorized_projects(
+    agent_ids: list[int],
+    db: AsyncSession,
+) -> dict[int, list[dict]]:
+    """
+    批量查询多个代理的项目授权列表。
+
+    设计目标:
+      - 代理列表页避免 N+1 查询。
+      - 对外字段稳定提供 display_name，避免前端显示 undefined。
+      - 同时保留 project_name / project_display_name / project_code / game_project_code，
+        方便不同页面逐步收敛到统一契约。
+    """
+    if not agent_ids:
+        return {}
+
+    auth_result = await db.execute(
+        select(AgentProjectAuth, GameProject)
+        .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
+        .where(AgentProjectAuth.agent_id.in_(agent_ids))
+        .order_by(AgentProjectAuth.agent_id, GameProject.display_name)
+    )
+
+    project_map: dict[int, list[dict]] = {agent_id: [] for agent_id in agent_ids}
+
+    for auth, proj in auth_result.all():
+        project_map.setdefault(auth.agent_id, []).append(
+            {
+                "id": proj.id,
+                "project_id": proj.id,
+                "display_name": proj.display_name,
+                "project_display_name": proj.display_name,
+                "project_name": proj.display_name,
+                "code_name": proj.code_name,
+                "project_code": proj.code_name,
+                "game_project_code": proj.code_name,
+                "project_type": proj.project_type,
+                "status": auth.status,
+                "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
+                "granted_at": auth.granted_at.isoformat() if getattr(auth, "granted_at", None) else None,
+                "source": auth.source,
+                "user_count": 0,
+            }
+        )
+
+    return project_map
 
 
 def _build_tree(
