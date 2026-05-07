@@ -3,7 +3,7 @@ r"""
 名称: 热更新管理路由（管理员专用）
 作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-05-07
-版本: V2.2.0
+版本: V2.3.0
 功能说明:
     POST   /admin/api/updates/{project_id}/{client_type}         上传并发布热更新包
     GET    /admin/api/updates/{project_id}/{client_type}/latest  获取当前活跃版本
@@ -18,15 +18,14 @@ r"""
     - 超过 500MB 立即中止并清理临时文件。
     - 临时文件写完后交给存储层 save_file_from_path() 原子落盘。
     - 数据库写入失败时尝试删除已保存文件，避免孤儿包。
-    - VersionRecord 记录发布管理员、原始文件名、文件大小。
+    - VersionRecord 记录发布管理员、原始文件名、文件大小和 request_id。
 
 改进内容:
+    V2.3.0 (2026-05-07) - request_id 改为从 RequestIdMiddleware 上下文读取
     V2.2.0 (2026-05-07) - VersionRecord 写入发布审计字段
     V2.1.0 (2026-05-07) - 上传包改为流式读取 + 临时文件 + 原子落盘
     V2.0.0 (2026-04-26) - 版本记录改存主库，支持验证项目热更新
     V1.0.0 - 初始版本（仅支持游戏项目）
-调试信息:
-    已知问题: request_id 待 RequestIdMiddleware 落地后写入。
 """
 
 import hashlib
@@ -43,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin
 from app.core.redis_client import get_redis
+from app.core.request_context import get_request_id
 from app.core.storage import get_storage
 from app.database import get_main_db
 from app.models.main.models import Admin, GameProject, VersionRecord
@@ -163,6 +163,7 @@ async def upload_version_endpoint(
             detail=f"不支持的 {client_type} 包格式 '{ext}'，允许：{', '.join(sorted(allowed_extensions))}",
         )
 
+    request_id = get_request_id()
     temp_path, checksum, file_size = await _write_upload_to_temp_file(file)
     package_path = f"{project.code_name}/{client_type}/packages/{version}/{original_filename}"
     storage = get_storage()
@@ -201,7 +202,7 @@ async def upload_version_endpoint(
             existing.released_by_admin_id = current_admin.id
             existing.original_filename = original_filename
             existing.file_size = file_size
-            existing.request_id = None
+            existing.request_id = request_id
             await db.flush()
             record = existing
             msg = f"版本 {version} 已重新发布"
@@ -218,7 +219,7 @@ async def upload_version_endpoint(
                 released_by_admin_id=current_admin.id,
                 original_filename=original_filename,
                 file_size=file_size,
-                request_id=None,
+                request_id=request_id,
             )
             db.add(record)
             await db.flush()
