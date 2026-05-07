@@ -3,7 +3,7 @@ r"""
 名称: 管理后台设备监控路由
 作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-05-07
-版本: V2.3.0
+版本: V2.4.0
 功能说明:
     管理后台设备监控路由。
 
@@ -37,7 +37,11 @@ r"""
 当前口径:
     - 项目编码对外统一使用 game_project_code。
     - 在线状态优先来自 Redis runtime key，DB last_seen_at 作为补充。
-    - IMSI 当前仍按既有接口返回，后续需进入敏感字段脱敏治理。
+    - IMSI 后台默认不返回原文，只返回 imsi_masked / imsi_hash。
+    - 设备指纹暂保留 device_id / device_fingerprint 以兼容现有前端，同时新增 masked/hash 字段用于迁移。
+
+改进历史:
+    V2.4.0 (2026-05-07): 后台设备列表增加敏感字段脱敏与 hash 字段；IMSI 不再返回原文。
 """
 
 import json
@@ -54,6 +58,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_redis
 from app.core.security import decode_admin_token, decode_agent_token
+from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint, mask_imsi
 from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids
 from app.database import get_main_db
 from app.models.main.models import Admin, Agent, Authorization, DeviceBinding, GameProject, User
@@ -317,6 +322,8 @@ def _device_response(
         "binding_id": binding.id,
         "device_id": binding.device_fingerprint,
         "device_fingerprint": binding.device_fingerprint,
+        "device_fingerprint_masked": mask_device_fingerprint(binding.device_fingerprint),
+        "device_fingerprint_hash": hash_sensitive_value(binding.device_fingerprint),
         "user_id": binding.user_id,
         "username": user.username,
         "user_status": user.status,
@@ -329,7 +336,9 @@ def _device_response(
         "last_seen": last_seen.isoformat() if last_seen else None,
         "last_seen_at": last_seen.isoformat() if last_seen else None,
         "bound_at": binding.bound_at.isoformat() if binding.bound_at else None,
-        "imsi": binding.imsi,
+        "imsi": None,
+        "imsi_masked": mask_imsi(binding.imsi),
+        "imsi_hash": hash_sensitive_value(binding.imsi),
         "game_data": game_data,
         "is_online": is_online,
         "source": "redis" if is_online_redis else "database",
