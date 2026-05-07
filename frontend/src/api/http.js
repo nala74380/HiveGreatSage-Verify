@@ -8,12 +8,17 @@
  *
  * _skipAuthRedirect 选项：
  *   请求配置中加入 { _skipAuthRedirect: true } 可跳过 401 自动跳登录逻辑。
- *   用于「有 Token 但无权限调用的端点」（如 Admin Token 调用 User 专属接口），
+ *   用于「有 Token 但无权限调用的端点」（如 Agent Token 误触发 Admin-only 接口），
  *   此时 401 代表权限不足，不代表 Token 失效，不应强制登出。
  *
+ * 代理端特殊口径：
+ *   当前前端仍有 shared 页面，部分页面会根据身份分支加载数据。
+ *   如果代理身份误触发 /admin/api/* 并返回 401，不清理代理会话。
+ *   这不是放权；后端仍然拒绝该请求，只是前端不再把“权限不匹配”误判成“登录过期”。
+ *
  * 错误处理：
- *   401（无 _skipAuthRedirect）→ 清除登录状态，跳转 /login
- *   401（有 _skipAuthRedirect）→ 静默，由调用方自行处理
+ *   401（无 _skipAuthRedirect 且是真正 Token 失效）→ 清除登录状态，跳转 /login
+ *   401（有 _skipAuthRedirect 或代理误触发 Admin-only 接口）→ 静默，由调用方自行处理
  *   403 → ElMessage 提示无权限
  *   422 → ElMessage 提示参数错误（FastAPI Validation Error）
  *   429 → ElMessage 提示请求过于频繁
@@ -42,6 +47,12 @@ instance.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
+const isAgentCallingAdminApi = (config) => {
+  const role = storage.getRole()
+  const url = String(config?.url || '')
+  return role === 'agent' && url.startsWith('/admin/api/')
+}
+
 // ── 响应拦截器：统一错误处理 ───────────────────────────────────
 instance.interceptors.response.use(
   (res) => res,
@@ -58,9 +69,8 @@ instance.interceptors.response.use(
         : '请求失败'
 
     if (status === 401) {
-      if (config._skipAuthRedirect) {
-        // 调用方主动声明跳过跳转（权限不足，而非 Token 失效）
-        // 静默处理，由调用方的 catch 决定如何展示
+      if (config._skipAuthRedirect || isAgentCallingAdminApi(config)) {
+        // 权限不匹配，不代表当前 Token 已失效，不做强制登出。
       } else {
         // Token 真正失效 → 清除状态并跳登录页
         storage.clearAll()
