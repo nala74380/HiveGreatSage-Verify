@@ -3,7 +3,7 @@ r"""
 名称: 管理后台设备监控路由
 作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-05-07
-版本: V2.4.0
+版本: V2.5.0
 功能说明:
     管理后台设备监控路由。
 
@@ -38,9 +38,10 @@ r"""
     - 项目编码对外统一使用 game_project_code。
     - 在线状态优先来自 Redis runtime key，DB last_seen_at 作为补充。
     - IMSI 后台默认不返回原文，只返回 imsi_masked / imsi_hash。
-    - 设备指纹暂保留 device_id / device_fingerprint 以兼容现有前端，同时新增 masked/hash 字段用于迁移。
+    - 后台设备列表不返回设备指纹原文，只返回 masked/hash。
 
 改进历史:
+    V2.5.0 (2026-05-07): 全局设备监控移除 device_id / device_fingerprint 原文输出。
     V2.4.0 (2026-05-07): 后台设备列表增加敏感字段脱敏与 hash 字段；IMSI 不再返回原文。
 """
 
@@ -320,8 +321,8 @@ def _device_response(
 
     return {
         "binding_id": binding.id,
-        "device_id": binding.device_fingerprint,
-        "device_fingerprint": binding.device_fingerprint,
+        "device_id": None,
+        "device_fingerprint": None,
         "device_fingerprint_masked": mask_device_fingerprint(binding.device_fingerprint),
         "device_fingerprint_hash": hash_sensitive_value(binding.device_fingerprint),
         "user_id": binding.user_id,
