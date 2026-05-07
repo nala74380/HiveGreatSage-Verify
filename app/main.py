@@ -3,7 +3,7 @@ r"""
 文件名称: main.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-05-07
-版本: v1.1.0
+版本: v1.2.0
 功能说明:
     FastAPI 应用入口。负责：
       1. 应用生命周期管理（lifespan：启动检查 + 关闭清理）
@@ -14,6 +14,7 @@ r"""
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
 
 改进历史:
+    v1.2.0 (2026-05-07) - 注册 audit_admin 审计日志查询路由
     v1.1.0 (2026-05-07) - 注册 RequestIdMiddleware，所有响应返回 X-Request-ID
     v1.1.0 (2026-05-03) - 删除旧 balance_admin/balance_agent 路由；新增 pricing 路由；
                          启动时初始化 network 默认配置；更新 VersionRecord 为统一主库读取
@@ -195,6 +196,7 @@ from app.routers import (
     admin,
     agent_profile_admin,
     agents,
+    audit_admin,
     auth,
     device,
     device_admin,
@@ -236,6 +238,7 @@ app.include_router(system_settings.admin_router, prefix="/admin/api/system-setti
 app.include_router(accounting.router, prefix="/admin/api/accounting", tags=["账务中心"])
 app.include_router(project_access_admin.router, prefix="/admin/api/project-access", tags=["项目准入管理"])
 app.include_router(agent_profile_admin.router, prefix="/admin/api", tags=["代理业务管理"])
+app.include_router(audit_admin.router, prefix="/admin/api/audit-logs", tags=["审计日志"])
 
 
 # ── 健康检查 ─────────────────────────────────────────────────
