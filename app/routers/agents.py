@@ -1,42 +1,22 @@
 r"""
 文件位置: app/routers/agents.py
 文件名称: agents.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-29
-版本: V1.1.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+日期/时间: 2026-05-07
+版本: V1.3.0
 功能说明:
-    代理管理路由（薄层）。
+    代理管理路由（薄层优先，历史接口逐步收敛）。
 
     ⚠️ 路由注册顺序规则：
       静态路径必须在参数化路径之前注册，否则 FastAPI 会把静态段当作参数解析。
       例如 /tree 必须在 /{agent_id} 之前，否则 FastAPI 会尝试把 "tree" 解析为 int。
 
-    Phase 1（管理员操作）：
-      POST  /api/agents/auth/login    代理登录
-      GET   /api/agents/me            代理个人主页（Agent Token）
-      POST  /api/agents/              创建代理（Admin Token）
-      GET   /api/agents/              查询全部代理列表（Admin Token）
-      GET   /api/agents/tree          全代理树（静态路径，必须在 /{id} 之前）
-      GET   /api/agents/my-projects   代理已授权项目列表（Agent Token）
-      GET   /api/agents/scope/list    代理权限范围内的下级列表（Agent Token）
-      GET   /api/agents/{id}          查询代理详情（Admin Token）
-      GET   /api/agents/{id}/subtree  查询代理子树（Admin Token）
-      PATCH /api/agents/{id}          更新代理信息（Admin Token）
-
 当前业务口径:
-    - Agent.level 表示代理组织层级 / 代理树深度。
-    - AgentBusinessProfile.tier_level 表示代理业务等级。
+    - hierarchy_depth 表示代理组织层级 / 代理树深度。
+    - tier_level 表示代理业务等级 Lv.1 - Lv.4。
+    - 不兼容旧字段 level / hierarchy_level。
+    - 项目编码对外统一使用 game_project_code。
     - 用户数量只作为统计展示，不再作为代理配额硬约束。
-    - 代理商业约束由项目准入、项目授权、授权扣点、点数余额和风险状态控制。
-
-改进历史:
-    V1.1.0 (2026-04-29) - 移除旧账号数量限制口径，保留用户数量统计。
-    V1.0.3 (2026-04-26) - 新增 GET /api/agents/me 代理个人主页
-    V1.0.2 (2026-04-25) - 修复路由顺序；恢复 my-projects 端点
-    V1.0.1 (2026-04-25) - 新增 Phase 2 树形查询端点
-    V1.0.0 - 初始版本
-调试信息:
-    已知问题: 无
 """
 
 from datetime import datetime, timezone
@@ -47,7 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin, get_current_agent
 from app.database import get_main_db
+from app.models.main.agent_profile import AgentBusinessProfile
 from app.models.main.models import Admin, Agent, AgentProjectAuth, GameProject, User
+from app.models.main.project_access import AgentLevelPolicy
 from app.schemas.agent import (
     AgentCreateRequest,
     AgentFlatListResponse,
@@ -58,6 +40,7 @@ from app.schemas.agent import (
     AgentSubtreeResponse,
     AgentUpdateRequest,
 )
+from app.schemas.agent_me import AgentMeResponse
 from app.services.accounting_service import get_agent_balance, get_balance_transactions
 from app.services.agent_service import (
     agent_login,
@@ -70,6 +53,18 @@ from app.services.agent_service import (
 )
 
 router = APIRouter()
+
+
+def _as_float(value) -> float:
+    return float(value or 0)
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 # ── 登录 ──────────────────────────────────────────────────────
@@ -85,37 +80,100 @@ async def agent_login_endpoint(
 
 # ── 代理个人主页（静态路径，必须在 /{agent_id} 之前）──────────
 
-@router.get("/me", summary="代理个人主页")
+@router.get("/me", response_model=AgentMeResponse, summary="代理个人主页")
 async def get_my_profile(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
-) -> dict:
+) -> AgentMeResponse:
     """
     代理获取自己的详细个人信息（Agent Token）。
 
-    返回：
-      - 基本信息（用户名、组织层级、状态、创建时间）
-      - 直属用户数统计（只统计，不再作为配额限制）
-      - 已授权项目列表（含到期时间）
-      - 上级代理信息（若有）
+    返回当前代理基础信息、直属用户统计、已授权项目、上级代理，以及业务能力快照。
+    对外字段不再返回旧 hierarchy_level / level / code_name。
     """
-    users_total = (await db.execute(
-        select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id)
-    )).scalar_one()
-
-    users_active = (await db.execute(
-        select(func.count(User.id)).where(
-            User.created_by_agent_id == current_agent.id,
-            User.status == "active",
+    users_total = (
+        await db.execute(
+            select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id)
         )
-    )).scalar_one()
+    ).scalar_one()
 
-    users_suspended = (await db.execute(
-        select(func.count(User.id)).where(
-            User.created_by_agent_id == current_agent.id,
-            User.status == "suspended",
+    users_active = (
+        await db.execute(
+            select(func.count(User.id)).where(
+                User.created_by_agent_id == current_agent.id,
+                User.status == "active",
+            )
         )
-    )).scalar_one()
+    ).scalar_one()
+
+    users_suspended = (
+        await db.execute(
+            select(func.count(User.id)).where(
+                User.created_by_agent_id == current_agent.id,
+                User.status == "suspended",
+            )
+        )
+    ).scalar_one()
+
+    profile_result = await db.execute(
+        select(AgentBusinessProfile).where(AgentBusinessProfile.agent_id == current_agent.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+
+    if profile is None:
+        profile = AgentBusinessProfile(
+            agent_id=current_agent.id,
+            tier_level=1,
+            risk_status="normal",
+        )
+        db.add(profile)
+        await db.flush()
+        await db.refresh(profile)
+
+    policy_result = await db.execute(
+        select(AgentLevelPolicy).where(AgentLevelPolicy.level == profile.tier_level)
+    )
+    policy = policy_result.scalar_one_or_none()
+
+    if policy is None:
+        # 开发期兜底：避免等级策略缺失导致代理主页 500。
+        # 长期应由迁移或初始化脚本保证 AgentLevelPolicy 存在。
+        policy = AgentLevelPolicy(
+            level=profile.tier_level,
+            level_name=f"Lv.{profile.tier_level}",
+            default_credit_limit=0,
+            max_credit_limit=0,
+            can_create_sub_agents=False,
+            max_sub_agents=0,
+            can_auto_open_project=False,
+            auto_open_project_limit=0,
+            review_priority=0,
+            is_active=True,
+        )
+        db.add(policy)
+        await db.flush()
+        await db.refresh(policy)
+
+    credit_limit = (
+        _as_float(profile.credit_limit_override)
+        if profile.credit_limit_override is not None
+        else _as_float(policy.default_credit_limit)
+    )
+    max_credit_limit = (
+        _as_float(profile.max_credit_limit_override)
+        if profile.max_credit_limit_override is not None
+        else _as_float(policy.max_credit_limit)
+    )
+    can_create_sub_agents = (
+        profile.can_create_sub_agents_override
+        if profile.can_create_sub_agents_override is not None
+        else policy.can_create_sub_agents
+    )
+    max_sub_agents = (
+        profile.max_sub_agents_override
+        if profile.max_sub_agents_override is not None
+        else policy.max_sub_agents
+    )
 
     proj_result = await db.execute(
         select(AgentProjectAuth, GameProject)
@@ -130,20 +188,19 @@ async def get_my_profile(
     proj_rows = proj_result.all()
     now = datetime.now(tz=timezone.utc)
 
-    authorized_projects = [
-        {
-            "id": project.id,
-            "display_name": project.display_name,
-            "code_name": project.code_name,
-            "project_type": project.project_type,
-            "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
-            "is_expired": (
-                auth.valid_until is not None
-                and auth.valid_until.replace(tzinfo=timezone.utc) <= now
-            ),
-        }
-        for auth, project in proj_rows
-    ]
+    authorized_projects: list[dict] = []
+    for auth, project in proj_rows:
+        valid_until = _aware(auth.valid_until)
+        authorized_projects.append(
+            {
+                "id": project.id,
+                "display_name": project.display_name,
+                "game_project_code": project.code_name,
+                "project_type": project.project_type,
+                "valid_until": valid_until,
+                "is_expired": valid_until is not None and valid_until <= now,
+            }
+        )
 
     parent_info = None
     if current_agent.parent_agent_id:
@@ -152,31 +209,50 @@ async def get_my_profile(
             parent_info = {
                 "id": parent.id,
                 "username": parent.username,
-                "level": parent.level,
+                "hierarchy_depth": parent.hierarchy_depth,
             }
 
-    # 查询代理业务画像
-    from app.models.main.agent_profile import AgentBusinessProfile
-    profile_result = await db.execute(
-        select(AgentBusinessProfile).where(AgentBusinessProfile.agent_id == current_agent.id)
+    return AgentMeResponse(
+        id=current_agent.id,
+        username=current_agent.username,
+        hierarchy_depth=current_agent.hierarchy_depth,
+        status=current_agent.status,
+        created_at=current_agent.created_at,
+        updated_at=current_agent.updated_at,
+        commission_rate=(
+            float(current_agent.commission_rate)
+            if current_agent.commission_rate is not None
+            else None
+        ),
+        parent_agent=parent_info,
+        users_total=users_total,
+        users_active=users_active,
+        users_suspended=users_suspended,
+        authorized_projects=authorized_projects,
+        tier_level=profile.tier_level,
+        tier_name=policy.level_name,
+        risk_status=profile.risk_status,
+        remark=profile.remark,
+        credit_limit=credit_limit,
+        max_credit_limit=max_credit_limit,
+        credit_limit_override=(
+            _as_float(profile.credit_limit_override)
+            if profile.credit_limit_override is not None
+            else None
+        ),
+        max_credit_limit_override=(
+            _as_float(profile.max_credit_limit_override)
+            if profile.max_credit_limit_override is not None
+            else None
+        ),
+        can_create_sub_agents=bool(can_create_sub_agents),
+        max_sub_agents=int(max_sub_agents or 0),
+        can_create_sub_agents_override=profile.can_create_sub_agents_override,
+        max_sub_agents_override=profile.max_sub_agents_override,
+        can_auto_open_project=bool(policy.can_auto_open_project),
+        auto_open_project_limit=int(policy.auto_open_project_limit or 0),
+        review_priority=int(policy.review_priority or 0),
     )
-    profile = profile_result.scalar_one_or_none()
-
-    return {
-        "id": current_agent.id,
-        "username": current_agent.username,
-        "hierarchy_depth": current_agent.hierarchy_depth,
-        "tier_level": profile.tier_level if profile else 1,
-        "status": current_agent.status,
-        "created_at": current_agent.created_at.isoformat(),
-        "updated_at": current_agent.updated_at.isoformat() if current_agent.updated_at else None,
-        "commission_rate": float(current_agent.commission_rate) if current_agent.commission_rate else None,
-        "parent_agent": parent_info,
-        "users_total": users_total,
-        "users_active": users_active,
-        "users_suspended": users_suspended,
-        "authorized_projects": authorized_projects,
-    }
 
 
 # ── 代理自查余额与流水（静态路径，原 balance_agent 迁移至此）────
@@ -221,6 +297,7 @@ async def get_my_authorized_projects(
 ) -> list[dict]:
     """
     代理获取自己已授权的项目列表（Agent Token）。
+
     用于前端在创建用户 / 用户项目授权时过滤可选项目。
     只返回 status=active 且未过期的项目授权。
     ⚠️ 必须在 /{agent_id} 之前注册。
@@ -238,18 +315,24 @@ async def get_my_authorized_projects(
     rows = result.all()
 
     now = datetime.now(tz=timezone.utc)
-    return [
-        {
-            "id": project.id,
-            "display_name": project.display_name,
-            "code_name": project.code_name,
-            "project_type": project.project_type,
-            "auth_valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
-        }
-        for auth, project in rows
-        if auth.valid_until is None
-        or auth.valid_until.replace(tzinfo=timezone.utc) > now
-    ]
+    projects: list[dict] = []
+
+    for auth, project in rows:
+        valid_until = _aware(auth.valid_until)
+        if valid_until is not None and valid_until <= now:
+            continue
+
+        projects.append(
+            {
+                "id": project.id,
+                "display_name": project.display_name,
+                "game_project_code": project.code_name,
+                "project_type": project.project_type,
+                "auth_valid_until": valid_until,
+            }
+        )
+
+    return projects
 
 
 # ── 权限范围列表（静态路径）──────────────────────────────────
@@ -324,6 +407,7 @@ async def get_full_agent_tree(
     for agent in top_agents:
         subtree = await get_agent_subtree(agent.id, db)
         trees.append(subtree)
+
     return trees
 
 

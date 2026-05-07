@@ -2,20 +2,18 @@ r"""
 文件位置: app/services/agent_profile_service.py
 文件名称: agent_profile_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-04-29
-版本: V1.1.0
+日期/时间: 2026-05-07
+版本: V1.2.0
 功能说明:
     管理员端代理业务等级、业务画像、密码重置服务。
 
-边界:
-    - 不修改 Agent.level 的含义。
-    - Agent.level 继续表示组织层级 / 代理树深度。
-    - AgentBusinessProfile.tier_level 表示代理业务等级。
-    - AgentLevelPolicy 只表达授信、下级代理、自动开通和审核优先级。
+当前业务口径:
+    - Agent.hierarchy_depth 表示组织层级 / 代理树深度。
+    - AgentBusinessProfile.tier_level 表示代理业务等级 Lv.1 - Lv.4。
+    - AgentLevelPolicy 表达授信、下级代理、自动开通和审核优先级。
     - 用户数量只作为统计展示。
+    - 不兼容旧字段 level / hierarchy_level。
 """
-
-from datetime import datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -23,8 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.core.utils import generate_password as _generate_password, now_utc as _now
-from app.models.main.models import Agent
 from app.models.main.agent_profile import AgentBusinessProfile
+from app.models.main.models import Agent
 from app.models.main.project_access import AgentLevelPolicy
 from app.schemas.agent_profile import (
     AgentBusinessProfileResponse,
@@ -58,7 +56,10 @@ async def update_agent_level_policy(
     db: AsyncSession,
 ) -> AgentLevelPolicyAdminResponse:
     if level < 1 or level > 4:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="代理等级必须在 Lv.1 - Lv.4 之间")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="代理等级必须在 Lv.1 - Lv.4 之间",
+        )
 
     result = await db.execute(
         select(AgentLevelPolicy).where(AgentLevelPolicy.level == level)
@@ -66,7 +67,10 @@ async def update_agent_level_policy(
     policy = result.scalar_one_or_none()
 
     if not policy:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理等级策略不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="代理等级策略不存在",
+        )
 
     data = body.model_dump(exclude_unset=True)
 
@@ -114,7 +118,10 @@ async def update_agent_business_profile(
         setattr(profile, key, value)
 
     if profile.tier_level < 1 or profile.tier_level > 4:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="代理业务等级必须在 Lv.1 - Lv.4 之间")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="代理业务等级必须在 Lv.1 - Lv.4 之间",
+        )
 
     if (
         profile.credit_limit_override is not None
@@ -148,7 +155,10 @@ async def reset_agent_password(
         new_password = _generate_password()
     else:
         if not body.new_password:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="手动重置密码时必须提供新密码")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="手动重置密码时必须提供新密码",
+            )
         new_password = body.new_password
 
     agent.password_hash = hash_password(new_password)
@@ -172,7 +182,7 @@ async def get_agent_effective_tier_level(
     给其他服务调用的统一入口。
 
     用途:
-        项目准入策略不要再读 Agent.level。
+        项目准入策略不要再读 Agent.hierarchy_depth。
         后续应该统一读取这里返回的业务等级。
     """
     profile = await _get_or_create_profile(agent_id, db)
@@ -186,7 +196,10 @@ async def _get_agent_or_404(agent_id: int, db: AsyncSession) -> Agent:
     agent = result.scalar_one_or_none()
 
     if not agent:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="代理不存在",
+        )
 
     return agent
 
@@ -216,27 +229,71 @@ async def _get_or_create_profile(
 
 
 async def _ensure_level_policies(db: AsyncSession) -> None:
-    """自动创建默认等级策略（Lv.1 - Lv.4），幂等。"""
+    """
+    自动创建默认等级策略（Lv.1 - Lv.4），幂等。
+
+    注意:
+        这是开发期兜底逻辑。
+        长期应由迁移或初始化脚本保证等级策略存在。
+    """
     defaults: list[dict] = [
-        {"level": 1, "level_name": "Lv.1 新手代理", "default_credit_limit": 100.0, "max_credit_limit": 500.0,
-         "can_create_sub_agents": False, "max_sub_agents": 0, "can_auto_open_project": False,
-         "auto_open_project_limit": 0, "review_priority": 0, "is_active": True},
-        {"level": 2, "level_name": "Lv.2 标准代理", "default_credit_limit": 500.0, "max_credit_limit": 2000.0,
-         "can_create_sub_agents": True, "max_sub_agents": 5, "can_auto_open_project": False,
-         "auto_open_project_limit": 0, "review_priority": 1, "is_active": True},
-        {"level": 3, "level_name": "Lv.3 核心代理", "default_credit_limit": 2000.0, "max_credit_limit": 10000.0,
-         "can_create_sub_agents": True, "max_sub_agents": 20, "can_auto_open_project": True,
-         "auto_open_project_limit": 3, "review_priority": 2, "is_active": True},
-        {"level": 4, "level_name": "Lv.4 渠道代理", "default_credit_limit": 10000.0, "max_credit_limit": 50000.0,
-         "can_create_sub_agents": True, "max_sub_agents": 100, "can_auto_open_project": True,
-         "auto_open_project_limit": 10, "review_priority": 3, "is_active": True},
+        {
+            "level": 1,
+            "level_name": "Lv.1 新手代理",
+            "default_credit_limit": 100.0,
+            "max_credit_limit": 500.0,
+            "can_create_sub_agents": False,
+            "max_sub_agents": 0,
+            "can_auto_open_project": False,
+            "auto_open_project_limit": 0,
+            "review_priority": 0,
+            "is_active": True,
+        },
+        {
+            "level": 2,
+            "level_name": "Lv.2 标准代理",
+            "default_credit_limit": 500.0,
+            "max_credit_limit": 2000.0,
+            "can_create_sub_agents": True,
+            "max_sub_agents": 5,
+            "can_auto_open_project": False,
+            "auto_open_project_limit": 0,
+            "review_priority": 1,
+            "is_active": True,
+        },
+        {
+            "level": 3,
+            "level_name": "Lv.3 核心代理",
+            "default_credit_limit": 2000.0,
+            "max_credit_limit": 10000.0,
+            "can_create_sub_agents": True,
+            "max_sub_agents": 20,
+            "can_auto_open_project": True,
+            "auto_open_project_limit": 3,
+            "review_priority": 2,
+            "is_active": True,
+        },
+        {
+            "level": 4,
+            "level_name": "Lv.4 渠道代理",
+            "default_credit_limit": 10000.0,
+            "max_credit_limit": 50000.0,
+            "can_create_sub_agents": True,
+            "max_sub_agents": 100,
+            "can_auto_open_project": True,
+            "auto_open_project_limit": 10,
+            "review_priority": 3,
+            "is_active": True,
+        },
     ]
-    for d in defaults:
+
+    for item in defaults:
         result = await db.execute(
-            select(AgentLevelPolicy).where(AgentLevelPolicy.level == d["level"])
+            select(AgentLevelPolicy).where(AgentLevelPolicy.level == item["level"])
         )
         if not result.scalar_one_or_none():
-            db.add(AgentLevelPolicy(**d))
+            db.add(AgentLevelPolicy(**item))
+
     await db.flush()
 
 
@@ -245,13 +302,17 @@ async def _get_level_policy_or_404(
     db: AsyncSession,
 ) -> AgentLevelPolicy:
     await _ensure_level_policies(db)
+
     result = await db.execute(
         select(AgentLevelPolicy).where(AgentLevelPolicy.level == level)
     )
     policy = result.scalar_one_or_none()
 
     if not policy:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"代理等级策略 Lv.{level} 不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"代理等级策略 Lv.{level} 不存在",
+        )
 
     return policy
 
@@ -307,7 +368,7 @@ def _profile_to_response(
     return AgentBusinessProfileResponse(
         agent_id=agent.id,
         username=agent.username,
-        hierarchy_level=agent.hierarchy_depth,
+        hierarchy_depth=agent.hierarchy_depth,
         tier_level=profile.tier_level,
         tier_name=policy.level_name,
         risk_status=profile.risk_status,
@@ -315,10 +376,16 @@ def _profile_to_response(
 
         credit_limit=credit_limit,
         max_credit_limit=max_credit_limit,
-        credit_limit_override=_as_float(profile.credit_limit_override)
-        if profile.credit_limit_override is not None else None,
-        max_credit_limit_override=_as_float(profile.max_credit_limit_override)
-        if profile.max_credit_limit_override is not None else None,
+        credit_limit_override=(
+            _as_float(profile.credit_limit_override)
+            if profile.credit_limit_override is not None
+            else None
+        ),
+        max_credit_limit_override=(
+            _as_float(profile.max_credit_limit_override)
+            if profile.max_credit_limit_override is not None
+            else None
+        ),
 
         can_create_sub_agents=bool(can_create_sub_agents),
         max_sub_agents=int(max_sub_agents or 0),
@@ -327,6 +394,7 @@ def _profile_to_response(
 
         can_auto_open_project=policy.can_auto_open_project,
         auto_open_project_limit=policy.auto_open_project_limit,
+        review_priority=policy.review_priority,
 
         level_policy=_policy_to_response(policy),
         created_at=profile.created_at,
