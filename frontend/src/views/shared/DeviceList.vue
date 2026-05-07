@@ -82,7 +82,7 @@
           <el-input
             v-model="filter.keyword"
             clearable
-            placeholder="用户 / 设备指纹 / IMSI"
+            placeholder="用户 / 设备标识 / IMSI"
             style="width:220px"
             @keyup.enter="search"
           />
@@ -152,10 +152,11 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="设备指纹" min-width="220" show-overflow-tooltip>
+        <el-table-column label="设备标识" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
-            <div class="mono">{{ row.device_id || row.device_fingerprint }}</div>
-            <div v-if="row.imsi" class="sub-text">IMSI：{{ row.imsi }}</div>
+            <div class="mono">{{ deviceDisplay(row) }}</div>
+            <div class="sub-text">Hash：{{ shortHash(deviceHash(row)) }}</div>
+            <div v-if="imsiDisplay(row) !== '—'" class="sub-text">IMSI：{{ imsiDisplay(row) }}</div>
           </template>
         </el-table-column>
 
@@ -177,7 +178,7 @@
         <el-table-column label="项目" min-width="160">
           <template #default="{ row }">
             <div>{{ row.project_name || '—' }}</div>
-            <div class="sub-text">{{ row.project_code || '—' }}</div>
+            <div class="sub-text">{{ projectCode(row) }}</div>
           </template>
         </el-table-column>
 
@@ -265,8 +266,12 @@
     >
       <div v-if="drawer.data" class="drawer-body">
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="设备指纹">
-            <span class="mono">{{ drawer.data.device_id || drawer.data.device_fingerprint }}</span>
+          <el-descriptions-item label="设备标识">
+            <span class="mono">{{ deviceDisplay(drawer.data) }}</span>
+          </el-descriptions-item>
+
+          <el-descriptions-item label="设备 Hash">
+            <span class="mono">{{ deviceHash(drawer.data) || '—' }}</span>
           </el-descriptions-item>
 
           <el-descriptions-item label="用户">
@@ -276,7 +281,7 @@
 
           <el-descriptions-item label="项目">
             {{ drawer.data.project_name || '—' }}
-            <span class="text-muted">{{ drawer.data.project_code || '' }}</span>
+            <span class="text-muted">{{ projectCode(drawer.data) }}</span>
           </el-descriptions-item>
 
           <el-descriptions-item label="运行状态">
@@ -300,7 +305,11 @@
           </el-descriptions-item>
 
           <el-descriptions-item label="IMSI">
-            <span class="mono">{{ drawer.data.imsi || '—' }}</span>
+            <span class="mono">{{ imsiDisplay(drawer.data) }}</span>
+          </el-descriptions-item>
+
+          <el-descriptions-item label="IMSI Hash">
+            <span class="mono">{{ drawer.data.imsi_hash || '—' }}</span>
           </el-descriptions-item>
 
           <el-descriptions-item label="数据来源">
@@ -320,20 +329,18 @@
  * 文件位置: src/views/shared/DeviceList.vue
  * 名称: 设备监控
  * 作者: 蜂巢·大圣 (HiveGreatSage)
- * 时间: 2026-04-30
- * 版本: V2.0.0
+ * 时间: 2026-05-07
+ * 版本: V2.1.0
  * 功能说明:
  *   管理后台设备监控页面。
  *
  * 本版改进:
- *   1. 不再依赖 useDevicePoller，页面直接调用 adminDeviceApi。
- *   2. 页面始终展示统计卡、过滤栏、表格，避免主体空白。
- *   3. 支持关键词、用户 ID、项目 code、状态、仅在线过滤。
- *   4. 展示项目归属、用户、IMSI、来源、最后心跳。
- *   5. 支持 10 秒自动刷新。
+ *   1. 不再展示设备指纹 / IMSI 原文。
+ *   2. 优先展示 device_fingerprint_masked / device_id_masked / imsi_masked。
+ *   3. 详情中展示 hash，便于排障关联。
  */
 
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -436,6 +443,12 @@ const sourceLabel = (source) => {
   return map[source] || source || '—'
 }
 
+const deviceDisplay = (row) => row?.device_fingerprint_masked || row?.device_id_masked || '—'
+const deviceHash = (row) => row?.device_fingerprint_hash || row?.device_id_hash || ''
+const imsiDisplay = (row) => row?.imsi_masked || '—'
+const projectCode = (row) => row?.game_project_code || row?.project_code || '—'
+const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
+
 const loadDevices = async () => {
   loading.value = true
   error.value = null
@@ -447,11 +460,11 @@ const loadDevices = async () => {
     devices.value = data.devices || []
 
     summary.total = data.total || 0
-    summary.online_count = data.online_count || 0
-    summary.offline_count = data.offline_count ?? Math.max(0, summary.total - summary.online_count)
-    summary.running_count = data.running_count ?? devices.value.filter((item) => item.status === 'running').length
+    summary.online_count = data.online_count ?? data.page_online_count ?? 0
+    summary.offline_count = data.offline_count ?? data.page_offline_count ?? Math.max(0, summary.total - summary.online_count)
+    summary.running_count = data.running_count ?? data.page_running_count ?? devices.value.filter((item) => item.status === 'running').length
 
-    pagination.total = data.total || 0
+    pagination.total = data.total || data.matched_total || 0
   } catch (err) {
     console.error(err)
     devices.value = []
