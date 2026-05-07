@@ -3,7 +3,7 @@ r"""
 文件名称: auth_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-05-07
-版本: V1.3.0
+版本: V1.4.0
 功能说明:
     认证服务层，包含全部认证业务逻辑：
       - login_user()           用户登录
@@ -21,6 +21,7 @@ r"""
       7. Access Token 项目字段统一为 project_code。
       8. Android 首次创建设备绑定时写入 audit_log。
       9. 设备绑定审计不写设备指纹原文，只写 masked/hash。
+      10. LoginLog 不再写设备指纹原文，只写 device_fingerprint_hash。
 
     当前字段口径:
       1. LoginResponse 返回 authorization_level / game_project_code。
@@ -28,6 +29,7 @@ r"""
       3. User.user_level / max_devices / expired_at 不再作为业务字段。
 
 改进历史:
+    V1.4.0 (2026-05-07) - LoginLog 写入 device_fingerprint_hash，不再写设备指纹原文。
     V1.3.0 (2026-05-07) - device_binding.bind 审计移除设备指纹原文。
     V1.2.0 (2026-05-07) - Android 首次创建设备绑定接入 audit_log。
     V1.1.0 (2026-05-02) - 登录与刷新过滤软删除用户；刷新改用 Authorization.user_level。
@@ -518,10 +520,17 @@ def _build_login_log(
     success: bool,
     fail_reason: str | None,
 ) -> LoginLog:
-    """构造 LoginLog ORM 对象（不执行写入，由调用方决定 Session）。"""
+    """
+    构造 LoginLog ORM 对象（不执行写入，由调用方决定 Session）。
+
+    安全口径:
+        - 不再写入 device_fingerprint 原文。
+        - 只写入 device_fingerprint_hash，供后台排障关联。
+    """
     return LoginLog(
         user_id=user_id,
-        device_fingerprint=device_fingerprint,
+        device_fingerprint=None,
+        device_fingerprint_hash=hash_sensitive_value(device_fingerprint),
         ip_address=ip_address,
         client_type=client_type,
         game_project_id=game_project_id,
