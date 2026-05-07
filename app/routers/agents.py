@@ -3,22 +3,15 @@ r"""
 文件名称: agents.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-08
-版本: V1.6.1
+版本: V1.6.2
 功能说明:
-    代理管理路由（薄层优先，历史接口逐步收敛）。
+    代理管理路由。
 
 当前业务口径:
     - hierarchy_depth 表示代理组织层级 / 代理树深度。
     - tier_level 表示代理业务等级 Lv.1 - Lv.4。
-    - 不兼容旧字段 level / hierarchy_level。
-    - 项目编码对外统一使用 game_project_code。
-    - 用户数量只作为统计展示，不再作为代理配额硬约束。
-    - Agent 登录成功 / 失败写入 audit_log，不记录密码或 Token。
     - Agent Token 可访问 /scope/* 范围接口，只能查看/操作自己代理子树范围内的代理。
-    - 开发期支持管理员硬删除代理，但必须先通过外键与账务事实阻断检查。
-
-路由注册顺序:
-    静态路径和 /scope/* 必须在 /{agent_id} 之前注册。
+    - /scope/list 为代理端超级列表专用响应，额外补 business_profile 与 balance，避免前端调用 Admin-only 接口。
 """
 
 from datetime import datetime, timezone
@@ -84,10 +77,83 @@ def _client_ip(request: Request) -> str:
 
 
 async def _count_rows(db: AsyncSession, model, *where_clauses) -> int:
-    result = await db.execute(
-        select(func.count()).select_from(model).where(*where_clauses)
-    )
+    result = await db.execute(select(func.count()).select_from(model).where(*where_clauses))
     return int(result.scalar_one() or 0)
+
+
+async def _business_profile_dict(db: AsyncSession, agent_id: int) -> dict:
+    profile_result = await db.execute(
+        select(AgentBusinessProfile).where(AgentBusinessProfile.agent_id == agent_id)
+    )
+    profile = profile_result.scalar_one_or_none()
+
+    if profile is None:
+        return {
+            "agent_id": agent_id,
+            "tier_level": 1,
+            "tier_name": "Lv.1 新手代理",
+            "risk_status": "normal",
+            "credit_limit": 0.0,
+            "max_credit_limit": 0.0,
+            "can_create_sub_agents": False,
+            "max_sub_agents": 0,
+        }
+
+    policy_result = await db.execute(
+        select(AgentLevelPolicy).where(AgentLevelPolicy.level == profile.tier_level)
+    )
+    policy = policy_result.scalar_one_or_none()
+
+    tier_name = policy.level_name if policy else f"Lv.{profile.tier_level}"
+    credit_limit = (
+        _as_float(profile.credit_limit_override)
+        if profile.credit_limit_override is not None
+        else _as_float(policy.default_credit_limit if policy else 0)
+    )
+    max_credit_limit = (
+        _as_float(profile.max_credit_limit_override)
+        if profile.max_credit_limit_override is not None
+        else _as_float(policy.max_credit_limit if policy else 0)
+    )
+    can_create_sub_agents = (
+        bool(profile.can_create_sub_agents_override)
+        if profile.can_create_sub_agents_override is not None
+        else bool(policy.can_create_sub_agents if policy else False)
+    )
+    max_sub_agents = (
+        int(profile.max_sub_agents_override)
+        if profile.max_sub_agents_override is not None
+        else int(policy.max_sub_agents if policy else 0)
+    )
+
+    return {
+        "agent_id": agent_id,
+        "tier_level": profile.tier_level,
+        "tier_name": tier_name,
+        "risk_status": profile.risk_status,
+        "remark": profile.remark,
+        "credit_limit": credit_limit,
+        "max_credit_limit": max_credit_limit,
+        "credit_limit_override": _as_float(profile.credit_limit_override) if profile.credit_limit_override is not None else None,
+        "max_credit_limit_override": _as_float(profile.max_credit_limit_override) if profile.max_credit_limit_override is not None else None,
+        "can_create_sub_agents": can_create_sub_agents,
+        "max_sub_agents": max_sub_agents,
+        "can_create_sub_agents_override": profile.can_create_sub_agents_override,
+        "max_sub_agents_override": profile.max_sub_agents_override,
+    }
+
+
+async def _enrich_scope_agent_list(
+    *,
+    db: AsyncSession,
+    result: AgentFlatListResponse,
+) -> dict:
+    data = result.model_dump(mode="json")
+    for item in data.get("agents", []):
+        agent_id = int(item["id"])
+        item["business_profile"] = await _business_profile_dict(db, agent_id)
+        item["balance"] = await get_agent_balance(agent_id, db)
+    return data
 
 
 async def _assert_agent_in_scope(
@@ -97,35 +163,14 @@ async def _assert_agent_in_scope(
     target_agent_id: int,
     allow_self: bool = True,
 ) -> None:
-    """校验 target_agent_id 是否在当前代理权限子树内。"""
     if not allow_self and target_agent_id == current_agent.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="代理不能在此入口操作自己的代理账号",
-        )
-
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="代理不能在此入口操作自己的代理账号")
     scope_ids = await get_agent_scope_ids(db, current_agent.id)
     if target_agent_id not in scope_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="无权访问该代理",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该代理")
 
 
-async def _get_agent_delete_blockers(
-    *,
-    db: AsyncSession,
-    agent_id: int,
-) -> dict[str, int]:
-    """
-    获取代理硬删除阻断项。
-
-    硬删除边界:
-      - 有下级代理时不能删除，否则会破坏代理树。
-      - 有直属用户时不能删除，否则会破坏用户创建关系。
-      - 有不可变账务事实时不能删除，否则会破坏账务审计。
-      - 纯配置类关系如项目授权、业务画像、空钱包允许随 agent 删除级联清理。
-    """
+async def _get_agent_delete_blockers(*, db: AsyncSession, agent_id: int) -> dict[str, int]:
     blockers = {
         "child_agents": await _count_rows(db, Agent, Agent.parent_agent_id == agent_id),
         "direct_users": await _count_rows(db, User, User.created_by_agent_id == agent_id),
@@ -139,18 +184,10 @@ async def _get_agent_delete_blockers(
     return {key: value for key, value in blockers.items() if value > 0}
 
 
-# ── 登录 ──────────────────────────────────────────────────────
-
 @router.post("/auth/login", response_model=AgentLoginResponse)
-async def agent_login_endpoint(
-    body: AgentLoginRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentLoginResponse:
-    """代理登录，返回 Agent Token（有效期 8 小时）。"""
+async def agent_login_endpoint(body: AgentLoginRequest, request: Request, db: AsyncSession = Depends(get_main_db)) -> AgentLoginResponse:
     ip = _client_ip(request)
     user_agent = request.headers.get("user-agent")
-
     try:
         result = await agent_login(body=body, db=db)
     except HTTPException as exc:
@@ -162,12 +199,7 @@ async def agent_login_endpoint(
             target_type="agent",
             target_id=body.username,
             summary=f"代理 {body.username} 登录失败",
-            metadata={
-                "username": body.username,
-                "success": False,
-                "status_code": exc.status_code,
-                "reason": str(exc.detail),
-            },
+            metadata={"username": body.username, "success": False, "status_code": exc.status_code, "reason": str(exc.detail)},
             ip_address=ip,
             user_agent=user_agent,
         )
@@ -182,145 +214,45 @@ async def agent_login_endpoint(
         target_type="agent",
         target_id=result.agent_id,
         summary=f"代理 {result.username} 登录成功",
-        metadata={
-            "agent_id": result.agent_id,
-            "username": result.username,
-            "hierarchy_depth": result.hierarchy_depth,
-            "success": True,
-            "expires_in": result.expires_in,
-        },
+        metadata={"agent_id": result.agent_id, "username": result.username, "hierarchy_depth": result.hierarchy_depth, "success": True, "expires_in": result.expires_in},
         ip_address=ip,
         user_agent=user_agent,
     )
     return result
 
 
-# ── 代理个人主页（静态路径，必须在 /{agent_id} 之前）──────────
-
 @router.get("/me", response_model=AgentMeResponse, summary="代理个人主页")
-async def get_my_profile(
-    current_agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentMeResponse:
-    """代理获取自己的详细个人信息（Agent Token）。"""
-    users_total = (
-        await db.execute(
-            select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id)
-        )
-    ).scalar_one()
+async def get_my_profile(current_agent: Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_main_db)) -> AgentMeResponse:
+    users_total = (await db.execute(select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id))).scalar_one()
+    users_active = (await db.execute(select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id, User.status == "active"))).scalar_one()
+    users_suspended = (await db.execute(select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id, User.status == "suspended"))).scalar_one()
 
-    users_active = (
-        await db.execute(
-            select(func.count(User.id)).where(
-                User.created_by_agent_id == current_agent.id,
-                User.status == "active",
-            )
-        )
-    ).scalar_one()
-
-    users_suspended = (
-        await db.execute(
-            select(func.count(User.id)).where(
-                User.created_by_agent_id == current_agent.id,
-                User.status == "suspended",
-            )
-        )
-    ).scalar_one()
-
-    profile_result = await db.execute(
-        select(AgentBusinessProfile).where(AgentBusinessProfile.agent_id == current_agent.id)
-    )
-    profile = profile_result.scalar_one_or_none()
-
-    if profile is None:
-        profile = AgentBusinessProfile(
-            agent_id=current_agent.id,
-            tier_level=1,
-            risk_status="normal",
-        )
-        db.add(profile)
-        await db.flush()
-        await db.refresh(profile)
-
-    policy_result = await db.execute(
-        select(AgentLevelPolicy).where(AgentLevelPolicy.level == profile.tier_level)
-    )
-    policy = policy_result.scalar_one_or_none()
-
-    if policy is None:
-        policy = AgentLevelPolicy(
-            level=profile.tier_level,
-            level_name=f"Lv.{profile.tier_level}",
-            default_credit_limit=0,
-            max_credit_limit=0,
-            can_create_sub_agents=False,
-            max_sub_agents=0,
-            can_auto_open_project=False,
-            auto_open_project_limit=0,
-            review_priority=0,
-            is_active=True,
-        )
-        db.add(policy)
-        await db.flush()
-        await db.refresh(policy)
-
-    credit_limit = (
-        _as_float(profile.credit_limit_override)
-        if profile.credit_limit_override is not None
-        else _as_float(policy.default_credit_limit)
-    )
-    max_credit_limit = (
-        _as_float(profile.max_credit_limit_override)
-        if profile.max_credit_limit_override is not None
-        else _as_float(policy.max_credit_limit)
-    )
-    can_create_sub_agents = (
-        profile.can_create_sub_agents_override
-        if profile.can_create_sub_agents_override is not None
-        else policy.can_create_sub_agents
-    )
-    max_sub_agents = (
-        profile.max_sub_agents_override
-        if profile.max_sub_agents_override is not None
-        else policy.max_sub_agents
-    )
+    profile = await _business_profile_dict(db, current_agent.id)
 
     proj_result = await db.execute(
         select(AgentProjectAuth, GameProject)
         .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
-        .where(
-            AgentProjectAuth.agent_id == current_agent.id,
-            AgentProjectAuth.status == "active",
-            GameProject.is_active == True,  # noqa: E712
-        )
+        .where(AgentProjectAuth.agent_id == current_agent.id, AgentProjectAuth.status == "active", GameProject.is_active == True)  # noqa: E712
         .order_by(GameProject.display_name)
     )
-    proj_rows = proj_result.all()
     now = datetime.now(tz=timezone.utc)
-
     authorized_projects: list[dict] = []
-    for auth, project in proj_rows:
+    for auth, project in proj_result.all():
         valid_until = _aware(auth.valid_until)
-        authorized_projects.append(
-            {
-                "id": project.id,
-                "display_name": project.display_name,
-                "game_project_code": project.code_name,
-                "project_type": project.project_type,
-                "valid_until": valid_until,
-                "is_expired": valid_until is not None and valid_until <= now,
-            }
-        )
+        authorized_projects.append({
+            "id": project.id,
+            "display_name": project.display_name,
+            "game_project_code": project.code_name,
+            "project_type": project.project_type,
+            "valid_until": valid_until,
+            "is_expired": valid_until is not None and valid_until <= now,
+        })
 
     parent_info = None
     if current_agent.parent_agent_id:
         parent = await db.get(Agent, current_agent.parent_agent_id)
         if parent:
-            parent_info = {
-                "id": parent.id,
-                "username": parent.username,
-                "hierarchy_depth": parent.hierarchy_depth,
-            }
+            parent_info = {"id": parent.id, "username": parent.username, "hierarchy_depth": parent.hierarchy_depth}
 
     return AgentMeResponse(
         id=current_agent.id,
@@ -329,49 +261,32 @@ async def get_my_profile(
         status=current_agent.status,
         created_at=current_agent.created_at,
         updated_at=current_agent.updated_at,
-        commission_rate=(
-            float(current_agent.commission_rate)
-            if current_agent.commission_rate is not None
-            else None
-        ),
+        commission_rate=float(current_agent.commission_rate) if current_agent.commission_rate is not None else None,
         parent_agent=parent_info,
         users_total=users_total,
         users_active=users_active,
         users_suspended=users_suspended,
         authorized_projects=authorized_projects,
-        tier_level=profile.tier_level,
-        tier_name=policy.level_name,
-        risk_status=profile.risk_status,
-        remark=profile.remark,
-        credit_limit=credit_limit,
-        max_credit_limit=max_credit_limit,
-        credit_limit_override=(
-            _as_float(profile.credit_limit_override)
-            if profile.credit_limit_override is not None
-            else None
-        ),
-        max_credit_limit_override=(
-            _as_float(profile.max_credit_limit_override)
-            if profile.max_credit_limit_override is not None
-            else None
-        ),
-        can_create_sub_agents=bool(can_create_sub_agents),
-        max_sub_agents=int(max_sub_agents or 0),
-        can_create_sub_agents_override=profile.can_create_sub_agents_override,
-        max_sub_agents_override=profile.max_sub_agents_override,
-        can_auto_open_project=bool(policy.can_auto_open_project),
-        auto_open_project_limit=int(policy.auto_open_project_limit or 0),
-        review_priority=int(policy.review_priority or 0),
+        tier_level=profile["tier_level"],
+        tier_name=profile["tier_name"],
+        risk_status=profile["risk_status"],
+        remark=profile.get("remark"),
+        credit_limit=profile["credit_limit"],
+        max_credit_limit=profile["max_credit_limit"],
+        credit_limit_override=profile.get("credit_limit_override"),
+        max_credit_limit_override=profile.get("max_credit_limit_override"),
+        can_create_sub_agents=profile["can_create_sub_agents"],
+        max_sub_agents=profile["max_sub_agents"],
+        can_create_sub_agents_override=profile.get("can_create_sub_agents_override"),
+        max_sub_agents_override=profile.get("max_sub_agents_override"),
+        can_auto_open_project=False,
+        auto_open_project_limit=0,
+        review_priority=0,
     )
 
 
-# ── 代理自查余额与流水（静态路径，原 balance_agent 迁移至此）────
-
 @router.get("/my/balance", summary="代理查询自己余额")
-async def my_balance(
-    current_agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_main_db),
-) -> dict:
+async def my_balance(current_agent: Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_main_db)) -> dict:
     return await get_agent_balance(current_agent.id, db)
 
 
@@ -385,114 +300,54 @@ async def my_transactions(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    return await get_balance_transactions(
-        agent_id=current_agent.id,
-        db=db,
-        page=page,
-        page_size=page_size,
-        tx_type=tx_type,
-        related_user_id=related_user_id,
-        related_project_id=related_project_id,
-    )
+    return await get_balance_transactions(agent_id=current_agent.id, db=db, page=page, page_size=page_size, tx_type=tx_type, related_user_id=related_user_id, related_project_id=related_project_id)
 
-
-# ── 已授权项目列表（静态路径）────────────────────────────────
 
 @router.get("/my-projects", response_model=list[dict])
-async def get_my_authorized_projects(
-    current_agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_main_db),
-) -> list[dict]:
-    """代理获取自己已授权的项目列表（Agent Token）。"""
+async def get_my_authorized_projects(current_agent: Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_main_db)) -> list[dict]:
     result = await db.execute(
         select(AgentProjectAuth, GameProject)
         .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
-        .where(
-            AgentProjectAuth.agent_id == current_agent.id,
-            AgentProjectAuth.status == "active",
-            GameProject.is_active == True,  # noqa: E712
-        )
+        .where(AgentProjectAuth.agent_id == current_agent.id, AgentProjectAuth.status == "active", GameProject.is_active == True)  # noqa: E712
         .order_by(GameProject.display_name)
     )
-    rows = result.all()
-
     now = datetime.now(tz=timezone.utc)
     projects: list[dict] = []
-
-    for auth, project in rows:
+    for auth, project in result.all():
         valid_until = _aware(auth.valid_until)
         if valid_until is not None and valid_until <= now:
             continue
-
-        projects.append(
-            {
-                "id": project.id,
-                "display_name": project.display_name,
-                "game_project_code": project.code_name,
-                "project_type": project.project_type,
-                "auth_valid_until": valid_until,
-            }
-        )
-
+        projects.append({"id": project.id, "display_name": project.display_name, "game_project_code": project.code_name, "project_type": project.project_type, "auth_valid_until": valid_until})
     return projects
 
 
-# ── 权限范围列表（静态路径）──────────────────────────────────
-
-@router.get("/scope/list", response_model=AgentFlatListResponse)
+@router.get("/scope/list")
 async def list_agents_in_scope_endpoint(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     status_filter: str | None = Query(default=None, alias="status"),
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
-) -> AgentFlatListResponse:
-    """代理查看自己权限范围内的所有下级代理（Agent Token）。"""
-    return await list_agents_in_scope(
-        scope_agent_id=current_agent.id,
-        db=db,
-        page=page,
-        page_size=page_size,
-        status_filter=status_filter,
-    )
+) -> dict:
+    result = await list_agents_in_scope(scope_agent_id=current_agent.id, db=db, page=page, page_size=page_size, status_filter=status_filter)
+    return await _enrich_scope_agent_list(db=db, result=result)
 
 
 @router.get("/scope/{agent_id}", response_model=AgentResponse)
-async def get_agent_in_scope_endpoint(
-    agent_id: int,
-    current_agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentResponse:
-    """代理查看自己权限范围内的代理详情。"""
+async def get_agent_in_scope_endpoint(agent_id: int, current_agent: Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_main_db)) -> AgentResponse:
     await _assert_agent_in_scope(db=db, current_agent=current_agent, target_agent_id=agent_id)
     return await get_agent(agent_id=agent_id, db=db)
 
 
 @router.get("/scope/{agent_id}/subtree", response_model=AgentSubtreeResponse)
-async def get_agent_subtree_in_scope_endpoint(
-    agent_id: int,
-    current_agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentSubtreeResponse:
-    """代理查看自己权限范围内某个代理的子树。"""
+async def get_agent_subtree_in_scope_endpoint(agent_id: int, current_agent: Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_main_db)) -> AgentSubtreeResponse:
     await _assert_agent_in_scope(db=db, current_agent=current_agent, target_agent_id=agent_id)
     return await get_agent_subtree(root_agent_id=agent_id, db=db)
 
 
 @router.patch("/scope/{agent_id}", response_model=AgentResponse)
-async def update_agent_in_scope_endpoint(
-    agent_id: int,
-    body: AgentUpdateRequest,
-    current_agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentResponse:
-    """代理更新自己权限范围内的下级代理基础信息。"""
-    await _assert_agent_in_scope(
-        db=db,
-        current_agent=current_agent,
-        target_agent_id=agent_id,
-        allow_self=False,
-    )
+async def update_agent_in_scope_endpoint(agent_id: int, body: AgentUpdateRequest, current_agent: Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_main_db)) -> AgentResponse:
+    await _assert_agent_in_scope(db=db, current_agent=current_agent, target_agent_id=agent_id, allow_self=False)
     result = await update_agent(agent_id=agent_id, body=body, db=db)
     await create_audit_log(
         db=db,
@@ -502,184 +357,58 @@ async def update_agent_in_scope_endpoint(
         target_type="agent",
         target_id=result.id,
         summary=f"代理 {current_agent.username} 更新下级代理 {result.username}",
-        metadata={
-            "operator_agent_id": current_agent.id,
-            "target_agent_id": result.id,
-            "changed_fields": body.model_dump(exclude_unset=True),
-            "status": result.status,
-            "commission_rate": result.commission_rate,
-        },
+        metadata={"operator_agent_id": current_agent.id, "target_agent_id": result.id, "changed_fields": body.model_dump(exclude_unset=True), "status": result.status, "commission_rate": result.commission_rate},
     )
     return result
 
 
-# ── 创建 / 列表（Admin）──────────────────────────────────────
-
 @router.post("/", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
-async def create_agent_endpoint(
-    body: AgentCreateRequest,
-    current_admin: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentResponse:
+async def create_agent_endpoint(body: AgentCreateRequest, current_admin: Admin = Depends(get_current_admin), db: AsyncSession = Depends(get_main_db)) -> AgentResponse:
     result = await create_agent(body=body, admin=current_admin, db=db)
-    await create_audit_log(
-        db=db,
-        actor_type="admin",
-        actor_id=current_admin.id,
-        action="agent.create",
-        target_type="agent",
-        target_id=result.id,
-        summary=f"创建代理 {result.username}",
-        metadata={
-            "agent_id": result.id,
-            "username": result.username,
-            "parent_agent_id": result.parent_agent_id,
-            "hierarchy_depth": result.hierarchy_depth,
-            "commission_rate": result.commission_rate,
-            "status": result.status,
-            "created_by_admin_id": result.created_by_admin_id,
-        },
-    )
+    await create_audit_log(db=db, actor_type="admin", actor_id=current_admin.id, action="agent.create", target_type="agent", target_id=result.id, summary=f"创建代理 {result.username}", metadata=result.model_dump(mode="json"))
     return result
 
 
 @router.get("/", response_model=AgentListResponse)
-async def list_agents_endpoint(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=500),
-    status_filter: str | None = Query(default=None, alias="status"),
-    current_admin: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentListResponse:
-    return await list_agents(
-        db=db,
-        page=page,
-        page_size=page_size,
-        status_filter=status_filter,
-    )
+async def list_agents_endpoint(page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=500), status_filter: str | None = Query(default=None, alias="status"), current_admin: Admin = Depends(get_current_admin), db: AsyncSession = Depends(get_main_db)) -> AgentListResponse:
+    return await list_agents(db=db, page=page, page_size=page_size, status_filter=status_filter)
 
-
-# ── 全代理树（Admin，静态路径）───────────────────────────────
 
 @router.get("/tree", response_model=list[AgentSubtreeResponse])
-async def get_full_agent_tree(
-    current_admin: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> list[AgentSubtreeResponse]:
-    result = await db.execute(
-        select(Agent).where(Agent.parent_agent_id.is_(None)).order_by(Agent.id)
-    )
-    top_agents = result.scalars().all()
+async def get_full_agent_tree(current_admin: Admin = Depends(get_current_admin), db: AsyncSession = Depends(get_main_db)) -> list[AgentSubtreeResponse]:
+    result = await db.execute(select(Agent).where(Agent.parent_agent_id.is_(None)).order_by(Agent.id))
+    return [await get_agent_subtree(agent.id, db) for agent in result.scalars().all()]
 
-    trees = []
-    for agent in top_agents:
-        subtree = await get_agent_subtree(agent.id, db)
-        trees.append(subtree)
-
-    return trees
-
-
-# ── 参数化路径（必须在所有静态路径之后）─────────────────────
 
 @router.get("/{agent_id}", response_model=AgentResponse)
-async def get_agent_endpoint(
-    agent_id: int,
-    current_admin: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentResponse:
+async def get_agent_endpoint(agent_id: int, current_admin: Admin = Depends(get_current_admin), db: AsyncSession = Depends(get_main_db)) -> AgentResponse:
     return await get_agent(agent_id=agent_id, db=db)
 
 
 @router.get("/{agent_id}/subtree", response_model=AgentSubtreeResponse)
-async def get_agent_subtree_endpoint(
-    agent_id: int,
-    current_admin: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentSubtreeResponse:
+async def get_agent_subtree_endpoint(agent_id: int, current_admin: Admin = Depends(get_current_admin), db: AsyncSession = Depends(get_main_db)) -> AgentSubtreeResponse:
     return await get_agent_subtree(root_agent_id=agent_id, db=db)
 
 
 @router.patch("/{agent_id}", response_model=AgentResponse)
-async def update_agent_endpoint(
-    agent_id: int,
-    body: AgentUpdateRequest,
-    current_admin: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> AgentResponse:
+async def update_agent_endpoint(agent_id: int, body: AgentUpdateRequest, current_admin: Admin = Depends(get_current_admin), db: AsyncSession = Depends(get_main_db)) -> AgentResponse:
     result = await update_agent(agent_id=agent_id, body=body, db=db)
-    await create_audit_log(
-        db=db,
-        actor_type="admin",
-        actor_id=current_admin.id,
-        action="agent.update",
-        target_type="agent",
-        target_id=result.id,
-        summary=f"更新代理 {result.username}",
-        metadata={
-            "agent_id": result.id,
-            "username": result.username,
-            "changed_fields": body.model_dump(exclude_unset=True),
-            "status": result.status,
-            "commission_rate": result.commission_rate,
-        },
-    )
+    await create_audit_log(db=db, actor_type="admin", actor_id=current_admin.id, action="agent.update", target_type="agent", target_id=result.id, summary=f"更新代理 {result.username}", metadata={"agent_id": result.id, "username": result.username, "changed_fields": body.model_dump(exclude_unset=True), "status": result.status, "commission_rate": result.commission_rate})
     return result
 
 
 @router.delete("/{agent_id}", summary="管理员硬删除代理")
-async def delete_agent_endpoint(
-    agent_id: int,
-    current_admin: Admin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_main_db),
-) -> dict:
-    """
-    管理员硬删除代理。
-
-    说明:
-      - 本接口执行数据库硬删除，不做软删除。
-      - 为避免破坏代理树、用户归属和账务事实，只允许删除“无业务事实”的代理。
-      - 可级联清理的配置类记录包括 agent_project_auth、agent_business_profile、空钱包等。
-    """
+async def delete_agent_endpoint(agent_id: int, current_admin: Admin = Depends(get_current_admin), db: AsyncSession = Depends(get_main_db)) -> dict:
     agent = await db.get(Agent, agent_id)
     if agent is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="代理不存在",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="代理不存在")
 
     blockers = await _get_agent_delete_blockers(db=db, agent_id=agent_id)
     if blockers:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "message": "该代理存在业务关联，不能硬删除。请先迁移或清理关联数据。",
-                "blockers": blockers,
-            },
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"message": "该代理存在业务关联，不能硬删除。请先迁移或清理关联数据。", "blockers": blockers})
 
-    metadata = {
-        "agent_id": agent.id,
-        "username": agent.username,
-        "parent_agent_id": agent.parent_agent_id,
-        "hierarchy_depth": agent.hierarchy_depth,
-        "status": agent.status,
-    }
-
-    await create_audit_log(
-        db=db,
-        actor_type="admin",
-        actor_id=current_admin.id,
-        action="agent.hard_delete",
-        target_type="agent",
-        target_id=agent.id,
-        summary=f"硬删除代理 {agent.username}",
-        metadata=metadata,
-    )
+    metadata = {"agent_id": agent.id, "username": agent.username, "parent_agent_id": agent.parent_agent_id, "hierarchy_depth": agent.hierarchy_depth, "status": agent.status}
+    await create_audit_log(db=db, actor_type="admin", actor_id=current_admin.id, action="agent.hard_delete", target_type="agent", target_id=agent.id, summary=f"硬删除代理 {agent.username}", metadata=metadata)
     await db.delete(agent)
     await db.flush()
-
-    return {
-        "deleted": True,
-        "agent_id": agent_id,
-        "username": metadata["username"],
-    }
+    return {"deleted": True, "agent_id": agent_id, "username": metadata["username"]}
