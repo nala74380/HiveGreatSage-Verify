@@ -2,13 +2,17 @@ r"""
 文件位置: app/routers/project_access_agent.py
 文件名称: project_access_agent.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-29
-版本: V1.0.0
+日期/时间: 2026-05-07
+版本: V1.1.0
 功能说明:
     代理端项目准入、项目目录、项目开通申请接口。
 
 挂载建议:
     app.include_router(project_access_agent.router, prefix="/api/agents/my/project-access")
+
+改进历史:
+    V1.1.0 (2026-05-07): 代理提交/取消项目开通申请接入 audit_log。
+    V1.0.0 (2026-04-29): 初始版本。
 """
 
 from fastapi import APIRouter, Depends, Query, status
@@ -23,6 +27,7 @@ from app.schemas.project_access import (
     AgentProjectAuthRequestResponse,
     AgentProjectCatalogItem,
 )
+from app.services.audit_service import create_audit_log
 from app.services.project_access_service import (
     cancel_my_project_auth_request,
     create_agent_project_auth_request,
@@ -31,6 +36,20 @@ from app.services.project_access_service import (
 )
 
 router = APIRouter()
+
+
+def _request_metadata(result: AgentProjectAuthRequestResponse) -> dict:
+    """生成项目开通申请审计元数据。"""
+    return {
+        "request_id": result.id,
+        "agent_id": result.agent_id,
+        "project_id": result.project_id,
+        "status": result.status,
+        "reason": result.reason,
+        "review_note": result.review_note,
+        "requested_at": result.requested_at.isoformat() if result.requested_at else None,
+        "reviewed_at": result.reviewed_at.isoformat() if result.reviewed_at else None,
+    }
 
 
 @router.get("/catalog", response_model=list[AgentProjectCatalogItem], summary="代理项目目录（带准入策略）")
@@ -52,11 +71,32 @@ async def create_project_auth_request(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentProjectAuthRequestResponse:
-    return await create_agent_project_auth_request(
+    result = await create_agent_project_auth_request(
         agent=current_agent,
         body=body,
         db=db,
     )
+    action = (
+        "project_access.auto_approve"
+        if result.status == "approved"
+        else "project_access.request.create"
+    )
+    await create_audit_log(
+        db=db,
+        actor_type="agent",
+        actor_id=current_agent.id,
+        action=action,
+        target_type="agent_project_auth_request",
+        target_id=result.id,
+        summary=f"代理 {current_agent.id} 提交项目 {result.project_id} 开通申请",
+        metadata={
+            **_request_metadata(result),
+            "requested_project_id": body.project_id,
+            "agent_username": current_agent.username,
+            "agent_hierarchy_depth": current_agent.hierarchy_depth,
+        },
+    )
+    return result
 
 
 @router.get("/requests", response_model=AgentProjectAuthRequestListResponse, summary="我的项目开通申请")
@@ -84,8 +124,23 @@ async def cancel_project_auth_request(
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> AgentProjectAuthRequestResponse:
-    return await cancel_my_project_auth_request(
+    result = await cancel_my_project_auth_request(
         request_id=request_id,
         agent=current_agent,
         db=db,
     )
+    await create_audit_log(
+        db=db,
+        actor_type="agent",
+        actor_id=current_agent.id,
+        action="project_access.request.cancel",
+        target_type="agent_project_auth_request",
+        target_id=result.id,
+        summary=f"代理 {current_agent.id} 取消项目开通申请 {request_id}",
+        metadata={
+            **_request_metadata(result),
+            "agent_username": current_agent.username,
+            "agent_hierarchy_depth": current_agent.hierarchy_depth,
+        },
+    )
+    return result
