@@ -2,18 +2,19 @@ r"""
 文件位置: app/main.py
 文件名称: main.py
 作者: HiveGreatSage Dev
-日期/时间: 2026-04-30
-版本: v1.0.5
+日期/时间: 2026-05-07
+版本: v1.1.0
 功能说明:
     FastAPI 应用入口。负责：
       1. 应用生命周期管理（lifespan：启动检查 + 关闭清理）
-      2. 中间件注册（CORS、请求日志）
+      2. 中间件注册（CORS、RequestId）
       3. 路由注册（所有子路由）
       4. 日志初始化（loguru）
       5. Sentry 集成（生产环境）
       6. 生产环境安全检查（DEBUG=False、SECRET_KEY 强度）
 
 改进历史:
+    v1.1.0 (2026-05-07) - 注册 RequestIdMiddleware，所有响应返回 X-Request-ID
     v1.1.0 (2026-05-03) - 删除旧 balance_admin/balance_agent 路由；新增 pricing 路由；
                          启动时初始化 network 默认配置；更新 VersionRecord 为统一主库读取
     v1.0.5 (2026-04-30) - 注册 system_settings 系统设置路由与客户端 network-config 路由
@@ -36,6 +37,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from app.config import settings
+from app.core.middleware import RequestIdMiddleware
 from app.database import dispose_all_engines
 
 
@@ -181,6 +183,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── 请求追踪中间件 ───────────────────────────────────────────
+app.add_middleware(RequestIdMiddleware)
 
 
 # ── 路由注册 ──────────────────────────────────────────────────
