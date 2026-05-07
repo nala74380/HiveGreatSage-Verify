@@ -38,7 +38,7 @@
               </el-tag>
 
               <el-tag v-if="profile" type="primary" effect="light" size="small">
-                业务等级 Lv.{{ profile.tier_level }} · {{ profile.tier_name }}
+                业务等级 {{ businessLevelText(profile) }}
               </el-tag>
 
               <el-tag
@@ -145,7 +145,7 @@
 
                 <el-descriptions :column="1" size="small" border>
                   <el-descriptions-item label="业务等级">
-                    <span v-if="profile">Lv.{{ profile.tier_level }} · {{ profile.tier_name }}</span>
+                    <span v-if="profile">{{ businessLevelText(profile) }}</span>
                     <span v-else>—</span>
                   </el-descriptions-item>
 
@@ -451,8 +451,8 @@
  * 文件位置: src/views/shared/AgentDetail.vue
  * 名称: 代理详情页
  * 作者: 蜂巢·大圣 (HiveGreatSage)
- * 时间: 2026-04-30
- * 版本: V1.1.0
+ * 时间: 2026-05-08
+ * 版本: V1.1.1
  * 功能说明:
  *   管理员查看代理详情：
  *     - 代理基础信息
@@ -468,6 +468,7 @@
  *   - 本页展示“直属用户”，不混入下级代理用户。
  *   - 权限范围用户只作为统计展示。
  *   - 密码修改、项目授权、点数操作由代理管理统一编辑抽屉承担。
+ *   - 业务等级展示统一由 businessLevelText() 格式化，避免 Lv 前缀重复。
  */
 
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -504,6 +505,24 @@ const directUsersPagination = reactive({
 const agentId = computed(() => Number(route.params.id))
 
 const numberText = (value) => Number(value || 0).toFixed(2)
+
+const businessLevelText = (item) => {
+  if (!item) return '—'
+
+  const level = Number(item.tier_level)
+  const levelText = Number.isFinite(level) && level > 0 ? `Lv.${level}` : ''
+  const tierName = String(item.tier_name || '').trim()
+
+  if (!tierName) return levelText || '—'
+
+  // 后端 tier_name 可能已经包含 Lv 前缀，例如 “Lv.1 新手代理”。
+  // 此时不能再拼接 “Lv.1 ·”，否则会显示为 “Lv.1 · Lv.1 新手代理”。
+  if (levelText && tierName.toLowerCase().startsWith(levelText.toLowerCase())) {
+    return tierName
+  }
+
+  return levelText ? `${levelText} · ${tierName}` : tierName
+}
 
 const riskStatusText = (status) => {
   const map = {
