@@ -1,34 +1,36 @@
 r"""
 文件位置: app/core/storage/base.py
 名称: 存储抽象基类
-作者: 蜂巢·大圣 (Hive-GreatSage)
-时间: 2026-04-25
-版本: V1.0.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+时间: 2026-05-07
+版本: V1.1.0
 功能说明:
     定义存储层的统一抽象接口（Abstract Base Class）。
     LocalStorage 和 S3Storage 均继承此类并实现全部抽象方法。
 
     设计原则（D010 决策）：
-      调用方（如 update_service.py）只依赖 BaseStorage 接口，
-      不感知底层是本地文件系统还是对象存储。
+      调用方只依赖 BaseStorage 接口，不感知底层是本地文件系统还是对象存储。
       通过 factory.get_storage() 获取实例，由配置决定具体实现。
 
     接口说明：
-      save_file(data, path)   → 保存文件，返回存储路径（相对路径）
-      delete_file(path)       → 删除文件
-      get_download_url(path, expire_seconds)  → 生成限时下载 URL
-      file_exists(path)       → 检查文件是否存在
-      get_file_size(path)     → 获取文件大小（字节）
+      save_file(data, path)              → 保存小文件 / 已在内存中的文件
+      save_file_from_path(source, path)  → 从本地临时文件流式保存大文件
+      delete_file(path)                  → 删除文件
+      get_download_url(path, expire)     → 生成限时下载 URL
+      file_exists(path)                  → 检查文件是否存在
+      get_file_size(path)                → 获取文件大小（字节）
 
     path 约定（两种模式统一）：
       相对路径格式：{game_code}/{client_type}/packages/{version}/{filename}
       例如：game_001/android/packages/v1.0.1/game_001_android_v1.0.1.lrj
 
 改进历史:
+    V1.1.0 - 新增 save_file_from_path，支持热更新大文件流式上传落盘
     V1.0.0 - 初始版本
 """
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 
 class BaseStorage(ABC):
@@ -44,9 +46,32 @@ class BaseStorage(ABC):
         保存文件到存储后端。
 
         Args:
-            data: 文件二进制内容
+            data: 文件二进制内容。仅适合小文件或已在内存中的文件。
             path: 存储路径（相对路径，不含存储根目录前缀）
-                  格式：{game_code}/{client_type}/packages/{version}/{filename}
+
+        Returns:
+            str: 存储路径（与传入 path 一致，供写入数据库使用）
+
+        Raises:
+            StorageError: 保存失败时抛出
+        """
+        ...
+
+    @abstractmethod
+    async def save_file_from_path(
+        self,
+        source_path: str | Path,
+        path: str,
+    ) -> str:
+        """
+        从本地临时文件保存到存储后端。
+
+        用途：
+            热更新包这类大文件上传，避免路由层把 500MB 文件一次性读入内存。
+
+        Args:
+            source_path: 已写入完成的本地临时文件路径
+            path: 存储路径（相对路径，不含存储根目录前缀）
 
         Returns:
             str: 存储路径（与传入 path 一致，供写入数据库使用）
