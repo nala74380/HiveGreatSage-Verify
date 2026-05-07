@@ -1,26 +1,28 @@
 r"""
 文件位置: app/schemas/device.py
 文件名称: device.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-04-22
-版本: V1.0.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+日期/时间: 2026-05-07
+版本: V1.1.0
 功能说明:
     设备数据相关的 Pydantic v2 请求/响应模型。
-    覆盖三个接口：
+    覆盖四个接口：
       - POST /api/device/heartbeat  : 安卓脚本上报心跳
       - GET  /api/device/list       : PC 中控拉取设备列表
       - GET  /api/device/data       : PC 中控拉取单台设备详情
+      - POST /api/device/imsi       : 安卓脚本上传 IMSI
 
     game_data 字段使用 dict，各游戏自定义内容（不在此层校验具体字段）。
 
-关联文档:
-    [[01-网络验证系统/接入契约]]
-    [[01-网络验证系统/Redis心跳落库策略]]
+安全口径:
+    - device_fingerprint 是终端请求契约字段，不代表后台可展示原文。
+    - IMSI 上传响应不回显 IMSI 原文，只返回 masked/hash。
+    - PC 中控设备列表仍保留 device_id 原文作为后续 /api/device/data 查询参数，
+      该接口属于 User Token 终端闭环，不等同后台展示 API。
 
 改进历史:
+    V1.1.0 (2026-05-07) - ImsiUploadResponse 移除 device_fingerprint / imsi 原文回显。
     V1.0.0 - 初始版本
-调试信息:
-    已知问题: 无
 """
 
 from datetime import datetime
@@ -35,7 +37,7 @@ class HeartbeatRequest(BaseModel):
         ...,
         min_length=4,
         max_length=256,
-        description="设备唯一标识，与登录时的 device_fingerprint 一致",
+        description="终端生成的稳定设备标识 hash，与登录时的 device_fingerprint 一致；禁止上传 IMEI/IMSI/硬件序列号明文",
         examples=["a1b2c3d4e5f6"],
     )
     status: str = Field(
@@ -59,7 +61,7 @@ class HeartbeatResponse(BaseModel):
 # ── 设备列表 ──────────────────────────────────────────────────
 
 class DeviceStatus(BaseModel):
-    device_id: str = Field(description="设备唯一标识")
+    device_id: str = Field(description="终端设备标识；User Token 终端闭环内用于继续查询 /api/device/data")
     user_id: int
     status: str | None = Field(description="running / idle / error / offline")
     last_seen: datetime | None = Field(description="最后一次心跳时间")
@@ -100,17 +102,19 @@ class ImsiUploadRequest(BaseModel):
     """
     device_fingerprint: str = Field(
         ...,
-        description="主设备指纹（与登录时一致）",
+        description="终端生成的稳定设备标识 hash，与登录时一致；禁止上传 IMEI/IMSI/硬件序列号明文",
     )
     imsi: str = Field(
         ...,
         min_length=1,
         max_length=64,
-        description="设备 IMSI 码",
+        description="设备 IMSI 码；仅用于服务端辅助记录，响应不会回显原文",
     )
 
 
 class ImsiUploadResponse(BaseModel):
     message: str
-    device_fingerprint: str
-    imsi: str
+    device_fingerprint_masked: str | None = None
+    device_fingerprint_hash: str | None = None
+    imsi_masked: str | None = None
+    imsi_hash: str | None = None
