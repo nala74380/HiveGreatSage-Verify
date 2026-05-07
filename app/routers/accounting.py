@@ -2,8 +2,8 @@ r"""
 文件位置: app/routers/accounting.py
 文件名称: accounting.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-05-07
-版本: V1.3.0
+日期/时间: 2026-05-08
+版本: V1.3.1
 功能说明:
     账务中心正式路由。
 
@@ -25,6 +25,7 @@ r"""
     - 对账批次详情
 
 改进历史:
+    V1.3.1 (2026-05-08): agents-full 回填 authorized_projects[].user_count。
     V1.3.0 (2026-05-07): 对账初始化、运行对账接入 audit_log。
     V1.2.0 (2026-05-07): 充值、授信、冻结、解冻接入 audit_log。
     V1.1.0 (2026-04-30): 账务中心正式路由。
@@ -32,11 +33,12 @@ r"""
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin
 from app.database import get_main_db
-from app.models.main.models import Admin
+from app.models.main.models import Admin, Authorization, User
 from app.services.accounting_query_service import (
     get_accounting_overview,
     get_accounting_wallet_detail,
@@ -103,6 +105,70 @@ def _audit_reconciliation_metadata(
     }
 
 
+async def _fill_agent_project_user_counts(
+    *,
+    db: AsyncSession,
+    result: dict,
+) -> dict:
+    """
+    回填代理列表中每个已授权项目的直属授权用户数。
+
+    统计口径:
+      - 只统计 User.created_by_agent_id 等于该代理 ID 的直属用户。
+      - 只统计未软删除用户。
+      - 只统计 Authorization.status == active 的项目授权。
+      - 维度为 agent_id + game_project_id。
+    """
+    agents = result.get("agents") or []
+    agent_ids = [int(item["id"]) for item in agents if item.get("id") is not None]
+    if not agent_ids:
+        return result
+
+    count_result = await db.execute(
+        select(
+            User.created_by_agent_id,
+            Authorization.game_project_id,
+            func.count(Authorization.id),
+        )
+        .join(Authorization, Authorization.user_id == User.id)
+        .where(
+            User.created_by_agent_id.in_(agent_ids),
+            User.is_deleted == False,  # noqa: E712
+            Authorization.status == "active",
+        )
+        .group_by(User.created_by_agent_id, Authorization.game_project_id)
+    )
+
+    count_map: dict[tuple[int, int], int] = {
+        (int(agent_id), int(project_id)): int(count)
+        for agent_id, project_id, count in count_result.all()
+        if agent_id is not None and project_id is not None
+    }
+
+    for agent in agents:
+        agent_id = agent.get("id")
+        if agent_id is None:
+            continue
+
+        projects = agent.get("authorized_projects")
+        if projects is None:
+            projects = agent.get("project_auths") or []
+            agent["authorized_projects"] = projects
+
+        for project in projects:
+            project_id = (
+                project.get("project_id")
+                or project.get("id")
+                or project.get("game_project_id")
+            )
+            if project_id is None:
+                project["user_count"] = 0
+                continue
+            project["user_count"] = count_map.get((int(agent_id), int(project_id)), 0)
+
+    return result
+
+
 @router.get("/overview", summary="账务中心总览")
 async def overview(
     _: Admin = Depends(get_current_admin),
@@ -144,7 +210,8 @@ async def agents_full(
 ) -> dict:
     """代理列表（含余额与授权项目），前端 AgentList.vue 使用。"""
     from app.services.accounting_service import get_agents_with_balance_and_projects
-    return await get_agents_with_balance_and_projects(db, page, page_size, status)
+    result = await get_agents_with_balance_and_projects(db, page, page_size, status)
+    return await _fill_agent_project_user_counts(db=db, result=result)
 
 
 @router.get("/wallets", summary="代理钱包列表")
