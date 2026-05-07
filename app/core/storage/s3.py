@@ -1,44 +1,39 @@
 r"""
 文件位置: app/core/storage/s3.py
 名称: S3/MinIO 对象存储实现（Phase 2 占位）
-作者: 蜂巢·大圣 (Hive-GreatSage)
-时间: 2026-04-25
-版本: V1.0.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+时间: 2026-05-07
+版本: V1.1.0
 功能说明:
     BaseStorage 的 S3/MinIO 对象存储实现（T004 决策后完善）。
-    Phase 1 为占位实现，所有方法 fallback 到本地存储并记录警告日志。
+    Phase 1 为占位实现，factory.py 会在 STORAGE_MODE=s3 时 fallback 到本地模式。
 
     Phase 2 实现计划（T004 推演后补充）：
       - 选型确认：MinIO 自建 vs 云厂商 S3 兼容服务
       - 引入依赖：aiobotocore 或 boto3（同步包装到线程池）
       - 实现 save_file：boto3 put_object
+      - 实现 save_file_from_path：boto3 upload_file 或 multipart upload
       - 实现 get_download_url：boto3 generate_presigned_url
       - 实现 delete_file：boto3 delete_object
       - 实现 file_exists：boto3 head_object
       - 实现 get_file_size：boto3 head_object ContentLength
 
-    配置项（settings）：
-      S3_ENDPOINT   : MinIO 或 S3 兼容服务地址
-      S3_BUCKET     : 存储桶名
-      S3_ACCESS_KEY : 访问密钥
-      S3_SECRET_KEY : 访问密钥 Secret
-      S3_REGION     : 区域（S3 需要，MinIO 可任意值）
-      S3_URL_EXPIRE_SECONDS : Presigned URL 有效期（默认 600s）
-
 改进历史:
+    V1.1.0 - 补齐 save_file_from_path 占位，匹配 BaseStorage V1.1.0
     V1.0.0 - 初始占位实现，等待 T004 存储选型决策后完善
 调试信息:
     Phase 1 中 STORAGE_MODE=s3 时会记录 WARNING 并 fallback 到本地模式
 """
 
 import logging
+from pathlib import Path
 
-from app.core.storage.base import BaseStorage, StorageError
+from app.core.storage.base import BaseStorage
 
 logger = logging.getLogger(__name__)
 
 _S3_NOT_IMPLEMENTED_MSG = (
-    "S3 存储尚未实现（等待 T004 对象存储选型决策），当前已 fallback 到本地模式。"
+    "S3 存储尚未实现（等待 T004 对象存储选型决策），当前应 fallback 到本地模式。"
     "如需使用 S3，请完成 T004 推演后在此文件中实现相关方法。"
 )
 
@@ -57,6 +52,9 @@ class S3Storage(BaseStorage):
         )
 
     async def save_file(self, data: bytes, path: str) -> str:
+        raise NotImplementedError(_S3_NOT_IMPLEMENTED_MSG)
+
+    async def save_file_from_path(self, source_path: str | Path, path: str) -> str:
         raise NotImplementedError(_S3_NOT_IMPLEMENTED_MSG)
 
     async def delete_file(self, path: str) -> None:
@@ -94,6 +92,13 @@ class S3Storage(BaseStorage):
     #         lambda: self._client.put_object(
     #             Bucket=self._bucket, Key=path, Body=data
     #         )
+    #     )
+    #     return path
+    #
+    # async def save_file_from_path(self, source_path: str | Path, path: str) -> str:
+    #     await asyncio.get_event_loop().run_in_executor(
+    #         None,
+    #         lambda: self._client.upload_file(str(source_path), self._bucket, path)
     #     )
     #     return path
     #
