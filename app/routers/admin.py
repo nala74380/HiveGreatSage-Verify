@@ -3,13 +3,14 @@ r"""
 文件名称: admin.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-05-07
-版本: V1.2.0
+版本: V1.3.0
 功能说明:
     管理后台路由：
       POST /admin/api/auth/login   — 管理员登录，获取 Admin Token
       GET  /admin/api/dashboard    — 平台统计概览
 
 改进历史:
+    V1.3.0 (2026-05-07): 用户设备列表与解绑审计中的设备指纹脱敏。
     V1.2.0 (2026-05-07): 管理员手动解绑设备接入 audit_log。
     V1.1.0 (2026-05-07): Admin 登录成功 / 失败接入 audit_log。
     V1.0.0 - 从存根重写，增加管理员登录和仪表盘统计
@@ -24,6 +25,7 @@ from sqlalchemy import Date as SADate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin
+from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint
 from app.database import get_main_db
 from app.models.main.models import Admin, Agent, DeviceBinding, GameProject, LoginLog, User
 from app.schemas.agent import AdminLoginRequest, AdminLoginResponse
@@ -35,6 +37,15 @@ router = APIRouter()
 
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+def _device_fingerprint_fields(value: str | None) -> dict:
+    """设备指纹展示字段。暂保留原文字段为空，避免继续外放原文。"""
+    return {
+        "device_fingerprint": None,
+        "device_fingerprint_masked": mask_device_fingerprint(value),
+        "device_fingerprint_hash": hash_sensitive_value(value),
+    }
 
 
 @router.post("/auth/login", response_model=AdminLoginResponse)
@@ -158,7 +169,7 @@ async def list_login_logs(
             "id":                 log.id,
             "user_id":            log.user_id,
             "username":           user.username if user else None,
-            "device_fingerprint": log.device_fingerprint,
+            **_device_fingerprint_fields(log.device_fingerprint),
             "ip_address":         str(log.ip_address) if log.ip_address else None,
             "client_type":        log.client_type,
             "game_project_id":    log.game_project_id,
@@ -178,7 +189,7 @@ async def debug_device_bindings(
     _: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    """说诊端点：直接查 DeviceBinding 表原始数据（不过滤 status）"""
+    """诊断端点：直接查 DeviceBinding 表原始数据（不过滤 status），但不返回设备指纹原文。"""
     result = await db.execute(
         select(DeviceBinding).where(DeviceBinding.user_id == user_id)
     )
@@ -189,7 +200,7 @@ async def debug_device_bindings(
         "bindings": [
             {
                 "id":                 b.id,
-                "device_fingerprint": b.device_fingerprint,
+                **_device_fingerprint_fields(b.device_fingerprint),
                 "status":             b.status,
                 "last_seen_at":       b.last_seen_at.isoformat() if b.last_seen_at else None,
                 "bound_at":           b.bound_at.isoformat() if b.bound_at else None,
@@ -206,7 +217,6 @@ async def get_user_devices(
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
     """查询指定用户的设备绑定列表（管理员专用）。"""
-    # 不过滤 status，返回所有记录（包括 unbound），方便调试
     result = await db.execute(
         select(DeviceBinding)
         .where(DeviceBinding.user_id == user_id)
@@ -214,9 +224,9 @@ async def get_user_devices(
     )
     bindings = result.scalars().all()
 
-    logger.info(f"[get_user_devices] user_id={user_id}, 共询到 {len(bindings)} 条 DeviceBinding")
+    logger.info(f"[get_user_devices] user_id={user_id}, 查询到 {len(bindings)} 条 DeviceBinding")
     for b in bindings:
-        logger.debug(f"  -> id={b.id} fp={b.device_fingerprint[:16]}... status={b.status!r} last_seen={b.last_seen_at}")
+        logger.debug(f"  -> id={b.id} fp={mask_device_fingerprint(b.device_fingerprint)} status={b.status!r} last_seen={b.last_seen_at}")
 
     now = datetime.now(timezone.utc)
     online_threshold = timedelta(seconds=90)
@@ -225,7 +235,7 @@ async def get_user_devices(
         "devices": [
             {
                 "id":                 b.id,
-                "device_fingerprint": b.device_fingerprint,
+                **_device_fingerprint_fields(b.device_fingerprint),
                 "bound_at":           b.bound_at.isoformat() if b.bound_at else None,
                 "last_seen_at":       b.last_seen_at.isoformat() if b.last_seen_at else None,
                 "status":             b.status,
@@ -276,7 +286,8 @@ async def unbind_device(
             "binding_id": binding.id,
             "user_id": user_id,
             "game_project_id": binding.game_project_id,
-            "device_fingerprint": binding.device_fingerprint,
+            "device_fingerprint_masked": mask_device_fingerprint(binding.device_fingerprint),
+            "device_fingerprint_hash": hash_sensitive_value(binding.device_fingerprint),
             "old_status": old_status,
             "new_status": binding.status,
             "last_seen_at": binding.last_seen_at.isoformat() if binding.last_seen_at else None,
