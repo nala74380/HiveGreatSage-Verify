@@ -127,9 +127,10 @@
         <el-empty v-if="!deviceBindings.length && !bindingsLoading" description="暂无设备绑定记录" :image-size="60" />
         <el-skeleton v-if="bindingsLoading" :rows="3" animated />
         <el-table v-else-if="deviceBindings.length" :data="deviceBindings" size="small">
-          <el-table-column label="设备指纹" min-width="200" show-overflow-tooltip>
+          <el-table-column label="设备标识" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="mono">{{ row.device_fingerprint }}</span>
+              <div class="mono">{{ deviceDisplay(row) }}</div>
+              <div class="sub-text">Hash：{{ shortHash(row.device_fingerprint_hash) }}</div>
             </template>
           </el-table-column>
           <el-table-column label="绑定时间" width="155">
@@ -306,6 +307,18 @@
 </template>
 
 <script setup>
+/**
+ * 文件位置: src/views/shared/UserDetail.vue
+ * 名称: 用户详情
+ * 作者: 蜂巢·大圣 (HiveGreatSage)
+ * 时间: 2026-05-07
+ * 版本: V1.1.0
+ * 功能说明:
+ *   用户详情页面。
+ *
+ * 本版改进:
+ *   - 设备绑定列表不再展示设备指纹原文，改为 masked/hash。
+ */
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -328,6 +341,9 @@ const deviceBindings = ref([])
 const bindingsLoading = ref(false)
 const availableProjects = ref([])
 
+const deviceDisplay = (row) => row?.device_fingerprint_masked || '—'
+const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
+
 const loadUser = async () => {
   pageLoading.value = true
   try {
@@ -346,7 +362,7 @@ const loadDeviceBindings = async () => {
   bindingsLoading.value = true
   try {
     const res = await userApi.deviceBindings(userId)
-    deviceBindings.value = res.data
+    deviceBindings.value = res.data.devices || res.data || []
   } catch {
     deviceBindings.value = []
   } finally {
@@ -553,6 +569,7 @@ const unbindDevice = async (binding) => {
 .user-tags { display: flex; align-items: center; }
 .user-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .mono { font-family: 'Cascadia Code', monospace; font-size: 12px; }
+.sub-text { margin-top: 3px; color: #94a3b8; font-size: 12px; }
 .text-success { color: #10b981; font-size: 13px; }
 .text-muted { color: #94a3b8; }
 .text-warning { color: #f59e0b; font-weight: 600; }
