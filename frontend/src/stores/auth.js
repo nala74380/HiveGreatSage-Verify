@@ -15,7 +15,8 @@
  * 安全口径：
  *   - Token / role / userInfo 从 sessionStorage 恢复，关闭标签页后清空。
  *   - 不再从 localStorage 恢复 Token，避免后台 Token 长期驻留浏览器。
- *   - logout() 负责清理当前标签页状态，并通过 storage.clearAll() 通知其他标签页。
+ *   - logout() 优先调用后端吊销当前 Admin / Agent Token。
+ *   - 后端吊销失败也会执行本地清理，避免用户无法退出。
  */
 
 import { defineStore } from 'pinia'
@@ -79,12 +80,30 @@ export const useAuthStore = defineStore('auth', {
       })
     },
 
-    /** 登出：清除状态 + sessionStorage，并广播其他标签页同步登出。 */
-    logout() {
-      this.token    = null
-      this.role     = null
-      this.userInfo = null
-      storage.clearAll()
+    /**
+     * 登出：优先服务端吊销当前后台 Token，然后清除本地状态。
+     *
+     * 注意：
+     *   - 服务端吊销失败不阻止本地退出。
+     *   - User Token 登出不走这里，当前 store 只管理 Admin / Agent 后台会话。
+     */
+    async logout() {
+      const roleBeforeClear = this.role
+
+      try {
+        if (roleBeforeClear === 'admin') {
+          await authApi.adminLogout()
+        } else if (roleBeforeClear === 'agent') {
+          await authApi.agentLogout()
+        }
+      } catch {
+        // 忽略后端登出失败，继续执行本地清理。
+      } finally {
+        this.token    = null
+        this.role     = null
+        this.userInfo = null
+        storage.clearAll()
+      }
     },
 
     /** 内部：统一保存登录状态。 */
