@@ -6,6 +6,10 @@ const agentBase = (path) => isAgentRole() ? `/api/agents/scope${path}` : `/api/a
 
 export const agentApi = {
   create(data) {
+    if (isAgentRole()) {
+      return http.post('/api/agents/scope', data, { _skipAuthRedirect: true })
+    }
+
     return http.post('/api/agents/', data)
   },
 
@@ -14,19 +18,28 @@ export const agentApi = {
   },
 
   scopeList(params = {}) {
-    return http.get('/api/agents/scope/list', { params, _skipAuthRedirect: true })
+    return http.get('/api/agents/scope/list', {
+      params,
+      _skipAuthRedirect: true,
+    })
   },
 
   detail(agentId) {
-    return http.get(agentBase(`/${agentId}`), { _skipAuthRedirect: isAgentRole() })
+    return http.get(agentBase(`/${agentId}`), {
+      _skipAuthRedirect: isAgentRole(),
+    })
   },
 
   subtree(agentId) {
-    return http.get(agentBase(`/${agentId}/subtree`), { _skipAuthRedirect: isAgentRole() })
+    return http.get(agentBase(`/${agentId}/subtree`), {
+      _skipAuthRedirect: isAgentRole(),
+    })
   },
 
   update(agentId, data) {
-    return http.patch(agentBase(`/${agentId}`), data, { _skipAuthRedirect: isAgentRole() })
+    return http.patch(agentBase(`/${agentId}`), data, {
+      _skipAuthRedirect: isAgentRole(),
+    })
   },
 
   suspend(agentId) {

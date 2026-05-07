@@ -2,8 +2,8 @@
  * 文件位置: src/router/index.js
  * 名称: Vue Router 主入口
  * 作者: 蜂巢·大圣 (Hive-GreatSage)
- * 时间: 2026-04-30
- * 版本: V1.8.0
+ * 时间: 2026-05-08
+ * 版本: V1.8.1
  * 功能说明:
  *   Vue Router 实例 + 全局路由守卫。
  *
@@ -11,6 +11,8 @@
  *   - 项目管理是项目相关能力统一入口。
  *   - 项目详情页承载定价、准入、授权申请、热更新等项目能力。
  *   - 账务中心是平台内部点数资产治理统一入口。
+ *   - 代理详情页为 Admin / Agent 共享页面，前端路由允许 requiresAuth，
+ *     实际数据权限由后端 Admin 接口或 Agent scope 接口控制。
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
@@ -61,7 +63,6 @@ const router = createRouter({
           meta: { requiresAuth: true, title: '设备监控' },
         },
 
-        // Agent
         {
           path: 'catalog',
           name: 'AgentCatalog',
@@ -75,7 +76,6 @@ const router = createRouter({
           meta: { requiresAgent: true, title: '我的余额' },
         },
 
-        // Admin shared / Agent Lv.2+
         {
           path: 'agents',
           name: 'AgentList',
@@ -86,7 +86,7 @@ const router = createRouter({
           path: 'agents/:id',
           name: 'AgentDetail',
           component: () => import('@/views/shared/AgentDetail.vue'),
-          meta: { requiresAdmin: true, title: '代理详情' },
+          meta: { requiresAuth: true, title: '代理详情' },
         },
         {
           path: 'login-logs',
@@ -95,7 +95,6 @@ const router = createRouter({
           meta: { requiresAdmin: true, title: '登录日志' },
         },
 
-        // Admin: Project
         {
           path: 'projects',
           name: 'GameProjectList',
@@ -108,8 +107,6 @@ const router = createRouter({
           component: () => import('@/views/admin/GameProjectDetail.vue'),
           meta: { requiresAdmin: true, title: '项目详情' },
         },
-
-        // Admin: Project legacy transition pages
         {
           path: 'pricing',
           name: 'ProjectPricing',
@@ -128,15 +125,12 @@ const router = createRouter({
           component: () => import('@/views/admin/AgentProjectAuthRequests.vue'),
           meta: { requiresAdmin: true, title: '授权申请' },
         },
-
-        // Admin: Accounting
         {
           path: 'accounting',
           name: 'AccountingCenter',
           component: () => import('@/views/admin/AccountingCenter.vue'),
           meta: { requiresAdmin: true, title: '账务中心' },
         },
-        // Admin: Other
         {
           path: 'updates',
           name: 'UpdateManage',
