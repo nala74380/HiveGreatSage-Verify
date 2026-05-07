@@ -3,7 +3,7 @@ r"""
 文件名称: auth_service.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-05-07
-版本: V1.2.0
+版本: V1.3.0
 功能说明:
     认证服务层，包含全部认证业务逻辑：
       - login_user()           用户登录
@@ -20,27 +20,19 @@ r"""
       6. Access Token 中的 authorization_level 来自 Authorization.user_level。
       7. Access Token 项目字段统一为 project_code。
       8. Android 首次创建设备绑定时写入 audit_log。
+      9. 设备绑定审计不写设备指纹原文，只写 masked/hash。
 
     当前字段口径:
       1. LoginResponse 返回 authorization_level / game_project_code。
       2. Token payload 返回 authorization_level / project_code。
       3. User.user_level / max_devices / expired_at 不再作为业务字段。
 
-    关联文档:
-      [[01-网络验证系统/架构设计]]
-      [[01-网络验证系统/API鉴权方案]]
-      [[01-网络验证系统/旧字段旧接口清理清单]]
-
 改进历史:
+    V1.3.0 (2026-05-07) - device_binding.bind 审计移除设备指纹原文。
     V1.2.0 (2026-05-07) - Android 首次创建设备绑定接入 audit_log。
     V1.1.0 (2026-05-02) - 登录与刷新过滤软删除用户；刷新改用 Authorization.user_level。
     V1.0.1 - 设备绑定改为用户 × 项目 × 设备维度，设备上限改用 Authorization.authorized_devices。
     V1.0.0 - 初始版本，从 routers/auth.py 迁移全部业务逻辑。
-
-调试信息:
-    已知问题:
-      1. Admin / Agent Token 尚未接入服务端吊销闭环。
-      2. token_version 尚未落地。
 """
 
 from datetime import datetime, timezone
@@ -67,6 +59,7 @@ from app.core.security import (
     get_refresh_token_ttl_seconds,
     verify_password,
 )
+from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint
 from app.database import _main_session_factory
 from app.models.main.models import (
     Authorization,
@@ -244,7 +237,8 @@ async def login_user(
                         "username": user.username,
                         "game_project_id": game_project.id,
                         "game_project_code": game_project.code_name,
-                        "device_fingerprint": body.device_fingerprint,
+                        "device_fingerprint_masked": mask_device_fingerprint(body.device_fingerprint),
+                        "device_fingerprint_hash": hash_sensitive_value(body.device_fingerprint),
                         "client_type": body.client_type,
                         "authorized_devices": int(auth.authorized_devices or 0),
                     },
