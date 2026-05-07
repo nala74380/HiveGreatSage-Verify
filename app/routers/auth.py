@@ -3,7 +3,7 @@ r"""
 文件名称: auth.py
 作者: 蜂巢·大圣 (Hive-GreatSage)
 日期/时间: 2026-05-07
-版本: V1.2.0
+版本: V1.3.0
 功能说明:
     认证路由薄层：
       POST /api/auth/login      — 登录
@@ -16,9 +16,12 @@ r"""
       1. LoginResponse 返回 authorization_level / game_project_code。
       2. Access Token payload 使用 authorization_level / project_code。
       3. User.user_level 已不再作为授权等级来源。
-      4. 登录成功 / 失败写入 audit_log，但不记录密码、Token 或密码哈希。
+      4. 登录成功 / 失败写入 audit_log。
+      5. 登出 / 踢出所有会话成功或失败写入 audit_log。
+      6. 审计日志不记录密码、Token、Refresh Token 或密码哈希。
 
 改进历史:
+    V1.3.0 (2026-05-07) - User 登出 / 踢出所有会话接入 audit_log。
     V1.2.0 (2026-05-07) - User 登录成功 / 失败接入 audit_log。
     V1.1.0 (2026-05-02) - /me 改为 Authorization 授权摘要口径。
     V1.0.1 - 业务逻辑迁移至 services/auth_service.py。
@@ -66,6 +69,10 @@ _LOGIN_RATE_LIMIT = 10
 _LOGIN_RATE_WINDOW = 60
 
 
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 def _login_metadata(body: LoginRequest, *, client_ip: str, success: bool, reason: str | None = None) -> dict:
     """生成用户登录审计元数据。严禁记录 password / token。"""
     return {
@@ -79,6 +86,32 @@ def _login_metadata(body: LoginRequest, *, client_ip: str, success: bool, reason
     }
 
 
+def _extract_user_id_from_access_token(access_token: str) -> int | None:
+    """
+    尝试从 Access Token 提取 user_id。
+
+    注意:
+        仅用于审计关联，不作为鉴权事实。
+        解析失败返回 None，不抛出原始 Token 内容。
+    """
+    try:
+        payload = decode_access_token(access_token)
+        sub = payload.get("sub")
+        return int(sub) if sub is not None else None
+    except (JWTError, TypeError, ValueError):
+        return None
+
+
+def _logout_metadata(*, user_id: int | None, success: bool, reason: str | None = None, body: LogoutRequest | None = None) -> dict:
+    """生成登出 / 会话吊销审计元数据。严禁记录 token / refresh_token。"""
+    return {
+        "user_id": user_id,
+        "success": success,
+        "reason": reason,
+        "has_refresh_token": bool(getattr(body, "refresh_token", None)) if body else None,
+    }
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(
     body: LoginRequest,
@@ -87,7 +120,7 @@ async def login(
     redis: aioredis.Redis = Depends(get_redis),
 ) -> LoginResponse:
     """用户登录：D5 限流后交给 AuthService 执行认证链。"""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     user_agent = request.headers.get("user-agent")
 
     allowed, count = await incr_rate_limit(
@@ -183,20 +216,61 @@ async def refresh(
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
     body: LogoutRequest,
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(_http_bearer),
+    db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> MessageResponse:
     """登出：吊销当前 Access Token 并删除对应 Refresh Token。"""
-    return await logout_user(
-        access_token_str=credentials.credentials,
-        body=body,
-        redis=redis,
+    client_ip = _client_ip(request)
+    user_agent = request.headers.get("user-agent")
+    user_id = _extract_user_id_from_access_token(credentials.credentials)
+
+    try:
+        result = await logout_user(
+            access_token_str=credentials.credentials,
+            body=body,
+            redis=redis,
+        )
+    except HTTPException as exc:
+        await create_audit_log(
+            db=db,
+            actor_type="user",
+            actor_id=user_id,
+            action="auth.user.logout_failed",
+            target_type="user_session",
+            target_id=user_id if user_id is not None else "unknown",
+            summary="用户登出失败",
+            metadata={
+                **_logout_metadata(user_id=user_id, success=False, reason=str(exc.detail), body=body),
+                "status_code": exc.status_code,
+            },
+            ip_address=client_ip,
+            user_agent=user_agent,
+        )
+        await db.commit()
+        raise
+
+    await create_audit_log(
+        db=db,
+        actor_type="user",
+        actor_id=user_id,
+        action="auth.user.logout_success",
+        target_type="user_session",
+        target_id=user_id if user_id is not None else "unknown",
+        summary="用户登出成功",
+        metadata=_logout_metadata(user_id=user_id, success=True, body=body),
+        ip_address=client_ip,
+        user_agent=user_agent,
     )
+    return result
 
 
 @router.post("/revoke-all", response_model=MessageResponse, summary="踢出所有设备")
 async def revoke_all(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(_http_bearer),
+    db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> MessageResponse:
     """
@@ -209,10 +283,52 @@ async def revoke_all(
 
     后续 token_version 落地后，应改为服务端版本号强校验。
     """
-    return await revoke_all_devices(
-        access_token_str=credentials.credentials,
-        redis=redis,
+    client_ip = _client_ip(request)
+    user_agent = request.headers.get("user-agent")
+    user_id = _extract_user_id_from_access_token(credentials.credentials)
+
+    try:
+        result = await revoke_all_devices(
+            access_token_str=credentials.credentials,
+            redis=redis,
+        )
+    except HTTPException as exc:
+        await create_audit_log(
+            db=db,
+            actor_type="user",
+            actor_id=user_id,
+            action="auth.user.revoke_all_sessions_failed",
+            target_type="user_session",
+            target_id=user_id if user_id is not None else "unknown",
+            summary="用户踢出所有会话失败",
+            metadata={
+                "user_id": user_id,
+                "success": False,
+                "reason": str(exc.detail),
+                "status_code": exc.status_code,
+            },
+            ip_address=client_ip,
+            user_agent=user_agent,
+        )
+        await db.commit()
+        raise
+
+    await create_audit_log(
+        db=db,
+        actor_type="user",
+        actor_id=user_id,
+        action="auth.user.revoke_all_sessions_success",
+        target_type="user_session",
+        target_id=user_id if user_id is not None else "unknown",
+        summary="用户踢出所有会话成功",
+        metadata={
+            "user_id": user_id,
+            "success": True,
+        },
+        ip_address=client_ip,
+        user_agent=user_agent,
     )
+    return result
 
 
 @router.get("/me", response_model=MeResponse)
