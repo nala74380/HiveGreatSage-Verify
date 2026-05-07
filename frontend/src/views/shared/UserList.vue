@@ -180,7 +180,7 @@
                 </div>
 
                 <div class="auth-expiry-row">
-                  到期：
+                  到期时间：
                   <span v-if="!authItem.valid_until" class="expiry-permanent">永久有效</span>
                   <span v-else>
                     {{ formatDate(authItem.valid_until) }}
@@ -198,10 +198,10 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="授权数" width="85" align="center">
+        <el-table-column label="项目授权数" width="110" align="center">
           <template #default="{ row }">
             <el-tooltip
-              :content="`总授权记录 ${row.authorization_count} 条；当前显示 ${row.authorizations?.length || 0} 条`"
+              :content="`总项目授权记录 ${row.authorization_count} 条；当前显示 ${row.authorizations?.length || 0} 条`"
               placement="top"
             >
               <span class="auth-count">
