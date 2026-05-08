@@ -26,7 +26,7 @@
             v-model="filter.status"
             clearable
             placeholder="全部"
-            style="width:120px"
+            style="width: 120px"
           >
             <el-option label="正常" value="active" />
             <el-option label="已停用" value="suspended" />
@@ -39,7 +39,7 @@
             clearable
             filterable
             placeholder="全部项目"
-            style="width:180px"
+            style="width: 180px"
             :loading="projectLoading"
           >
             <el-option
@@ -67,7 +67,7 @@
         :data="agents"
         row-key="id"
         stripe
-        style="width:100%"
+        style="width: 100%"
       >
         <el-table-column prop="username" label="代理名" min-width="145">
           <template #default="{ row }">
@@ -86,7 +86,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="业务等级" width="130">
+        <el-table-column label="业务等级" width="135">
           <template #default="{ row }">
             <template v-if="row.business_profile">
               <el-tooltip placement="top">
@@ -129,7 +129,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="已授权项目" min-width="260">
+        <el-table-column label="已授权项目" min-width="280">
           <template #default="{ row }">
             <div v-if="!row.authorized_projects?.length" class="no-data">
               未授权项目
@@ -139,7 +139,7 @@
               <el-tooltip
                 v-for="p in row.authorized_projects"
                 :key="projectKey(p)"
-                :content="`${projectDisplayName(p)} 直属授权用户数: ${p.user_count ?? 0} 人${p.valid_until ? '  到期: ' + fmtDate(p.valid_until) : '  永久'}`"
+                :content="`${projectDisplayName(p)} 直属授权用户数: ${p.user_count ?? 0} 人${p.valid_until || p.auth_valid_until ? '  到期: ' + fmtDate(p.valid_until || p.auth_valid_until) : '  永久'}`"
                 placement="top"
               >
                 <div class="proj-badge">
@@ -166,7 +166,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="可用点数" width="140" align="right">
+        <el-table-column label="可用点数" width="150" align="right">
           <template #default="{ row }">
             <span :class="Number(row.balance?.available_total || 0) > 0 ? 'pts-positive' : 'pts-zero'">
               {{ numberText(row.balance?.available_total) }}
@@ -181,7 +181,7 @@
 
         <el-table-column label="创建时间" width="150">
           <template #default="{ row }">
-            {{ formatDatetime(row.created_at) }}
+            {{ row.created_at ? formatDatetime(row.created_at) : '—' }}
           </template>
         </el-table-column>
 
@@ -277,7 +277,7 @@
             v-model="createDialog.form.parent_agent_id"
             :min="1"
             controls-position="right"
-            style="width:100%"
+            style="width: 100%"
           />
           <div class="field-hint">留空则创建为顶级代理（直属管理员）。</div>
         </el-form-item>
@@ -289,7 +289,7 @@
             :max="100"
             :precision="2"
             controls-position="right"
-            style="width:100%"
+            style="width: 100%"
           />
         </el-form-item>
 
@@ -297,7 +297,7 @@
           <el-divider content-position="left">业务画像</el-divider>
 
           <el-form-item label="业务等级" prop="tier_level">
-            <el-select v-model="createDialog.form.tier_level" style="width:100%">
+            <el-select v-model="createDialog.form.tier_level" style="width: 100%">
               <el-option
                 v-for="item in levelPolicies"
                 :key="item.level"
@@ -308,7 +308,7 @@
           </el-form-item>
 
           <el-form-item label="风险状态" prop="risk_status">
-            <el-select v-model="createDialog.form.risk_status" style="width:100%">
+            <el-select v-model="createDialog.form.risk_status" style="width: 100%">
               <el-option label="正常 normal" value="normal" />
               <el-option label="观察 watch" value="watch" />
               <el-option label="限制 restricted" value="restricted" />
@@ -329,7 +329,7 @@
 
         <el-alert
           v-if="auth.isAgent"
-          title="代理端创建的是直属下级代理，业务等级、风险状态、项目授权、点数由上级治理规则和后续管理流程控制。"
+          title="代理端创建的是直属下级代理。业务等级、风险状态、项目授权、点数由上级治理规则和后续管理流程控制。"
           type="info"
           show-icon
           :closable="false"
@@ -351,7 +351,7 @@
 
     <el-drawer
       v-model="editDrawer.visible"
-      size="760px"
+      size="780px"
       :title="editDrawer.agent ? `编辑代理 — ${editDrawer.agent.username}` : '编辑代理'"
       destroy-on-close
     >
@@ -376,7 +376,7 @@
             <el-tab-pane label="基础信息" name="base">
               <el-form label-width="120px" :model="editDrawer.baseForm">
                 <el-form-item label="账号状态">
-                  <el-select v-model="editDrawer.baseForm.status" style="width:100%">
+                  <el-select v-model="editDrawer.baseForm.status" style="width: 100%">
                     <el-option label="正常 active" value="active" />
                     <el-option label="停用 suspended" value="suspended" />
                   </el-select>
@@ -389,7 +389,7 @@
                     :max="100"
                     :precision="2"
                     controls-position="right"
-                    style="width:100%"
+                    style="width: 100%"
                   />
                 </el-form-item>
 
@@ -417,7 +417,7 @@
             <el-tab-pane v-if="auth.isAdmin" label="业务画像" name="profile">
               <el-form label-width="145px" :model="editDrawer.profileForm">
                 <el-form-item label="业务等级">
-                  <el-select v-model="editDrawer.profileForm.tier_level" style="width:100%">
+                  <el-select v-model="editDrawer.profileForm.tier_level" style="width: 100%">
                     <el-option
                       v-for="item in levelPolicies"
                       :key="item.level"
@@ -428,7 +428,7 @@
                 </el-form-item>
 
                 <el-form-item label="风险状态">
-                  <el-select v-model="editDrawer.profileForm.risk_status" style="width:100%">
+                  <el-select v-model="editDrawer.profileForm.risk_status" style="width: 100%">
                     <el-option label="正常 normal" value="normal" />
                     <el-option label="观察 watch" value="watch" />
                     <el-option label="限制 restricted" value="restricted" />
@@ -444,7 +444,7 @@
                     :min="0"
                     :precision="2"
                     controls-position="right"
-                    style="width:100%"
+                    style="width: 100%"
                   />
                   <div class="field-hint">
                     当前等级默认值：{{ numberText(currentEditPolicy()?.default_credit_limit) }} 点；切换业务等级会自动刷新。
@@ -457,7 +457,7 @@
                     :min="0"
                     :precision="2"
                     controls-position="right"
-                    style="width:100%"
+                    style="width: 100%"
                   />
                   <div class="field-hint">
                     当前等级最高授信：{{ numberText(currentEditPolicy()?.max_credit_limit) }} 点；切换业务等级会自动刷新。
@@ -469,7 +469,7 @@
                     v-model="editDrawer.profileForm.can_create_sub_agents_override"
                     clearable
                     placeholder="使用等级策略"
-                    style="width:100%"
+                    style="width: 100%"
                   >
                     <el-option label="允许" :value="true" />
                     <el-option label="不允许" :value="false" />
@@ -481,7 +481,7 @@
                     v-model="editDrawer.profileForm.max_sub_agents_override"
                     :min="0"
                     controls-position="right"
-                    style="width:100%"
+                    style="width: 100%"
                   />
                   <div class="field-hint">
                     当前等级默认最大下级：{{ currentEditPolicy()?.max_sub_agents ?? 0 }} 个；切换业务等级会自动刷新。
@@ -587,7 +587,7 @@
                     v-model="editDrawer.authForm.project_id"
                     placeholder="请选择项目"
                     filterable
-                    style="width:100%"
+                    style="width: 100%"
                   >
                     <el-option
                       v-for="p in allProjects"
@@ -617,7 +617,7 @@
                     v-model="editDrawer.authForm.valid_until"
                     type="datetime"
                     placeholder="不填为永久有效"
-                    style="width:100%;margin-top:8px"
+                    style="width: 100%; margin-top: 8px"
                   />
                 </el-form-item>
 
@@ -655,6 +655,235 @@
                   <div class="bal-lbl">可用余额</div>
                 </div>
               </div>
+
+              <el-tabs v-model="editDrawer.balanceTab" class="balance-tabs">
+                <el-tab-pane label="充值" name="recharge">
+                  <el-form :model="editDrawer.rechargeForm" label-width="80px" style="margin-top: 12px">
+                    <el-form-item label="充值点数">
+                      <el-input-number
+                        v-model="editDrawer.rechargeForm.amount"
+                        :min="0.01"
+                        :precision="2"
+                        :step="100"
+                        controls-position="right"
+                        style="width: 220px"
+                      />
+                    </el-form-item>
+
+                    <el-form-item label="备注">
+                      <el-input
+                        v-model="editDrawer.rechargeForm.description"
+                        placeholder="线下付款备注"
+                      />
+                    </el-form-item>
+
+                    <el-form-item>
+                      <el-button
+                        type="primary"
+                        :loading="editDrawer.balanceOpLoading"
+                        @click="doEditRecharge"
+                      >
+                        确认充值
+                      </el-button>
+                    </el-form-item>
+                  </el-form>
+                </el-tab-pane>
+
+                <el-tab-pane label="授信" name="credit">
+                  <el-form :model="editDrawer.creditForm" label-width="80px" style="margin-top: 12px">
+                    <el-form-item label="授信点数">
+                      <el-input-number
+                        v-model="editDrawer.creditForm.amount"
+                        :min="0.01"
+                        :precision="2"
+                        :step="100"
+                        controls-position="right"
+                        style="width: 220px"
+                      />
+
+                      <el-button
+                        size="small"
+                        type="primary"
+                        plain
+                        style="margin-left: 8px"
+                        @click="useCurrentDefaultCredit"
+                      >
+                        填入默认授信
+                      </el-button>
+
+                      <div class="field-hint credit-policy-hint">
+                        {{ currentDefaultCreditText() }}
+                      </div>
+                    </el-form-item>
+
+                    <el-form-item label="备注">
+                      <el-input
+                        v-model="editDrawer.creditForm.description"
+                        placeholder="授信原因"
+                      />
+                    </el-form-item>
+
+                    <el-form-item>
+                      <el-button
+                        type="warning"
+                        :loading="editDrawer.balanceOpLoading"
+                        @click="doEditCredit"
+                      >
+                        确认授信
+                      </el-button>
+                    </el-form-item>
+                  </el-form>
+                </el-tab-pane>
+
+                <el-tab-pane label="冻结/解冻" name="freeze">
+                  <el-form :model="editDrawer.freezeForm" label-width="80px" style="margin-top: 12px">
+                    <el-form-item label="操作金额">
+                      <el-input-number
+                        v-model="editDrawer.freezeForm.amount"
+                        :min="0.01"
+                        :precision="2"
+                        controls-position="right"
+                        style="width: 220px"
+                      />
+                    </el-form-item>
+
+                    <el-form-item label="备注">
+                      <el-input
+                        v-model="editDrawer.freezeForm.description"
+                        placeholder="冻结/解冻原因"
+                      />
+                    </el-form-item>
+
+                    <el-form-item>
+                      <el-button
+                        type="danger"
+                        :loading="editDrawer.balanceOpLoading"
+                        @click="doEditFreeze"
+                      >
+                        冻结授信
+                      </el-button>
+
+                      <el-button
+                        :loading="editDrawer.balanceOpLoading"
+                        style="margin-left: 12px"
+                        @click="doEditUnfreeze"
+                      >
+                        解冻授信
+                      </el-button>
+                    </el-form-item>
+                  </el-form>
+                </el-tab-pane>
+
+                <el-tab-pane label="流水记录" name="txlog">
+                  <el-table
+                    v-loading="editDrawer.txLoading"
+                    :data="editDrawer.transactions"
+                    size="small"
+                    max-height="320"
+                    stripe
+                    empty-text="暂无流水"
+                    style="margin-top: 8px"
+                  >
+                    <el-table-column label="时间" width="150">
+                      <template #default="{ row }">
+                        {{ fmtDate(row.created_at || row.posted_at) }}
+                      </template>
+                    </el-table-column>
+
+                    <el-table-column label="类型" width="90">
+                      <template #default="{ row }">
+                        <el-tag size="small" effect="light">
+                          {{ row.tx_type_label || row.entry_type || row.tx_type }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+
+                    <el-table-column label="余额类型" width="100">
+                      <template #default="{ row }">
+                        {{ row.balance_type_label || row.balance_type || '—' }}
+                      </template>
+                    </el-table-column>
+
+                    <el-table-column label="变动" width="100" align="right">
+                      <template #default="{ row }">
+                        <span :class="Number(row.amount || 0) >= 0 ? 'amt-pos' : 'amt-neg'">
+                          {{ Number(row.amount || 0) >= 0 ? '+' : '' }}{{ numberText(row.amount) }}
+                        </span>
+                      </template>
+                    </el-table-column>
+
+                    <el-table-column label="变后余额" width="110" align="right">
+                      <template #default="{ row }">
+                        {{ numberText(row.balance_after) }}
+                      </template>
+                    </el-table-column>
+
+                    <el-table-column label="说明" min-width="180" show-overflow-tooltip>
+                      <template #default="{ row }">
+                        {{ row.business_text || row.description || '—' }}
+                      </template>
+                    </el-table-column>
+                  </el-table>
+
+                  <div class="tx-actions">
+                    <el-button
+                      size="small"
+                      :icon="Refresh"
+                      :loading="editDrawer.txLoading"
+                      @click="loadEditTransactions"
+                    >
+                      刷新流水
+                    </el-button>
+                  </div>
+                </el-tab-pane>
+              </el-tabs>
+            </el-tab-pane>
+
+            <el-tab-pane v-if="auth.isAdmin" label="修改密码" name="password">
+              <el-alert
+                title="自动生成密码时，明文只会在本次响应中返回，请复制后妥善保存。"
+                type="warning"
+                show-icon
+                :closable="false"
+                class="inner-alert"
+              />
+
+              <el-form label-width="120px" :model="editDrawer.passwordForm">
+                <el-form-item label="重置方式">
+                  <el-radio-group v-model="editDrawer.passwordForm.auto_generate">
+                    <el-radio :label="true">自动生成</el-radio>
+                    <el-radio :label="false">手动设置</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+
+                <el-form-item v-if="!editDrawer.passwordForm.auto_generate" label="新密码">
+                  <el-input
+                    v-model="editDrawer.passwordForm.new_password"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    placeholder="请输入新密码"
+                  />
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button
+                    type="danger"
+                    :loading="editDrawer.passwordLoading"
+                    @click="resetAgentPassword"
+                  >
+                    重置密码
+                  </el-button>
+                </el-form-item>
+
+                <el-form-item v-if="editDrawer.generatedPassword" label="生成密码">
+                  <el-input :model-value="editDrawer.generatedPassword" readonly>
+                    <template #append>
+                      <el-button @click="copyGeneratedPassword">复制</el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+              </el-form>
             </el-tab-pane>
           </el-tabs>
         </template>
@@ -664,6 +893,22 @@
 </template>
 
 <script setup>
+/**
+ * 文件位置: src/views/shared/AgentList.vue
+ * 名称: 代理管理
+ * 作者: 蜂巢·大圣 (HiveGreatSage)
+ * 时间: 2026-05-08
+ * 版本: V1.8.0
+ *
+ * 功能说明:
+ *   管理员 / 代理共用代理管理列表。
+ *
+ * 当前边界:
+ *   - 管理员端保留完整能力：基础信息、业务画像、项目授权、点数管理、修改密码、硬删除。
+ *   - 代理端只允许：新建直属下级、查看详情、编辑基础信息、停用/启用权限范围内下级。
+ *   - 代理端不调用管理员专用业务画像、账务、项目授权、密码接口。
+ */
+
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Refresh } from '@element-plus/icons-vue'
@@ -709,6 +954,7 @@ const projectDisplayName = (project) =>
   project?.display_name ||
   project?.project_display_name ||
   project?.project_name ||
+  project?.game_project_name ||
   project?.code_name ||
   project?.project_code ||
   project?.game_project_code ||
@@ -717,6 +963,7 @@ const projectDisplayName = (project) =>
 const projectKey = (project) =>
   project?.project_id ||
   project?.id ||
+  project?.game_project_id ||
   project?.code_name ||
   project?.project_code ||
   project?.game_project_code ||
@@ -1407,13 +1654,146 @@ const loadEditTransactions = async () => {
   }
 }
 
-const doEditRecharge = async () => {}
-const doEditCredit = async () => {}
-const doEditFreeze = async () => {}
-const doEditUnfreeze = async () => {}
-const resetAgentPassword = async () => {}
-const copyGeneratedPassword = async () => {}
+const doEditRecharge = async () => {
+  if (!editDrawer.agent || !auth.isAdmin) return
 
+  editDrawer.balanceOpLoading = true
+
+  try {
+    await balanceApi.recharge(editDrawer.agent.id, {
+      amount: editDrawer.rechargeForm.amount,
+      description: editDrawer.rechargeForm.description || undefined,
+    })
+
+    ElMessage.success('充值成功')
+
+    editDrawer.rechargeForm = {
+      amount: 100,
+      description: '',
+    }
+
+    await Promise.all([
+      loadEditBalance(),
+      loadEditTransactions(),
+      loadAgents(),
+    ])
+  } finally {
+    editDrawer.balanceOpLoading = false
+  }
+}
+
+const doEditCredit = async () => {
+  if (!editDrawer.agent || !auth.isAdmin) return
+
+  editDrawer.balanceOpLoading = true
+
+  try {
+    await balanceApi.credit(editDrawer.agent.id, {
+      amount: editDrawer.creditForm.amount,
+      description: editDrawer.creditForm.description || undefined,
+    })
+
+    ElMessage.success('授信成功')
+
+    editDrawer.creditForm = {
+      amount: 100,
+      description: '',
+    }
+
+    await Promise.all([
+      loadEditBalance(),
+      loadEditTransactions(),
+      loadAgents(),
+    ])
+  } finally {
+    editDrawer.balanceOpLoading = false
+  }
+}
+
+const doEditFreeze = async () => {
+  if (!editDrawer.agent || !auth.isAdmin) return
+
+  editDrawer.balanceOpLoading = true
+
+  try {
+    await balanceApi.freeze(editDrawer.agent.id, {
+      amount: editDrawer.freezeForm.amount,
+      description: editDrawer.freezeForm.description || undefined,
+    })
+
+    ElMessage.success('冻结成功')
+
+    await Promise.all([
+      loadEditBalance(),
+      loadEditTransactions(),
+      loadAgents(),
+    ])
+  } finally {
+    editDrawer.balanceOpLoading = false
+  }
+}
+
+const doEditUnfreeze = async () => {
+  if (!editDrawer.agent || !auth.isAdmin) return
+
+  editDrawer.balanceOpLoading = true
+
+  try {
+    await balanceApi.unfreeze(editDrawer.agent.id, {
+      amount: editDrawer.freezeForm.amount,
+      description: editDrawer.freezeForm.description || undefined,
+    })
+
+    ElMessage.success('解冻成功')
+
+    await Promise.all([
+      loadEditBalance(),
+      loadEditTransactions(),
+      loadAgents(),
+    ])
+  } finally {
+    editDrawer.balanceOpLoading = false
+  }
+}
+
+const resetAgentPassword = async () => {
+  if (!editDrawer.agent || !auth.isAdmin) return
+
+  if (!editDrawer.passwordForm.auto_generate && !editDrawer.passwordForm.new_password) {
+    ElMessage.warning('请输入新密码')
+    return
+  }
+
+  editDrawer.passwordLoading = true
+  editDrawer.generatedPassword = ''
+
+  try {
+    const res = await adminAgentProfileApi.resetPassword(editDrawer.agent.id, {
+      auto_generate: editDrawer.passwordForm.auto_generate,
+      new_password: editDrawer.passwordForm.auto_generate
+        ? null
+        : editDrawer.passwordForm.new_password,
+    })
+
+    editDrawer.generatedPassword = res.data?.generated_password || ''
+    editDrawer.passwordForm.new_password = ''
+
+    ElMessage.success(
+      editDrawer.generatedPassword
+        ? '密码已重置，请复制生成密码'
+        : '密码已重置'
+    )
+  } finally {
+    editDrawer.passwordLoading = false
+  }
+}
+
+const copyGeneratedPassword = async () => {
+  if (!editDrawer.generatedPassword) return
+
+  await navigator.clipboard.writeText(editDrawer.generatedPassword)
+  ElMessage.success('已复制')
+}
 </script>
 
 <style scoped>
@@ -1609,6 +1989,12 @@ const copyGeneratedPassword = async () => {}
 
 .level-tip {
   line-height: 1.7;
+}
+
+.tx-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 900px) {
