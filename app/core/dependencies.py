@@ -3,7 +3,7 @@ r"""
 文件名称: dependencies.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-07
-版本: V1.2.0
+版本: V1.3.0
 功能说明:
     FastAPI 全局依赖项。
 
@@ -21,6 +21,7 @@ r"""
       5. Admin / Agent 必须 status=active。
 
 改进历史:
+    V1.3.0 (2026-05-09) - get_game_project_code 改为异步并校验 GameProject.is_active。
     V1.2.0 (2026-05-07) - Admin / Agent Token 接入 Redis 黑名单校验。
     V1.1.0 (2026-05-02) - get_current_user 查询用户时统一过滤 User.is_deleted。
     V1.0.1 - 新增 get_game_project_code 依赖，从 JWT 提取游戏项目代码。
@@ -41,7 +42,7 @@ from app.core.security import (
     decode_agent_token,
 )
 from app.database import get_main_db
-from app.models.main.models import Admin, Agent, User
+from app.models.main.models import Admin, Agent, GameProject, User
 
 
 _http_bearer = HTTPBearer()
@@ -119,26 +120,41 @@ async def get_current_user(
     return user
 
 
-def get_game_project_code(
+async def get_game_project_code(
     credentials: HTTPAuthorizationCredentials = Depends(_http_bearer),
+    db: AsyncSession = Depends(get_main_db),
 ) -> str:
     """
-    FastAPI 依赖：从 JWT 中提取当前登录的游戏项目代码名。
+    FastAPI 依赖：从 JWT 中提取当前登录的游戏项目代码名，并校验项目仍处于激活状态。
 
-    当前边界:
-      1. 登录时签发的 Access Token 中已包含 project_code 字段。
-      2. 本依赖只提取 project_code 字段。
-      3. 本依赖暂不重新查询 GameProject 是否存在或 active。
-      4. 需要强校验项目状态的路由，应在服务层或路由层单独查询 GameProject。
+    校验顺序:
+      1. 解码 JWT 提取 project_code。
+      2. 查询主库确认 GameProject 存在且 is_active=True。
+      3. 通过则返回 code_name，否则 401。
+
+    设计决策:
+      - 登录时已校验项目 active，但 Token 有效期内项目可能被管理员停用。
+      - 增加主库查询是"纵深防御"——服务层仍有独立的项目状态校验作为第二层。
+      - 单次 SELECT 开销可接受（主库连接池 10，333 req/s 峰值）。
     """
     try:
         payload = decode_access_token(credentials.credentials)
         code = str(payload.get("project_code") or "").strip()
         if not code:
             raise _unauthorized("Token 中缺少游戏项目信息，请重新登录")
-        return code
     except JWTError:
         raise _unauthorized("Token 无效或已过期")
+
+    result = await db.execute(
+        select(GameProject).where(
+            GameProject.code_name == code,
+            GameProject.is_active == True,  # noqa: E712
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise _unauthorized("游戏项目不存在或已下线，请重新登录")
+
+    return code
 
 
 async def get_current_admin(

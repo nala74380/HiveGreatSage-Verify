@@ -60,8 +60,8 @@ from app.schemas.device import (
     ImsiUploadResponse,
 )
 
-# 设备离线判定阈值：超过此时间未在 Redis 中出现则视为离线
-_OFFLINE_THRESHOLD_SECONDS = 90
+# 设备离线判定阈值，与 Redis 心跳 TTL (120s) 一致，避免在线状态抖动
+_OFFLINE_THRESHOLD_SECONDS = 120
 
 
 # ─────────────────────────────────────────────────────────────

@@ -88,6 +88,10 @@ def _make_task_engine(url: str):
     max_retries=3,
     default_retry_delay=10,
 )
+_HEALTH_KEY = "health:last_heartbeat_flush"
+_HEALTH_TTL = 90  # TTL 需大于调度间隔(30s) + 容错；/health/workers 据此判断 Worker/Beat 存活
+
+
 def flush_device_heartbeats(self) -> dict:
     """
     同步入口，通过 asyncio.run() 调用异步落库逻辑。
@@ -99,11 +103,25 @@ def flush_device_heartbeats(self) -> dict:
             f"[heartbeat_flush] 落库完成 | 游戏项目数={result['projects']} "
             f"总设备数={result['total_devices']} 耗时={result['elapsed_ms']}ms"
         )
+        _set_health_check_key()
         return result
     except Exception as exc:
         logger.error(f"[heartbeat_flush] 任务失败: {exc}", exc_info=True)
         # 自动重试，最多 3 次，间隔 10 秒
         raise self.retry(exc=exc)
+
+
+def _set_health_check_key() -> None:
+    """同步函数：写入 Redis 健康检查 Key，标记最近一次心跳落库成功。"""
+    import redis
+
+    try:
+        r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        r.setex(_HEALTH_KEY, _HEALTH_TTL, "ok")
+        r.close()
+    except Exception:
+        # 健康检查 Key 写入失败不应影响任务本身
+        pass
 
 
 # ─────────────────────────────────────────────────────────────

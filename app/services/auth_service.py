@@ -456,9 +456,9 @@ async def revoke_all_devices(
          不额外删除反查索引（避免 O(n) SCAN rt_lookup:*）
 
     安全说明：
-      该用户所有已签发的 AT 在过期前仍然有效（黑名单只记录了当前这一个）。
-      这是 Stateless JWT 的固有限制。
-      后续 token_version 落地后，应改为服务端版本号强校验。
+      token_version 已落地（v1.2.0+）。
+      本函数通过 user.token_version += 1 使所有旧 Access Token 下一次请求即 401，
+      同时删除所有 Refresh Token。黑名单记录当前 AT 作为额外防御层。
     """
     try:
         payload = decode_access_token(access_token_str)

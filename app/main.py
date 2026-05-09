@@ -266,3 +266,34 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "version": "0.1.0",
     }
+
+
+@app.get("/health/workers", tags=["系统"])
+async def worker_health_check():
+    """
+    Celery Worker / Beat 健康检查。
+
+    依赖心跳落库任务 flush_device_heartbeats 每次成功后将
+    health:last_heartbeat_flush Key 写入 Redis（TTL=90s）。
+    若 Key 不存在，说明 Worker 或 Beat 可能已停止超过 90 秒。
+    """
+    import redis.asyncio as aioredis
+
+    try:
+        r = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        last_flush = await r.get("health:last_heartbeat_flush")
+        await r.aclose()
+
+        if last_flush == "ok":
+            return {"status": "ok", "worker": "healthy"}
+        return {
+            "status": "degraded",
+            "worker": "no_recent_flush",
+            "detail": "心跳落库任务超过 90 秒未执行，请检查 Celery Worker 和 Beat 进程",
+        }
+    except Exception as exc:
+        return {
+            "status": "degraded",
+            "worker": "redis_unreachable",
+            "detail": f"Redis 连接失败: {exc}",
+        }

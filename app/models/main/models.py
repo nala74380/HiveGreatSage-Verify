@@ -3,7 +3,7 @@ r"""
 文件名称: models.py
 作者: HiveGreatSage Dev
 日期/时间: 2026-05-07
-版本: v2.2.0
+版本: v2.3.0
 功能说明:
     hive_platform 主库的全部 ORM 模型。
 
@@ -25,6 +25,9 @@ r"""
       - BalanceTransaction → AccountingLedgerEntry
 
 重要模型调整:
+    v2.3.0 (2026-05-09):
+      - VersionRecord 新增 partial unique index：每项目每客户端类型仅一个 active 版本。
+
     v2.2.0 (2026-05-07):
       - LoginLog 新增 device_fingerprint_hash。
       - 登录日志不再继续保存设备指纹原文，只保存 hash 供排障关联。
@@ -603,6 +606,15 @@ class VersionRecord(Base):
             "is_active",
         ),
         Index("idx_version_record_released_by_admin", "released_by_admin_id"),
+        # 数据库级约束：同一项目、同一客户端类型最多只有一个 is_active=TRUE 记录。
+        # 此前由服务层保证，Alembic 0021 补建了此部分唯一索引。
+        Index(
+            "uq_version_record_active_per_project_client",
+            "game_project_id",
+            "client_type",
+            unique=True,
+            postgresql_where="is_active IS TRUE",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
