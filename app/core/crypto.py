@@ -22,6 +22,8 @@ r"""
       - 日志/审计中永远不输出明文 IMSI。
 """
 
+import base64
+
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -34,13 +36,15 @@ from app.config import settings
 # 从 SECRET_KEY 通过 HKDF 派生，确保每次启动产生相同 key。
 
 def _derive_fernet_key() -> bytes:
+    """HKDF 派生 32 字节密钥，再 base64 编码为 Fernet 所需格式。"""
     hkdf = HKDF(
         algorithm=hashes.SHA256(),
         length=32,
         salt=b"hive-greatsage-fernet-salt",
         info=b"app.core.crypto.fernet",
     )
-    return hkdf.derive(settings.SECRET_KEY.encode("utf-8"))
+    raw_key = hkdf.derive(settings.SECRET_KEY.encode("utf-8"))
+    return base64.urlsafe_b64encode(raw_key)
 
 
 _fernet = Fernet(_derive_fernet_key())

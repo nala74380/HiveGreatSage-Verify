@@ -138,10 +138,12 @@ async def delete_all_refresh_tokens(
 
 
 # ── 设备心跳缓冲 ──────────────────────────────────────────────
-# Key 格式：device:runtime:{game_id}:{user_id}:{device_fp}
-# TTL = 120 秒（2分钟超时视为离线，D2 决策：心跳30秒上报一次）
+# 心跳数据 Key: device:runtime:{game_id}:{user_id}:{device_fp}, TTL=120s
+# 在线设备集合: device:online:{game_id} / device:online:{game_id}:{user_id}
+#   集合用于 O(1) 查询替代 SCAN；SADD 时刷新 TTL=300s，超时自动清理。
 
 _HEARTBEAT_TTL = 120  # 秒
+_ONLINE_SET_TTL = 300  # 秒
 
 
 async def set_heartbeat(
@@ -152,11 +154,26 @@ async def set_heartbeat(
     payload: dict,
 ) -> None:
     """
-    写入设备心跳数据到 Redis 缓冲层（不直接落库）。
-    Celery 任务每 30 秒批量将缓冲区数据 UPSERT 到 PostgreSQL。
+    写入设备心跳数据到 Redis 缓冲层，同时维护在线设备集合。
+
+    原子操作（pipeline）:
+      1. SET 心跳数据 Key（TTL=120s）
+      2. SADD "{user_id}:{device_fp}" 到游戏级在线集合
+      3. SADD device_fp 到游戏×用户级在线集合
+      4. EXPIRE 两个集合 Key（TTL=300s，每次 SADD 刷新）
     """
-    key = f"device:runtime:{game_id}:{user_id}:{device_fp}"
-    await redis.setex(key, _HEARTBEAT_TTL, json.dumps(payload))
+    data_key = f"device:runtime:{game_id}:{user_id}:{device_fp}"
+    online_key = f"device:online:{game_id}"
+    user_online_key = f"device:online:{game_id}:{user_id}"
+    member = f"{user_id}:{device_fp}"
+
+    pipe = redis.pipeline()
+    pipe.setex(data_key, _HEARTBEAT_TTL, json.dumps(payload))
+    pipe.sadd(online_key, member)
+    pipe.expire(online_key, _ONLINE_SET_TTL)
+    pipe.sadd(user_online_key, device_fp)
+    pipe.expire(user_online_key, _ONLINE_SET_TTL)
+    await pipe.execute()
 
 
 async def get_heartbeat(
@@ -179,26 +196,30 @@ async def get_user_heartbeats(
     user_id: int,
 ) -> list[dict]:
     """
-    获取指定用户在指定游戏中所有在线设备的心跳数据。
-    PC 中控拉取设备列表时调用（只看当前登录用户的设备）。
+    获取指定用户在指定游戏中所有在线设备的心跳数据（基于集合，无 SCAN）。
 
-    与 get_all_heartbeats_for_game 的区别：
-      - 本函数按 user_id 过滤，只返回该用户的设备
-      - get_all_heartbeats_for_game 返回整个游戏所有设备（Celery 落库使用）
+    PC 中控拉取设备列表时调用。
+    使用 SMEMBERS + pipeline GET 替代 scan_iter。
+    集合中的过期成员（心跳 Key 已 TTL 过期）在 GET 时被过滤。
     """
-    pattern = f"device:runtime:{game_id}:{user_id}:*"
+    user_online_key = f"device:online:{game_id}:{user_id}"
+    members = await redis.smembers(user_online_key)
+    if not members:
+        return []
+
+    pipe = redis.pipeline()
+    for fp in members:
+        pipe.get(f"device:runtime:{game_id}:{user_id}:{fp}")
+    raw_values = await pipe.execute()
+
     results = []
-    async for key in redis.scan_iter(pattern):
-        raw = await redis.get(key)
+    for fp, raw in zip(members, raw_values):
         if raw:
-            # Key 格式：device:runtime:{game_id}:{user_id}:{device_fp}
-            parts = key.split(":")
-            if len(parts) >= 5:
-                results.append({
-                    "user_id": int(parts[3]),
-                    "device_fp": parts[4],
-                    "data": json.loads(raw),
-                })
+            results.append({
+                "user_id": user_id,
+                "device_fp": fp,
+                "data": json.loads(raw),
+            })
     return results
 
 
@@ -207,23 +228,36 @@ async def get_all_heartbeats_for_game(
     game_id: int,
 ) -> list[dict]:
     """
-    获取指定游戏的所有在线设备心跳数据（Celery 批量落库时调用）。
-    返回列表，每项包含解析后的 payload。
+    获取指定游戏的所有在线设备心跳数据（基于集合，无 SCAN）。
+
+    Celery 批量落库时调用。
+    集合成员格式为 "{user_id}:{device_fp}"，直接解析后 pipeline GET。
+    过期成员（心跳 Key 已 TTL 过期）在 GET 时自然过滤。
     """
-    pattern = f"device:runtime:{game_id}:*"
+    online_key = f"device:online:{game_id}"
+    members = await redis.smembers(online_key)
+    if not members:
+        return []
+
+    parsed = []
+    pipe = redis.pipeline()
+    for member in members:
+        if ":" not in member:
+            continue
+        uid_str, fp = member.split(":", 1)
+        key = f"device:runtime:{game_id}:{uid_str}:{fp}"
+        pipe.get(key)
+        parsed.append((int(uid_str), fp))
+    raw_values = await pipe.execute()
+
     results = []
-    async for key in redis.scan_iter(pattern):
-        raw = await redis.get(key)
+    for (uid, fp), raw in zip(parsed, raw_values):
         if raw:
-            # 从 key 解析出 user_id 和 device_fp
-            parts = key.split(":")
-            # key 格式：device:runtime:{game_id}:{user_id}:{device_fp}
-            if len(parts) >= 5:
-                results.append({
-                    "user_id": int(parts[3]),
-                    "device_fp": parts[4],
-                    "data": json.loads(raw),
-                })
+            results.append({
+                "user_id": uid,
+                "device_fp": fp,
+                "data": json.loads(raw),
+            })
     return results
 
 

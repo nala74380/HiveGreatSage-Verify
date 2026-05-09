@@ -64,7 +64,7 @@ const handleCommand = async (cmd) => {
       cancelButtonText: '取消',
       type: 'warning',
     })
-    auth.logout()
+    await auth.logout()
     router.push('/login')
   }
 }

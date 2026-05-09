@@ -561,9 +561,14 @@ class DeviceBinding(Base):
         nullable=True,
     )
     imsi: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="设备 IMSI 码（Fernet 加密存储）；通过 imsi_hash 反查定位后解密读取",
+    )
+    imsi_hash: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
-        comment="设备 IMSI 码，登录成功后单独上传",
+        comment="IMSI HMAC-SHA256 哈希；用于非明文关联排障与加密反查索引",
     )
     status: Mapped[str] = mapped_column(
         String(16),

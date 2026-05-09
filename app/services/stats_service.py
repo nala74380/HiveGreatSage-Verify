@@ -66,7 +66,7 @@ async def get_user_project_stats(
             .where(
                 DeviceBinding.user_id == user_id,
                 DeviceBinding.status == "active",
-                DeviceBinding.imsi.is_not(None),
+                DeviceBinding.imsi_hash.is_not(None),
             )
         )
         activated = activated_result.scalar_one()

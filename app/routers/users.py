@@ -36,12 +36,14 @@ r"""
     V1.2.1 (2026-04-29): 项目授权接口整理。
 """
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.redis_client import get_redis, is_token_revoked
 from app.core.security import decode_admin_token, decode_agent_token
 from app.database import get_main_db
 from app.models.main.models import Admin, Agent
@@ -82,6 +84,7 @@ _http_bearer = HTTPBearer(auto_error=False)
 
 async def _resolve_caller(
     credentials: HTTPAuthorizationCredentials | None = Depends(_http_bearer),
+    redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_main_db),
 ) -> tuple[Admin | None, Agent | None]:
     if credentials is None:
@@ -93,8 +96,25 @@ async def _resolve_caller(
 
     token = credentials.credentials
 
+    # 校验 jti 未被吊销（与 dependencies.py get_current_admin/agent 一致）
+    async def _check_blacklist(payload: dict) -> None:
+        jti = payload.get("jti")
+        if not jti:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token 缺少 jti，请重新登录",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if await is_token_revoked(redis, str(jti)):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token 已被吊销，请重新登录",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     try:
         payload = decode_admin_token(token)
+        await _check_blacklist(payload)
         admin_id = int(payload["sub"])
         result = await db.execute(select(Admin).where(Admin.id == admin_id))
         admin = result.scalar_one_or_none()
@@ -105,6 +125,7 @@ async def _resolve_caller(
 
     try:
         payload = decode_agent_token(token)
+        await _check_blacklist(payload)
         agent_id = int(payload["sub"])
         result = await db.execute(select(Agent).where(Agent.id == agent_id))
         agent = result.scalar_one_or_none()

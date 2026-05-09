@@ -1,0 +1,46 @@
+[Unit]
+Description=HiveGreatSage Verify Celery Worker (heartbeat flush consumer)
+After=network.target redis.service postgresql.service
+Requires=redis.service postgresql.service
+
+[Service]
+Type=simple
+User=hive
+Group=hive
+WorkingDirectory=/opt/hive-verify
+
+# Celery Worker：执行 flush_device_heartbeats 等后台任务
+# --concurrency=4：4 个 async worker 进程（Linux 生产环境）
+# Windows 开发环境使用 --pool=solo（不支持 fork）
+ExecStart=/opt/hive-verify/venv/bin/celery -A app.core.celery_app worker \
+    --concurrency=4 \
+    --loglevel=info \
+    --logfile=/var/log/hive-verify/celery-worker.log \
+    --pidfile=/run/hive-verify/celery-worker.pid
+
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=/opt/hive-verify/.env
+
+StandardOutput=journal
+StandardError=journal
+
+# 重启策略
+Restart=always
+RestartSec=10
+StartLimitInterval=120
+StartLimitBurst=5
+
+# 安全加固
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/hive-verify /var/log/hive-verify /run/hive-verify
+ReadOnlyPaths=/opt/hive-verify/.env
+
+# PID 目录
+RuntimeDirectory=hive-verify
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target

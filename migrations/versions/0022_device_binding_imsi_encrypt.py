@@ -5,6 +5,7 @@ Revises: 0021_version_active_unique_idx
 Create Date: 2026-05-09
 """
 
+import base64
 import hashlib
 import hmac
 
@@ -47,7 +48,8 @@ def _derive_fernet_key(secret: str) -> bytes:
         salt=b"hive-greatsage-fernet-salt",
         info=b"app.core.crypto.fernet",
     )
-    return hkdf.derive(secret.encode("utf-8"))
+    raw_key = hkdf.derive(secret.encode("utf-8"))
+    return base64.urlsafe_b64encode(raw_key)
 
 
 def _encrypt(plaintext: str, key: bytes) -> str:

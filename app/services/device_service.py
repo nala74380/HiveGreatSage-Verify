@@ -38,6 +38,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.crypto import encrypt_field
 from app.core.redis_client import (
     get_heartbeat,
     get_user_heartbeats,
@@ -386,7 +387,11 @@ async def upload_imsi(
     登录成功后上传设备 IMSI 码（T027，接入契约 §8）。
 
     设备必须已绑定到当前用户和当前项目，不允许为未绑定设备上传 IMSI。
-    IMSI 不参与登录验证，仅作为辅助标识存储到 device_binding.imsi 字段。
+    IMSI 不参与登录验证，仅作为辅助标识存储。
+
+    存储规则:
+      - imsi 列：Fernet 密文（可解密反查）
+      - imsi_hash 列：HMAC-SHA256 哈希（非明文关联排障与加密反查索引）
     """
     game_project = await _get_game_project(db, game_project_code)
     result = await db.execute(
@@ -404,7 +409,8 @@ async def upload_imsi(
             detail="设备未绑定到当前项目，无法上传 IMSI",
         )
 
-    binding.imsi = body.imsi
+    binding.imsi = encrypt_field(body.imsi)
+    binding.imsi_hash = hash_sensitive_value(body.imsi)
     await db.flush()
 
     return ImsiUploadResponse(
