@@ -70,12 +70,19 @@ async def platform_summary(
     """
     result = await get_platform_summary(db=db)
 
-    # 注入 Redis 实时在线设备数
-    # 使用 SCAN 代替 KEYS，避免在生产环境阻塞 Redis。
+    # 注入 Redis 实时在线设备数（使用项目级在线集合，避免跨库 SCAN）
     try:
+        from app.core.redis_client import get_all_heartbeats_for_game
+        from sqlalchemy import select as _select
+        from app.models.main.models import GameProject as _GP
+
         online_count = 0
-        async for _ in redis.scan_iter("device:runtime:*"):
-            online_count += 1
+        projects = (await db.execute(
+            _select(_GP).where(_GP.is_active == True)
+        )).scalars().all()
+        for project in projects:
+            hbs = await get_all_heartbeats_for_game(redis, project.id)
+            online_count += len(hbs)
         result.total_devices_online = online_count
     except Exception:
         pass

@@ -82,16 +82,16 @@ def _make_task_engine(url: str):
 # Celery 任务入口（同步包装器）
 # ─────────────────────────────────────────────────────────────
 
+_HEALTH_KEY = "health:last_heartbeat_flush"
+_HEALTH_TTL = 90  # TTL 需大于调度间隔(30s) + 容错；/health/workers 据此判断 Worker/Beat 存活
+
+
 @celery_app.task(
     name="app.tasks.heartbeat_flush.flush_device_heartbeats",
     bind=True,
     max_retries=3,
     default_retry_delay=10,
 )
-_HEALTH_KEY = "health:last_heartbeat_flush"
-_HEALTH_TTL = 90  # TTL 需大于调度间隔(30s) + 容错；/health/workers 据此判断 Worker/Beat 存活
-
-
 def flush_device_heartbeats(self) -> dict:
     """
     同步入口，通过 asyncio.run() 调用异步落库逻辑。

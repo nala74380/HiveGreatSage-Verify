@@ -463,8 +463,8 @@ async def _transfer_points(
             detail="金额必须大于 0",
         )
 
-    from_wallet = await get_or_create_wallet(from_agent_id, db)
-    to_wallet = await get_or_create_wallet(to_agent_id, db)
+    from_wallet = await get_or_create_wallet(from_agent_id, db, for_update=True)
+    to_wallet = await get_or_create_wallet(to_agent_id, db, for_update=True)
 
     from_available_before = await _ensure_wallet_can_out(
         wallet=from_wallet,
@@ -1048,7 +1048,7 @@ async def scope_freeze(
     )
 
     amount = _money(body.amount)
-    wallet = await get_or_create_wallet(target.id, db)
+    wallet = await get_or_create_wallet(target.id, db, for_update=True)
 
     available_credit = _money(wallet.credit_balance) - _money(wallet.frozen_credit)
     if available_credit < amount:
@@ -1116,7 +1116,7 @@ async def scope_unfreeze(
     )
 
     amount = _money(body.amount)
-    wallet = await get_or_create_wallet(target.id, db)
+    wallet = await get_or_create_wallet(target.id, db, for_update=True)
 
     before = _money(wallet.frozen_credit)
     if before < amount:

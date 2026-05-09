@@ -18,8 +18,9 @@ r"""
 
 边界:
     - 当前仅吊销当前 access_token。
-    - 尚未实现“踢出该账号全部后台会话”。
-    - 后续可引入 token_version / server-side session 表统一治理。
+    - 尚未实现”踢出该账号全部后台会话”。
+    - User Token 的 token_version 全量吊销已实现（参见 auth_service.revoke_all_devices）。
+    - Admin / Agent Token 的全量吊销暂未实现，后续可引入 admin/agent.token_version。
 """
 
 import redis.asyncio as aioredis

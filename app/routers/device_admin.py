@@ -57,7 +57,7 @@ from jose import JWTError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.redis_client import get_redis
+from app.core.redis_client import get_redis, is_token_revoked
 from app.core.security import decode_admin_token, decode_agent_token
 from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint, mask_imsi
 from app.core.crypto import decrypt_field
@@ -72,19 +72,36 @@ from app.services.device_admin_service import (
 router = APIRouter()
 _http_bearer = HTTPBearer()
 
-# 在线判定阈值：与 device_service._OFFLINE_THRESHOLD_SECONDS 保持一致。
-_ONLINE_THRESHOLD = timedelta(seconds=90)
+# 在线判定阈值：与 device_service._OFFLINE_THRESHOLD_SECONDS (120s) 及 Redis _HEARTBEAT_TTL 保持一致。
+_ONLINE_THRESHOLD = timedelta(seconds=120)
 
 
 async def _get_admin_or_agent(
     credentials: HTTPAuthorizationCredentials = Depends(_http_bearer),
+    redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_main_db),
 ) -> tuple[Admin | None, Agent | None]:
-    """解析 Admin 或 Agent Token。两者恰好有一个不为 None，否则返回 401。"""
+    """解析 Admin 或 Agent Token。两者恰好有一个不为 None，否则返回 401。同时校验 Redis 黑名单。"""
     token = credentials.credentials
+
+    async def _check_blacklist(payload: dict) -> None:
+        jti = payload.get("jti")
+        if not jti:
+            raise HTTPException(
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
+                detail="Token 缺少 jti，请重新登录",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if await is_token_revoked(redis, str(jti)):
+            raise HTTPException(
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
+                detail="Token 已被吊销，请重新登录",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     try:
         payload = decode_admin_token(token)
+        await _check_blacklist(payload)
         admin_id = int(payload["sub"])
 
         result = await db.execute(
@@ -102,6 +119,7 @@ async def _get_admin_or_agent(
 
     try:
         payload = decode_agent_token(token)
+        await _check_blacklist(payload)
         agent_id = int(payload["sub"])
 
         result = await db.execute(

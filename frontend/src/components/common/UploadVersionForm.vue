@@ -72,8 +72,13 @@
 import { ref, reactive } from 'vue'
 import { Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
-import { storage } from '@/utils/storage'
+import http from '@/api/http'
+
+const ALLOWED_EXTS = {
+  pc:      ['.zip', '.exe'],
+  android: ['.lrj', '.apk'],
+}
+const MAX_FILE_SIZE = 500 * 1024 * 1024  // 500 MB
 
 const props = defineProps({
   clientType: { type: String, required: true },  // 'pc' | 'android'
@@ -110,6 +115,18 @@ const submitUpload = async () => {
   if (!await formRef.value?.validate().catch(() => false)) return
   if (!form.file) { ElMessage.warning('请选择文件'); return }
 
+  // 客户端文件校验
+  const name = form.file.name.toLowerCase()
+  const allowed = ALLOWED_EXTS[props.clientType] || []
+  if (!allowed.some(ext => name.endsWith(ext))) {
+    ElMessage.error(`文件类型不支持，允许：${allowed.join(', ')}`)
+    return
+  }
+  if (form.file.size > MAX_FILE_SIZE) {
+    ElMessage.error(`文件过大（>${MAX_FILE_SIZE / 1024 / 1024}MB），请压缩后上传`)
+    return
+  }
+
   uploading.value      = true
   uploadProgress.value = 0
 
@@ -120,24 +137,20 @@ const submitUpload = async () => {
     fd.append('release_notes', form.release_notes ?? '')
     fd.append('file',          form.file)
 
-    await axios.post(
+    await http.post(
       `/admin/api/updates/${props.projectId}/${props.clientType}`,
       fd,
       {
-        headers: {
-          'Content-Type':  'multipart/form-data',
-          'Authorization': `Bearer ${storage.getToken()}`,
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (evt) => {
           if (evt.total) {
             uploadProgress.value = Math.round(evt.loaded / evt.total * 100)
           }
         },
-      }
+      },
     )
 
     ElMessage.success(`${props.clientType === 'pc' ? 'PC' : '安卓'} 端 v${form.version} 发布成功`)
-    // 重置表单
     form.version       = ''
     form.force_update  = false
     form.release_notes = ''

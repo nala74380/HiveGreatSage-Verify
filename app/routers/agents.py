@@ -765,6 +765,23 @@ async def create_agent_in_scope_endpoint(
         agent_id=current_agent.id,
     )
 
+    if not current_profile.get("can_create_sub_agents", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前代理业务画像不允许创建下级代理",
+        )
+
+    max_sub = int(current_profile.get("max_sub_agents", 0) or 0)
+    if max_sub > 0:
+        existing_subs = await _count_rows(
+            db, Agent, Agent.parent_agent_id == current_agent.id
+        )
+        if existing_subs >= max_sub:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"当前代理下级代理数已达上限（{max_sub} 个）",
+            )
+
     parent_tier_level = int(current_profile["tier_level"] or 0)
     child_tier_level = parent_tier_level - 1
 
@@ -1045,10 +1062,18 @@ async def delete_agent_endpoint(
     管理员硬删除代理。
 
     说明:
+      - 仅开发/测试环境可用。生产环境拒绝执行，防止误操作。
       - 本接口执行数据库硬删除，不做软删除。
-      - 为避免破坏代理树、用户归属和账务事实，只允许删除“无业务事实”的代理。
+      - 为避免破坏代理树、用户归属和账务事实，只允许删除"无业务事实"的代理。
       - 删除前会清理可重建配置类记录。
     """
+    from app.config import settings
+
+    if settings.ENVIRONMENT == "production":
+        raise HTTPException(
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+            detail="生产环境不允许硬删除代理。如需删除请走软删除或迁移流程。",
+        )
     agent = await db.get(Agent, agent_id)
     if agent is None:
         raise HTTPException(

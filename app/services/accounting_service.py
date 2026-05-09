@@ -867,7 +867,7 @@ async def consume_agent_authorization_points(
             related_authorization_id=authorization_id,
             related_charge_snapshot_id=snapshot.id,
             description=description,
-            idempotency_key=f"authorization:{authorization_id}:charged",
+            idempotency_key=f"authorization:{authorization_id}:{snapshot.id}:charged",
             source="agent",
             operated_by_agent_id=agent_id,
         )
@@ -896,7 +896,7 @@ async def consume_agent_authorization_points(
             related_authorization_id=authorization_id,
             related_charge_snapshot_id=snapshot.id,
             description=description,
-            idempotency_key=f"authorization:{authorization_id}:credit",
+            idempotency_key=f"authorization:{authorization_id}:{snapshot.id}:credit",
             source="agent",
             operated_by_agent_id=agent_id,
         )
