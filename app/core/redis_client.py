@@ -268,7 +268,9 @@ async def store_refresh_token_v2(
     jti: str,
     rt_value: str,
     device_fingerprint: str | None,
+    client_type: str,
     game_project_code: str,
+    token_version: int,
     ttl_seconds: int,
 ) -> None:
     """
@@ -286,7 +288,9 @@ async def store_refresh_token_v2(
         "user_id": user_id,
         "jti": jti,
         "device_fingerprint": device_fingerprint,
+        "client_type": client_type,
         "game_project_code": game_project_code,   # v2 新增，修复 refresh 丢失 project 问题
+        "token_version": int(token_version),
     })
     lookup_value = f"{user_id}:{jti}"
     lookup_key = _rt_lookup_key(rt_value)

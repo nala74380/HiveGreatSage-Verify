@@ -41,7 +41,7 @@ from loguru import logger
 from app.config import settings
 from app.core.middleware import RequestIdMiddleware
 from app.database import dispose_all_engines
-
+from app.routers import agent_scope_management
 
 # ── 日志初始化（loguru）──────────────────────────────────────
 def _setup_logging() -> None:
@@ -196,6 +196,7 @@ from app.routers import (
     accounting,
     admin,
     agent_profile_admin,
+    agent_scope_management,
     agents,
     audit_admin,
     auth,
@@ -226,7 +227,18 @@ app.include_router(system_settings.client_router, prefix="/api/client", tags=["�
 # 静态路径（/my/*）必须在 agents.router 之前注册，避免被 /{agent_id} 动态路由抢占。
 app.include_router(project_access_agent.router, prefix="/api/agents/my/project-access", tags=["代理项目准入"])
 app.include_router(session_admin.agent_router, prefix="/api/agents/session", tags=["代理会话"])
+
+# 代理端对子代理的业务画像、项目授权、点数、密码管理。
+# 必须在 agents.router 之前注册，避免 /api/agents/scope/level-policies
+# 被 agents.router 内部 /scope/{agent_id} 动态路径误判为 agent_id。
+app.include_router(
+    agent_scope_management.router,
+    prefix="/api/agents/scope",
+    tags=["代理端范围管理"],
+)
+
 app.include_router(agents.router, prefix="/api/agents", tags=["代理管理"])
+
 
 # -- 用户管理 API（Admin / Agent Token）--
 app.include_router(users.router, prefix="/api/users", tags=["用户管理"])

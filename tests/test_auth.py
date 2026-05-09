@@ -304,6 +304,7 @@ class TestRefreshAndMe:
         *,
         user_level: str = "tester",
         authorized_devices: int = 0,
+        client_type: str = "android",
     ) -> dict:
         user = await _create_test_user(
             client,
@@ -313,10 +314,13 @@ class TestRefreshAndMe:
             authorized_devices=authorized_devices,
         )
 
+        device_fingerprint = f"device_{uuid.uuid4().hex[:8]}"
         response = await _login_user(
             client,
             username=user["username"],
             password=user["password"],
+            device_fingerprint=device_fingerprint,
+            client_type=client_type,
         )
 
         assert response.status_code == 200
@@ -324,6 +328,8 @@ class TestRefreshAndMe:
         return {
             **user,
             **response.json(),
+            "device_fingerprint": device_fingerprint,
+            "client_type": client_type,
         }
 
     async def test_get_me_returns_authorization_summary(
@@ -398,16 +404,33 @@ class TestRefreshAndMe:
 
         refresh_response = await client.post(
             "/api/auth/refresh",
-            json={"refresh_token": tokens["refresh_token"]},
+            json={
+                "refresh_token": tokens["refresh_token"],
+                "device_fingerprint": tokens["device_fingerprint"],
+                "client_type": tokens["client_type"],
+            },
         )
 
         assert refresh_response.status_code == 200
         data = refresh_response.json()
         assert "access_token" in data
+        assert "refresh_token" in data
+        assert data["refresh_token"] != tokens["refresh_token"]
 
         payload = decode_access_token(data["access_token"])
         assert payload["authorization_level"] == "svip"
         assert payload["project_code"] == PROJECT_CODE
+        assert payload["token_version"] == 0
+
+        old_refresh_response = await client.post(
+            "/api/auth/refresh",
+            json={
+                "refresh_token": tokens["refresh_token"],
+                "device_fingerprint": tokens["device_fingerprint"],
+                "client_type": tokens["client_type"],
+            },
+        )
+        assert old_refresh_response.status_code == 401
 
     async def test_refresh_soft_deleted_user_is_rejected(
         self,
@@ -423,7 +446,31 @@ class TestRefreshAndMe:
 
         response = await client.post(
             "/api/auth/refresh",
-            json={"refresh_token": tokens["refresh_token"]},
+            json={
+                "refresh_token": tokens["refresh_token"],
+                "device_fingerprint": tokens["device_fingerprint"],
+                "client_type": tokens["client_type"],
+            },
+        )
+
+        assert response.status_code == 401
+
+    async def test_refresh_rejects_wrong_device(
+        self,
+        client,
+        admin_headers,
+        project_id,
+    ):
+        """Refresh Token 必须绑定登录时的设备指纹与客户端类型。"""
+        tokens = await self._do_login(client, admin_headers, project_id)
+
+        response = await client.post(
+            "/api/auth/refresh",
+            json={
+                "refresh_token": tokens["refresh_token"],
+                "device_fingerprint": "wrong_device_fp",
+                "client_type": tokens["client_type"],
+            },
         )
 
         assert response.status_code == 401
@@ -442,3 +489,63 @@ class TestRefreshAndMe:
 
         response = await client.get("/api/auth/me", headers=at_header)
         assert response.status_code == 401
+
+    async def test_revoke_all_invalidates_all_access_tokens(
+        self,
+        client,
+        admin_headers,
+        project_id,
+    ):
+        """revoke-all 递增 token_version，所有旧 AT 下一次请求立即 401。"""
+        device_a = f"device_a_{uuid.uuid4().hex[:8]}"
+        device_b = f"device_b_{uuid.uuid4().hex[:8]}"
+        user = await _create_test_user(
+            client,
+            admin_headers,
+            project_id,
+            user_level="tester",
+            authorized_devices=0,
+        )
+        login_a = await _login_user(
+            client,
+            username=user["username"],
+            password=user["password"],
+            device_fingerprint=device_a,
+        )
+        login_b = await _login_user(
+            client,
+            username=user["username"],
+            password=user["password"],
+            device_fingerprint=device_b,
+        )
+        assert login_a.status_code == 200
+        assert login_b.status_code == 200
+        tokens_a = login_a.json()
+        tokens_b = login_b.json()
+
+        revoke_response = await client.post(
+            "/api/auth/revoke-all",
+            headers={"Authorization": f"Bearer {tokens_a['access_token']}"},
+        )
+        assert revoke_response.status_code == 200
+
+        me_a = await client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {tokens_a['access_token']}"},
+        )
+        me_b = await client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {tokens_b['access_token']}"},
+        )
+        assert me_a.status_code == 401
+        assert me_b.status_code == 401
+
+        refresh_b = await client.post(
+            "/api/auth/refresh",
+            json={
+                "refresh_token": tokens_b["refresh_token"],
+                "device_fingerprint": device_b,
+                "client_type": "android",
+            },
+        )
+        assert refresh_b.status_code == 401

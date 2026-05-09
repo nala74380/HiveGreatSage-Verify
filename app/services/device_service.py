@@ -92,20 +92,7 @@ async def process_heartbeat(
         device_fingerprint=body.device_fingerprint,
     )
 
-    # 同时更新当前项目 DeviceBinding.last_seen_at（让管理后台全局端点能用时间推断在线状态）
     now_ts = datetime.now(timezone.utc)
-    result = await main_db.execute(
-        select(DeviceBinding).where(
-            DeviceBinding.user_id == current_user.id,
-            DeviceBinding.game_project_id == game_project.id,
-            DeviceBinding.device_fingerprint == body.device_fingerprint,
-            DeviceBinding.status == "active",
-        )
-    )
-    binding = result.scalar_one_or_none()
-    if binding:
-        binding.last_seen_at = now_ts
-
     payload = {
         "status": body.status,
         "last_seen": int(now_ts.timestamp()),

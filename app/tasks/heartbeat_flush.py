@@ -185,6 +185,7 @@ async def _flush_one_project(redis, project: GameProject) -> int:
         return 0
 
     await _upsert_to_game_db(project.db_name, records)
+    await _update_main_device_last_seen(project.id, records)
     return len(records)
 
 
@@ -248,6 +249,50 @@ async def _upsert_to_game_db(db_name: str, records: list[dict]) -> None:
                 },
             )
             await session.execute(upsert_stmt)
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+async def _update_main_device_last_seen(project_id: int, records: list[dict]) -> None:
+    """
+    批量回写主库 device_binding.last_seen_at。
+
+    心跳请求链路只写 Redis；管理后台需要的主库在线时间由定时任务低频批量更新，
+    避免 333 req/s 心跳直接打到 hive_platform。
+    """
+    if not records:
+        return
+
+    params = [
+        {
+            "project_id": project_id,
+            "user_id": record["user_id"],
+            "device_fingerprint": record["device_id"],
+            "last_seen_at": record["last_seen"],
+        }
+        for record in records
+    ]
+
+    engine = _make_task_engine(settings.DATABASE_MAIN_URL)
+    try:
+        factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+        async with factory() as session:
+            from sqlalchemy import text
+
+            await session.execute(
+                text(
+                    """
+                    UPDATE device_binding
+                    SET last_seen_at = :last_seen_at
+                    WHERE game_project_id = :project_id
+                      AND user_id = :user_id
+                      AND device_fingerprint = :device_fingerprint
+                      AND status = 'active'
+                    """
+                ),
+                params,
+            )
             await session.commit()
     finally:
         await engine.dispose()

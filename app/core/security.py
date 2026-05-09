@@ -58,6 +58,7 @@ def create_access_token(
     user_id: int,
     authorization_level: str,
     game_project_code: str,
+    token_version: int = 0,
 ) -> tuple[str, str]:
     """
     签发 User Access Token（JWT，HS256）。
@@ -82,6 +83,7 @@ def create_access_token(
         "sub": str(user_id),
         "authorization_level": authorization_level,
         "project_code": game_project_code,
+        "token_version": int(token_version),
         "jti": jti,
         "iat": now,
         "exp": expire,

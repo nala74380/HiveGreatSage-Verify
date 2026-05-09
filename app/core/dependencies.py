@@ -112,6 +112,10 @@ async def get_current_user(
     if not user or user.status != "active":
         raise _unauthorized("用户不存在或已被停用")
 
+    payload_token_version = int(payload.get("token_version", 0))
+    if payload_token_version != int(user.token_version or 0):
+        raise _unauthorized("Token 已失效，请重新登录")
+
     return user
 
 

@@ -217,6 +217,12 @@ class Agent(Base):
 
 class User(Base):
     __tablename__ = "user"
+    __table_args__ = (
+        CheckConstraint(
+            "token_version >= 0",
+            name="chk_user_token_version_non_negative",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
@@ -248,6 +254,13 @@ class User(Base):
         nullable=False,
         server_default="false",
         comment="软删除标记：True=已删除",
+    )
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="用户 Token 版本号；递增后旧 AT/RT 立即失效",
     )
 
     created_at: Mapped[datetime] = mapped_column(

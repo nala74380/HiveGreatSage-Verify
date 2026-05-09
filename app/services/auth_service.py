@@ -252,6 +252,7 @@ async def login_user(
             user_id=user.id,
             authorization_level=auth.user_level,
             game_project_code=game_project.code_name,
+            token_version=user.token_version,
         )
         refresh_token = create_refresh_token()
         rt_ttl = get_refresh_token_ttl_seconds()
@@ -262,7 +263,9 @@ async def login_user(
             jti=jti,
             rt_value=refresh_token,
             device_fingerprint=body.device_fingerprint,
+            client_type=body.client_type,
             game_project_code=game_project.code_name,
+            token_version=user.token_version,
             ttl_seconds=rt_ttl,
         )
 
@@ -286,6 +289,8 @@ async def login_user(
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             user_id=user.id,
             username=user.username,
+            game_project_id=game_project.id,
+            authorization_id=auth.id,
             authorization_level=auth.user_level,
             game_project_code=game_project.code_name,
         )
@@ -330,12 +335,22 @@ async def refresh_access_token(
         )
 
     user_id: int = int(rt_data["user_id"])
+    old_jti: str = str(rt_data["jti"])
     game_project_code: str = str(rt_data.get("game_project_code") or "").strip()
+    rt_device_fingerprint: str = str(rt_data.get("device_fingerprint") or "")
+    rt_client_type: str = str(rt_data.get("client_type") or "")
+    rt_token_version: int = int(rt_data.get("token_version", 0))
 
     if not game_project_code:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh Token 缺少项目上下文",
+        )
+
+    if rt_device_fingerprint != body.device_fingerprint or rt_client_type != body.client_type:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh Token 与当前设备不匹配",
         )
 
     result = await db.execute(
@@ -350,6 +365,12 @@ async def refresh_access_token(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户不存在或已被停用",
+        )
+
+    if rt_token_version != int(user.token_version or 0):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh Token 已失效，请重新登录",
         )
 
     result = await db.execute(
@@ -384,20 +405,43 @@ async def refresh_access_token(
             detail="项目授权已过期",
         )
 
-    access_token, _ = create_access_token(
+    access_token, new_jti = create_access_token(
         user_id=user.id,
         authorization_level=auth.user_level,
         game_project_code=game_project.code_name,
+        token_version=user.token_version,
+    )
+    new_refresh_token = create_refresh_token()
+    rt_ttl = get_refresh_token_ttl_seconds()
+
+    await delete_refresh_token_v2(
+        redis=redis,
+        user_id=user.id,
+        jti=old_jti,
+        rt_value=body.refresh_token,
+    )
+    await store_refresh_token_v2(
+        redis=redis,
+        user_id=user.id,
+        jti=new_jti,
+        rt_value=new_refresh_token,
+        device_fingerprint=body.device_fingerprint,
+        client_type=body.client_type,
+        game_project_code=game_project.code_name,
+        token_version=user.token_version,
+        ttl_seconds=rt_ttl,
     )
 
     return TokenResponse(
         access_token=access_token,
+        refresh_token=new_refresh_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
 async def revoke_all_devices(
     access_token_str: str,
+    db: AsyncSession,
     redis: aioredis.Redis,
 ) -> MessageResponse:
     """
@@ -424,6 +468,22 @@ async def revoke_all_devices(
 
         remaining = get_access_token_remaining_seconds(exp)
         await revoke_token(redis, jti, remaining)
+
+        result = await db.execute(
+            select(User).where(
+                User.id == user_id,
+                User.is_deleted == False,  # noqa: E712
+            )
+        )
+        user = result.scalar_one_or_none()
+        if not user or user.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户不存在或已被停用",
+            )
+
+        user.token_version = int(user.token_version or 0) + 1
+        await db.flush()
 
         deleted_count = await delete_all_refresh_tokens(redis, user_id)
 
@@ -452,15 +512,18 @@ async def logout_user(
         payload = decode_access_token(access_token_str)
         jti: str = payload.get("jti", "")
         exp: int = payload.get("exp", 0)
-        user_id: int = int(payload.get("sub", 0))
 
         remaining = get_access_token_remaining_seconds(exp)
         await revoke_token(redis, jti, remaining)
 
+        rt_data = await get_refresh_token_by_value(redis, body.refresh_token)
+        if rt_data is None:
+            return MessageResponse(message="登出成功")
+
         await delete_refresh_token_v2(
             redis=redis,
-            user_id=user_id,
-            jti=jti,
+            user_id=int(rt_data["user_id"]),
+            jti=str(rt_data["jti"]),
             rt_value=body.refresh_token,
         )
 

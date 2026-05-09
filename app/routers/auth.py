@@ -294,6 +294,7 @@ async def revoke_all(
     try:
         result = await revoke_all_devices(
             access_token_str=credentials.credentials,
+            db=db,
             redis=redis,
         )
     except HTTPException as exc:

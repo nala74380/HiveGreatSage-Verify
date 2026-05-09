@@ -47,6 +47,8 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., description="登录时获取的 Refresh Token")
+    device_fingerprint: str = Field(..., min_length=8, max_length=256, description="当前设备指纹，必须与 RT 绑定设备一致")
+    client_type: str = Field(..., pattern="^(pc|android)$", description="当前客户端类型，必须与 RT 绑定客户端一致")
 
 
 class LogoutRequest(BaseModel):
@@ -60,12 +62,15 @@ class LoginResponse(BaseModel):
     expires_in: int = Field(description="Access Token 有效期（秒）", examples=[900])
     user_id: int
     username: str
+    game_project_id: int | None = None
+    authorization_id: int | None = None
     authorization_level: str
     game_project_code: str = Field(description="登录的游戏项目代码名")
 
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
     expires_in: int = Field(description="Access Token 有效期（秒）", examples=[900])
 

@@ -33,9 +33,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str                          # 必填，无默认值，启动时强制检查
     DEBUG: bool = False
 
-    # ── Token 有效期（v3 架构设计锁定：AT=15min / RT=7天）─────
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # ── User Token 有效期（PC 中控 / Android 脚本 7x24 常驻：短 AT + 长 RT + RT 轮换）─────
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     # 管理员/代理 Token 有效期（浏览器窗口会话，默认 8 小时）
     ADMIN_TOKEN_EXPIRE_HOURS: int = 8
     AGENT_TOKEN_EXPIRE_HOURS: int = 8

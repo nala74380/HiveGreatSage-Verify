@@ -760,6 +760,28 @@ async def create_agent_in_scope_endpoint(
     await db.flush()
     await db.refresh(child)
 
+    current_profile = await _business_profile_dict(
+        db=db,
+        agent_id=current_agent.id,
+    )
+
+    parent_tier_level = int(current_profile["tier_level"] or 0)
+    child_tier_level = parent_tier_level - 1
+
+    if child_tier_level < 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前代理业务等级不允许创建下级代理",
+        )
+
+    child_profile = AgentBusinessProfile(
+        agent_id=child.id,
+        tier_level=child_tier_level,
+        risk_status="normal",
+    )
+    db.add(child_profile)
+    await db.flush()
+
     await create_audit_log(
         db=db,
         actor_type="agent",
