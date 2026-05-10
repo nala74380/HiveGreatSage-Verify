@@ -23,7 +23,7 @@ r"""
     静态路径和 /scope/* 必须在 /{agent_id} 之前注册。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -31,6 +31,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin, get_current_agent
+from app.core.redis_client import get_redis
 from app.core.security import hash_password
 from app.core.utils import get_agent_scope_ids
 from app.database import get_main_db
@@ -647,6 +648,157 @@ async def get_my_profile(
         auto_open_project_limit=0,
         review_priority=0,
     )
+
+
+@router.get("/me/dashboard", summary="代理端总览（单次请求）")
+async def agent_dashboard(
+    current_agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_main_db),
+    redis = Depends(get_redis),
+) -> dict:
+    """代理端仪表盘 — 身份卡 + 指标 + 项目 + 到期预警 + 下级代理。"""
+    now = datetime.now(tz=timezone.utc)
+
+    # ── 身份卡（Lv.2+ 显示） ──────────────────────────────
+    profile = await _business_profile_dict(db=db, agent_id=current_agent.id)
+    wallet = await _balance_dict(db=db, agent_id=current_agent.id)
+
+    # ── 直属用户统计 ──────────────────────────────────────
+    users_total = (await db.execute(
+        select(func.count(User.id)).where(User.created_by_agent_id == current_agent.id)
+    )).scalar_one()
+    users_active = (await db.execute(
+        select(func.count(User.id)).where(
+            User.created_by_agent_id == current_agent.id, User.status == "active"
+        )
+    )).scalar_one()
+
+    # ── 授权项目一览 ──────────────────────────────────────
+    proj_result = await db.execute(
+        select(AgentProjectAuth, GameProject)
+        .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
+        .where(AgentProjectAuth.agent_id == current_agent.id, AgentProjectAuth.status == "active")
+        .order_by(GameProject.display_name)
+    )
+    projects = []
+    for _auth, proj in proj_result.all():
+        user_count = (await db.execute(
+            select(func.count(Authorization.id)).where(
+                Authorization.game_project_id == proj.id,
+                Authorization.status == "active",
+                Authorization.user_id.in_(
+                    select(User.id).where(User.created_by_agent_id == current_agent.id)
+                ),
+            )
+        )).scalar_one()
+        projects.append({
+            "code": proj.code_name, "display": proj.display_name,
+            "user_count": user_count, "online": 0,
+        })
+
+    # ── 在线设备数 ────────────────────────────────────────
+    try:
+        from app.core.redis_client import get_all_heartbeats_for_game
+        online_count = 0
+        for p in projects:
+            hbs = await get_all_heartbeats_for_game(redis, (await db.execute(
+                select(GameProject.id).where(GameProject.code_name == p["code"])
+            )).scalar_one())
+            online = sum(1 for h in hbs if h["user_id"] in (
+                await db.execute(select(User.id).where(User.created_by_agent_id == current_agent.id))
+            ).scalars().all())
+            p["online"] = online
+            online_count += online
+    except Exception:
+        online_count = 0
+
+    # ── 即将到期授权 ──────────────────────────────────────
+    week_later = now + timedelta(days=7)
+    expiring_result = await db.execute(
+        select(Authorization, User, GameProject)
+        .join(User, Authorization.user_id == User.id)
+        .join(GameProject, Authorization.game_project_id == GameProject.id)
+        .where(
+            Authorization.status == "active",
+            Authorization.valid_until.is_not(None),
+            Authorization.valid_until > now,
+            Authorization.valid_until <= week_later,
+            User.created_by_agent_id == current_agent.id,
+        )
+        .order_by(Authorization.valid_until.asc()).limit(5)
+    )
+    expiring = [
+        {"user": u.username, "level": a.user_level, "project": p.display_name,
+         "days": max(1, (a.valid_until - now).days + 1)}
+        for a, u, p in expiring_result.all()
+    ]
+
+    # ── 下级代理 ──────────────────────────────────────────
+    sub_agents = {"can_create": profile.get("can_create_sub_agents", False), "list": []}
+    if profile.get("can_create_sub_agents"):
+        scope_ids = await get_agent_scope_ids(db, current_agent.id)
+        scope_ids = [i for i in scope_ids if i != current_agent.id]
+        if scope_ids:
+            sub_result = await db.execute(
+                select(Agent).where(Agent.id.in_(scope_ids)).order_by(Agent.hierarchy_depth, Agent.id)
+            )
+            for sub in sub_result.scalars().all():
+                sub_wallet = await _balance_dict(db=db, agent_id=sub.id)
+                sub_users = (await db.execute(
+                    select(func.count(User.id)).where(User.created_by_agent_id == sub.id)
+                )).scalar_one()
+                sub_profile = await _business_profile_dict(db=db, agent_id=sub.id)
+                sub_agents["list"].append({
+                    "id": sub.id, "username": sub.username,
+                    "hierarchy_depth": sub.hierarchy_depth,
+                    "tier_level": sub_profile.get("tier_level", 1),
+                    "tier_name": sub_profile.get("tier_name", "Lv.1"),
+                    "users": sub_users, "balance": sub_wallet.get("available_total", 0),
+                    "is_direct": sub.parent_agent_id == current_agent.id,
+                })
+
+    # ── 下级代理到期预警 ────────────────────────────────
+    sub_expiring = []
+    if profile.get("can_create_sub_agents"):
+        sub_scope_ids = await get_agent_scope_ids(db, current_agent.id)
+        sub_scope_ids = [i for i in sub_scope_ids if i != current_agent.id]
+        if sub_scope_ids:
+            sub_exp_result = await db.execute(
+                select(Authorization, User, GameProject, Agent)
+                .join(User, Authorization.user_id == User.id)
+                .join(GameProject, Authorization.game_project_id == GameProject.id)
+                .join(Agent, User.created_by_agent_id == Agent.id)
+                .where(
+                    Authorization.status == "active",
+                    Authorization.valid_until.is_not(None),
+                    Authorization.valid_until > now,
+                    Authorization.valid_until <= week_later,
+                    User.created_by_agent_id.in_(sub_scope_ids),
+                )
+                .order_by(Authorization.valid_until.asc()).limit(5)
+            )
+            sub_expiring = [
+                {"user": u.username, "level": a.user_level, "project": p.display_name,
+                 "agent": ag.username, "days": max(1, (a.valid_until - now).days + 1)}
+                for a, u, p, ag in sub_exp_result.all()
+            ]
+
+    return {
+        "agent": {
+            "username": current_agent.username,
+            "hierarchy_depth": current_agent.hierarchy_depth,
+            "tier_level": profile.get("tier_level", 1),
+            "tier_name": profile.get("tier_name", ""),
+            "risk_status": profile.get("risk_status", "normal"),
+        },
+        "wallet": wallet,
+        "users": {"total": users_total, "active": users_active},
+        "online_devices": online_count,
+        "projects": projects,
+        "expiring_auths": expiring,
+        "sub_agents": sub_agents,
+        "sub_expiring_auths": sub_expiring,
+    }
 
 
 # ── 代理自查余额与流水 ───────────────────────────────────────

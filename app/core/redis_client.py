@@ -356,6 +356,27 @@ async def get_refresh_token_by_value(
     return json.loads(raw)
 
 
+_RT_ROTATION_GRACE_SECONDS = 60
+
+async def expire_refresh_token_v2(
+    redis: aioredis.Redis,
+    user_id: int,
+    jti: str,
+    rt_value: str,
+    grace_seconds: int = _RT_ROTATION_GRACE_SECONDS,
+) -> None:
+    """
+    RT 轮换时调用：将旧 RT 的 TTL 设为短宽限期而非立即删除。
+
+    目的：防止客户端在"收到新 RT 但尚未持久化"时崩溃导致设备永久锁定。
+    宽限期内旧 RT 仍可用（一次），之后由 Redis 自动过期清理。
+    """
+    pipe = redis.pipeline()
+    pipe.expire(f"refresh:{user_id}:{jti}", grace_seconds)
+    pipe.expire(_rt_lookup_key(rt_value), grace_seconds)
+    await pipe.execute()
+
+
 async def delete_refresh_token_v2(
     redis: aioredis.Redis,
     user_id: int,

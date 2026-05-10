@@ -49,6 +49,7 @@ from app.config import settings
 from app.core.redis_client import (
     delete_all_refresh_tokens,
     delete_refresh_token_v2,
+    expire_refresh_token_v2,
     get_refresh_token_by_value,
     revoke_token,
     store_refresh_token_v2,
@@ -414,7 +415,8 @@ async def refresh_access_token(
     new_refresh_token = create_refresh_token()
     rt_ttl = get_refresh_token_ttl_seconds()
 
-    await delete_refresh_token_v2(
+    # RT 轮换：旧 RT 设 60s 宽限期，防止客户端崩溃丢失新 RT 后永久锁定
+    await expire_refresh_token_v2(
         redis=redis,
         user_id=user.id,
         jti=old_jti,

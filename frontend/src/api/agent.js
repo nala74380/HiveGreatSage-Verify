@@ -58,7 +58,13 @@ export const agentApi = {
     return http.get('/api/agents/my-projects')
   },
 
+  /** 管理员端 Dashboard */
   dashboard() {
     return http.get('/admin/api/dashboard')
+  },
+
+  /** 代理端 Dashboard */
+  agentDashboard() {
+    return http.get('/api/agents/me/dashboard')
   },
 }

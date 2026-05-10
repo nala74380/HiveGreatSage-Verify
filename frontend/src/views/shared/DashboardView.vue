@@ -1,426 +1,402 @@
 <template>
   <div class="dashboard">
 
-    <!-- 顶部统计卡片 -->
-    <el-row :gutter="16">
-      <el-col :span="auth.isAdmin ? 6 : 12" v-for="card in topCards" :key="card.label">
-        <div class="stat-card clickable" :style="{ borderTopColor: card.color }" @click="card.to && router.push(card.to)">
-          <div class="stat-left">
-            <div class="stat-value">{{ card.value }}</div>
-            <div class="stat-label">{{ card.label }}</div>
-            <div v-if="card.sub" class="stat-sub">{{ card.sub }}</div>
-          </div>
-          <div class="stat-icon" :style="{ background: card.color + '18', color: card.color }">
-            <el-icon size="22"><component :is="card.icon" /></el-icon>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
+    <!-- 行1：Admin 指标卡片 -->
+    <div v-if="auth.isAdmin" class="top-cards admin-cards">
+      <div class="stat-card" v-for="card in topCards" :key="card.label"
+           :style="{ borderTopColor: card.color }"
+           @click="card.to && router.push(card.to)">
+        <div class="stat-value">{{ card.value }}</div>
+        <div class="stat-label">{{ card.label }}</div>
+        <div v-if="card.sub" class="stat-sub">{{ card.sub }}</div>
+      </div>
+    </div>
 
-    <!-- 第二行：用户级别分布 + 最近注册用户 -->
-    <el-row :gutter="16" v-if="auth.isAdmin">
-      <!-- 用户级别分布 -->
+    <!-- 行2：左侧30% + 右侧70% -->
+    <el-row :gutter="12" v-if="auth.isAdmin" style="margin-top:12px">
+      <!-- 左：用户级别分布 + 系统健康 -->
       <el-col :span="8">
         <el-card shadow="never" class="inner-card">
-          <template #header>
-            <span class="card-title">用户级别分布</span>
-          </template>
-          <div v-if="levelLoading" class="chart-loading">
-            <el-skeleton :rows="3" animated />
-          </div>
+          <template #header><span class="card-title">用户级别分布</span></template>
+          <div v-if="levelLoading"><el-skeleton :rows="3" animated /></div>
           <div v-else class="level-bars">
-            <div
-              v-for="item in levelDistribution"
-              :key="item.level"
-              class="level-row"
-            >
+            <div v-for="item in levelDistribution" :key="item.level" class="level-row">
               <div class="level-meta">
-                <el-tag
-                  effect="dark" size="small"
-                  :style="{ backgroundColor: item.color, borderColor: item.color }"
-                >{{ item.label }}</el-tag>
+                <el-tag effect="dark" size="small" :style="{ backgroundColor: item.color, borderColor: item.color }">{{ item.label }}</el-tag>
                 <span class="level-count">{{ item.count }}</span>
               </div>
-              <el-progress
-                :percentage="item.pct"
-                :color="item.color"
-                :stroke-width="8"
-                :show-text="false"
-              />
+              <el-progress :percentage="item.pct" :color="item.color" :stroke-width="8" :show-text="false" />
             </div>
             <div class="level-total">共 {{ totalUsers }} 名用户</div>
           </div>
         </el-card>
+        <div class="health-strip">
+          <span class="health-dot" :class="systemHealth?.api || 'error'"></span>API
+          <span class="health-dot" :class="systemHealth?.database || 'error'"></span>DB
+          <span class="health-dot" :class="systemHealth?.redis || 'error'"></span>Redis
+          <span class="health-dot" :class="systemHealth?.celery || 'unknown'"></span>Celery
+        </div>
       </el-col>
 
-      <!-- 最近注册用户 -->
+      <!-- 右：今日账务 + 即将到期授权 -->
       <el-col :span="16">
+        <!-- 今日账务 -->
         <el-card shadow="never" class="inner-card">
           <template #header>
             <div class="card-header-row">
-              <span class="card-title">最近注册用户</span>
-              <router-link to="/users" class="view-all">查看全部 →</router-link>
+              <span class="card-title">今日账务</span>
+              <span class="card-hint">{{ todayDate }}</span>
             </div>
           </template>
-          <div v-if="recentLoading">
-            <el-skeleton :rows="4" animated />
+          <div class="accounting-grid">
+            <div class="acct-item">
+              <div class="acct-value in">+{{ fmtMoney(todayAccounting.recharge || 0) }}</div>
+              <div class="acct-label">充值</div>
+            </div>
+            <div class="acct-item">
+              <div class="acct-value in">+{{ fmtMoney(todayAccounting.credit || 0) }}</div>
+              <div class="acct-label">授信</div>
+            </div>
+            <div class="acct-item">
+              <div class="acct-value out">-{{ fmtMoney(todayAccounting.consume || 0) }}</div>
+              <div class="acct-label">消耗</div>
+            </div>
+            <div class="acct-item">
+              <div class="acct-value in">+{{ fmtMoney(todayAccounting.refund || 0) }}</div>
+              <div class="acct-label">返点</div>
+            </div>
+            <div class="acct-item">
+              <div class="acct-value freeze">-{{ fmtMoney(todayAccounting.freeze || 0) }}</div>
+              <div class="acct-label">冻结</div>
+            </div>
+            <div class="acct-item">
+              <div class="acct-value in">+{{ fmtMoney(todayAccounting.unfreeze || 0) }}</div>
+              <div class="acct-label">解冻</div>
+            </div>
           </div>
-          <el-table
-            v-else
-            :data="recentUsers"
-            size="small"
-            :show-header="true"
-          >
-            <el-table-column prop="username" label="用户名" min-width="130" />
-            <el-table-column label="级别" width="75">
-              <template #default="{ row }">
-                <LevelTag :level="userBestLevel(row)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="80">
-              <template #default="{ row }">
-                <StatusBadge :status="row.status" type="user" />
-              </template>
-            </el-table-column>
-            <el-table-column label="到期时间" min-width="120">
-              <template #default="{ row }">
-                {{ userLongestExpiry(row) || '—' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="注册时间" min-width="120">
-              <template #default="{ row }">
-                {{ formatDate(row.created_at) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="" width="60" align="right">
-              <template #default="{ row }">
-                <router-link :to="`/users/${row.id}`" class="detail-link">详情</router-link>
-              </template>
-            </el-table-column>
-          </el-table>
+        </el-card>
+
+        <!-- 即将到期授权 -->
+        <el-card shadow="never" class="inner-card" style="margin-top:12px">
+          <template #header>
+            <div class="card-header-row">
+              <span class="card-title">即将到期授权</span>
+              <router-link to="/users" class="view-all">查看全部→</router-link>
+            </div>
+          </template>
+          <el-empty v-if="!expiringAuths.length" description="暂无7天内到期授权" :image-size="40" />
+          <div v-else class="expiring-list">
+            <div v-for="a in expiringAuths" :key="a.auth_id" class="expiring-row">
+              <span class="expiring-user">{{ a.username }}</span>
+              <LevelTag :level="a.user_level" />
+              <span class="expiring-project">{{ a.project }}</span>
+              <span class="expiring-date">剩 {{ daysFromNow(a.valid_until) }} 天</span>
+            </div>
+          </div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- 设备实时状态 -->
-    <el-card shadow="never" class="inner-card">
+    <!-- 行3：项目设备概览（全宽） -->
+    <el-card shadow="never" class="inner-card" style="margin-top:12px" v-if="auth.isAdmin">
       <template #header>
         <div class="card-header-row">
-          <span class="card-title">设备实时状态</span>
-          <el-tag v-if="!notSupported" type="success" effect="plain" size="small">
-            每 10 秒自动刷新
-          </el-tag>
+          <span class="card-title">项目概览</span>
+          <el-tag type="success" effect="plain" size="small">在线 {{ onlineDevices }} 台</el-tag>
         </div>
       </template>
-
-      <el-empty
-        v-if="notSupported"
-        description="设备监控需要终端用户 Token，管理员/代理视角的设备总览将在 Phase 2 开放"
-        :image-size="80"
-      />
-      <div v-else-if="deviceLoading && devices.length === 0">
-        <el-skeleton :rows="3" animated />
-      </div>
-      <div v-else>
-        <!-- 在线概览 bar -->
-        <div class="device-overview">
-          <div class="device-stat-item">
-            <span class="dot online"></span>
-            <span class="ds-val">{{ deviceSummary.online_count }}</span>
-            <span class="ds-lbl">在线</span>
-          </div>
-          <div class="device-stat-item">
-            <span class="dot offline"></span>
-            <span class="ds-val">{{ deviceSummary.total - deviceSummary.online_count }}</span>
-            <span class="ds-lbl">离线</span>
-          </div>
-          <div class="device-stat-item">
-            <span class="dot running"></span>
-            <span class="ds-val">{{ devices.filter(d => d.status === 'running').length }}</span>
-            <span class="ds-lbl">运行中</span>
-          </div>
-          <div class="online-bar-wrap">
-            <el-progress
-              :percentage="deviceSummary.total ? Math.round(deviceSummary.online_count / deviceSummary.total * 100) : 0"
-              :stroke-width="10"
-              color="#10b981"
-              :show-text="false"
-              style="flex:1"
-            />
-            <span class="online-pct">
-              在线率 {{ deviceSummary.total ? Math.round(deviceSummary.online_count / deviceSummary.total * 100) : 0 }}%
-            </span>
-          </div>
-        </div>
-
-        <el-table :data="devices.slice(0, 8)" size="small" style="width:100%">
-          <el-table-column width="44" align="center">
-            <template #default="{ row }">
-              <span :class="['led', row.is_online ? 'on' : 'off']"></span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="device_id" label="设备指纹" min-width="180" show-overflow-tooltip />
-          <el-table-column label="状态" width="90">
-            <template #default="{ row }">
-              <StatusBadge :status="row.status || 'offline'" type="device" :is-online="row.is_online" />
-            </template>
-          </el-table-column>
-          <el-table-column label="最后心跳" min-width="120">
-            <template #default="{ row }">
-              <span :class="{ 'text-muted': !row.is_online }">
-                {{ formatRelativeTime(row.last_seen) }}
-              </span>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div v-if="devices.length > 8" class="more-hint">
-          仅展示前 8 台，<router-link to="/devices">查看全部 {{ deviceSummary.total }} 台 →</router-link>
+      <el-empty v-if="!projectList.length" description="暂无激活项目" :image-size="40" />
+      <div v-else class="project-row">
+        <div v-for="p in projectList" :key="p.code" class="project-item">
+          <span class="project-name">{{ p.display }}</span>
+          <span class="project-code">{{ p.code }}</span>
         </div>
       </div>
     </el-card>
 
+    <!-- Agent 视角 -->
+    <template v-if="auth.isAgent">
+      <!-- 行0：身份卡片（Lv.2+） -->
+      <div v-if="agentTier >= 2" class="agent-id-card" :class="'tier-bg-' + agentTier" style="margin-top:12px">
+        <div class="id-left">
+          <span class="id-name">{{ agentProfile.username }}</span>
+          <el-tag effect="dark" size="small" :type="tierTagType">{{ agentProfile.tier_name }}</el-tag>
+          <span class="id-dot" :class="agentProfile.risk_status || 'normal'"></span>
+          <span class="id-risk">{{ riskLabel }}</span>
+        </div>
+        <div class="id-right">
+          <span>可用 <b>{{ fmtMoney(agentWallet.available_total) }}</b></span>
+          <span v-if="agentTier >= 3" class="id-credit">| 授信上限 <b>{{ fmtMoney(agentWallet.max_credit_limit || agentWallet.credit_limit || 0) }}</b></span>
+          <span v-if="agentSub.can_create">| 下级 <b>{{ agentSub.list.length }}/{{ agentSub.max || '—' }}</b></span>
+        </div>
+      </div>
+
+      <!-- 行1：4 指标卡片 -->
+      <div class="top-cards admin-cards" :style="{ marginTop: agentTier >= 2 ? '12px' : '0' }">
+        <div class="stat-card" v-for="card in agentCards" :key="card.label" :style="{ borderTopColor: card.color }" @click="card.to && router.push(card.to)">
+          <div class="stat-value">{{ card.value }}</div>
+          <div class="stat-label">{{ card.label }}</div>
+          <div v-if="card.sub" class="stat-sub">{{ card.sub }}</div>
+        </div>
+      </div>
+
+      <!-- 行2：项目一览 + 到期预警 -->
+      <el-row :gutter="12" style="margin-top:12px">
+        <el-col :span="agentTier >= 2 ? 12 : 16">
+          <el-card shadow="never" class="inner-card">
+            <template #header><span class="card-title">项目一览</span></template>
+            <el-empty v-if="!agentProjects.length" description="暂无已授权项目" :image-size="40" />
+            <div v-else class="expiring-list">
+              <div v-for="p in agentProjects" :key="p.code" class="expiring-row">
+                <span class="expiring-user">{{ p.display }}</span>
+                <span class="expiring-project">{{ p.user_count }} 用户</span>
+                <span class="expiring-date">{{ p.online }} 在线</span>
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="agentTier >= 2 ? 12 : 8">
+          <el-card shadow="never" class="inner-card">
+            <template #header><div class="card-header-row"><span class="card-title">即将到期</span><router-link to="/users" class="view-all">查看全部→</router-link></div></template>
+            <el-empty v-if="!agentExpiring.length" description="暂无7天内到期授权" :image-size="40" />
+            <div v-else class="expiring-list">
+              <div v-for="a in agentExpiring" :key="a.user" class="expiring-row">
+                <span class="expiring-user">{{ a.user }}</span>
+                <LevelTag :level="a.level" />
+                <span class="expiring-project">{{ a.project }}</span>
+                <span class="expiring-date">剩 {{ a.days }} 天</span>
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <!-- 行3：下级代理子树（Lv.2+ 且 can_create_sub_agents） -->
+      <template v-if="agentTier >= 2 && agentSub.can_create">
+        <!-- 下级到期预警 -->
+        <el-card v-if="agentSubExpiring.length" shadow="never" class="inner-card" style="margin-top:12px">
+          <template #header><div class="card-header-row"><span class="card-title">下级到期预警</span><router-link to="/agents" class="view-all">查看全部→</router-link></div></template>
+          <div class="expiring-list">
+            <div v-for="a in agentSubExpiring" :key="a.user" class="expiring-row">
+              <span class="expiring-user">{{ a.user }}</span>
+              <LevelTag :level="a.level" />
+              <span class="expiring-project">{{ a.project }}</span>
+              <span class="expiring-date">剩 {{ a.days }} 天</span>
+              <span class="expiring-project">代理: {{ a.agent }}</span>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 下级列表 -->
+        <el-card v-if="agentSub.list.length" shadow="never" class="inner-card" style="margin-top:12px">
+          <template #header><div class="card-header-row"><span class="card-title">下级代理（{{ agentSub.list.length }}）</span></div></template>
+          <div class="expiring-list">
+            <div v-for="s in agentSub.list" :key="s.id" class="expiring-row">
+              <span class="expiring-user">{{ s.username }}</span>
+              <el-tag size="small" effect="plain">{{ s.tier_name }}</el-tag>
+              <span class="expiring-project">{{ s.users }} 用户</span>
+              <span class="expiring-date">{{ fmtMoney(s.balance) }} 点</span>
+              <span class="expiring-project">{{ s.is_direct ? '直属' : '间接' }}</span>
+            </div>
+          </div>
+        </el-card>
+      </template>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Share, Monitor, Grid, Key } from '@element-plus/icons-vue'
-import { useAuthStore }    from '@/stores/auth'
-import { agentApi }        from '@/api/agent'
-import { userApi }         from '@/api/user'
-import { useDevicePoller } from '@/composables/useDevicePoller'
-import StatusBadge from '@/components/common/StatusBadge.vue'
+import { useAuthStore } from '@/stores/auth'
+import { agentApi } from '@/api/agent'
 import LevelTag from '@/components/common/LevelTag.vue'
-import { formatRelativeTime, formatDate } from '@/utils/format'
 import { USER_LEVEL_MAP } from '@/utils/format'
 
 const auth = useAuthStore()
 const router = useRouter()
-const { devices, summary: deviceSummary, loading: deviceLoading, notSupported } = useDevicePoller()
 
-// ── 顶部统计 ─────────────────────────────────────────────────
-const stats       = ref({ total_users: 0, total_agents: 0, active_projects: 0 })
+const stats = ref({ total_users: 0, total_agents: 0, active_projects: 0 })
+const totalPoints = ref(0)
+const todayNewUsers = ref(0)
+const onlineDevices = ref(0)
+const todayAccounting = ref({})
+const todayDate = new Date().toLocaleDateString('zh-CN')
+const systemHealth = ref({})
+const levelDistribution = ref([])
+const totalUsers = ref(0)
+const levelLoading = ref(false)
+
+// Agent state
+const agentProfile = ref({ username: '', tier_level: 1, tier_name: '', risk_status: 'normal' })
+const agentWallet = ref({ available_total: 0 })
+const agentProjects = ref([])
+const agentExpiring = ref([])
+const agentSub = ref({ can_create: false, max: 0, list: [] })
+
+const agentTier = computed(() => agentProfile.value.tier_level || 1)
+const riskLabel = computed(() => ({ normal: '正常', watch: '观察中', restricted: '已限制', frozen: '已冻结' }[agentProfile.value.risk_status] || ''))
+const tierTagType = computed(() => ({ 1: 'info', 2: '', 3: 'warning', 4: 'danger' }[agentTier.value] || ''))
+const agentSubExpiring = ref([])
+const expiringAuths = ref([])
+const projectList = ref([])
 const statsLoaded = ref(false)
 
-const topCards = computed(() => {
-  if (auth.isAdmin) {
-    return [
-      {
-        label: '用户总数',
-        value: stats.value.total_users,
-        sub:   '所有状态',
-        icon:  User,
-        color: '#2563eb',
-        to:    '/users',
-      },
-      {
-        label: '代理总数',
-        value: stats.value.total_agents,
-        sub:   '所有层级',
-        icon:  Share,
-        color: '#f59e0b',
-        to:    '/agents',
-      },
-      {
-        label: '活跃项目',
-        value: stats.value.active_projects,
-        sub:   '已启用',
-        icon:  Grid,
-        color: '#8b5cf6',
-        to:    '/projects',
-      },
-      {
-        label: '在线设备',
-        value: notSupported.value ? '—' : deviceSummary.value.online_count,
-        sub:   notSupported.value ? 'Phase 2' : `共 ${deviceSummary.value.total} 台`,
-        icon:  Monitor,
-        color: '#10b981',
-        to:    '/devices',
-      },
-    ]
-  }
-  return [
-    {
-      label: '我的用户',
-      value: stats.value.total_users,
-      icon:  User,
-      color: '#2563eb',
-    },
-    {
-      label: '在线设备',
-      value: notSupported.value ? '—' : deviceSummary.value.online_count,
-      sub:   notSupported.value ? 'Phase 2' : `共 ${deviceSummary.value.total} 台`,
-      icon:  Monitor,
-      color: '#10b981',
-    },
-  ]
-})
+const fmtMoney = (v) => Number(v || 0).toFixed(2)
+const daysFromNow = (iso) => {
+  if (!iso) return '—'
+  const diff = new Date(iso).getTime() - Date.now()
+  return Math.ceil(diff / 86400000)
+}
 
-// ── 用户级别分布 ─────────────────────────────────────────────
-const levelLoading     = ref(false)
-const levelDistribution = ref([])
-const totalUsers        = ref(0)
+const topCards = computed(() => [
+  { label: '用户总数', value: stats.value.total_users, sub: `今日 +${todayNewUsers.value}`, color: '#2563eb', to: '/users' },
+  { label: '代理总数', value: stats.value.total_agents, color: '#f59e0b', to: '/agents' },
+  { label: '活跃项目', value: stats.value.active_projects, color: '#8b5cf6', to: '/projects' },
+  { label: '在线设备', value: onlineDevices.value, color: '#10b981', to: '/devices' },
+  { label: '平台点数', value: fmtMoney(totalPoints.value), color: '#f97316', to: '/accounting' },
+])
 
-const loadLevelDistribution = async () => {
-  if (!auth.isAdmin) return
-  levelLoading.value = true
+const agentCards = computed(() => [
+  { label: '可用点数', value: fmtMoney(agentWallet.value.available_total), color: '#f97316' },
+  { label: '直属用户', value: `${agentUsers.value.active}/${agentUsers.value.total}`, color: '#2563eb' },
+  { label: '在线设备', value: agentDeviceCount.value, color: '#10b981' },
+  { label: '已授权项目', value: agentProjects.value.length, color: '#8b5cf6' },
+])
+const agentUsers = ref({ total: 0, active: 0 })
+const agentDeviceCount = ref(0)
+
+const loadAllStats = async () => {
   try {
-    // 并发拉取各级别计数
-    const levels = ['trial', 'normal', 'vip', 'svip', 'tester']
-    const results = await Promise.all(
-      levels.map(l => userApi.list({ page: 1, page_size: 1, level: l }))
-    )
-    const counts = results.map(r => r.data.total)
-    const total  = counts.reduce((a, b) => a + b, 0)
-    totalUsers.value = total
+    if (auth.isAdmin) {
+      const res = await agentApi.dashboard()
+      const d = res.data
 
-    levelDistribution.value = levels.map((l, i) => ({
-      level:  l,
-      label:  USER_LEVEL_MAP[l]?.label ?? l,
-      color:  USER_LEVEL_MAP[l]?.color ?? '#909399',
-      count:  counts[i],
-      pct:    total > 0 ? Math.round(counts[i] / total * 100) : 0,
-    }))
-  } finally {
-    levelLoading.value = false
-  }
-}
+      stats.value = { total_users: d.total_users, total_agents: d.total_agents, active_projects: d.active_projects }
+      statsLoaded.value = true
+      todayNewUsers.value = d.today_new_users || 0
+      totalPoints.value = d.total_points || 0
+      onlineDevices.value = d.online_devices || 0
+      todayAccounting.value = d.today_accounting || {}
+      systemHealth.value = d.system_health || {}
 
-// ── 最近注册用户 ─────────────────────────────────────────────
-const recentLoading = ref(false)
-const recentUsers   = ref([])
+      levelLoading.value = true
+      const dist = d.level_distribution || {}
+      const levels = ['trial', 'normal', 'vip', 'svip', 'tester']
+      const counts = levels.map(l => dist[l] || 0)
+      const total = counts.reduce((a, b) => a + b, 0)
+      totalUsers.value = total
+      levelDistribution.value = levels.map((l, i) => ({
+        level: l, label: USER_LEVEL_MAP[l]?.label ?? l, color: USER_LEVEL_MAP[l]?.color ?? '#909399',
+        count: counts[i], pct: total > 0 ? Math.round(counts[i] / total * 100) : 0,
+      }))
+      levelLoading.value = false
 
-const loadRecentUsers = async () => {
-  if (!auth.isAdmin) return
-  recentLoading.value = true
-  try {
-    const res = await userApi.list({ page: 1, page_size: 8 })
-    recentUsers.value = res.data.users
-  } finally {
-    recentLoading.value = false
-  }
-}
+      expiringAuths.value = d.expiring_auths || []
 
-// ── Agent 视角：自己的用户数 ──────────────────────────────────
-const loadAgentStats = async () => {
-  if (!auth.isAgent) return
-  try {
-    const res = await userApi.list({ page: 1, page_size: 1 })
-    stats.value.total_users = res.data.total
-  } catch { /* 静默 */ }
-}
-
-// ── 辅助：用户最佳级别（取所有授权中最高级别） ──────────────
-const LEVEL_ORDER = ['trial', 'normal', 'vip', 'svip', 'tester']
-const userBestLevel = (user) => {
-  const auths = user.authorizations || []
-  const active = auths.filter(a => a.status === 'active' && !a.is_expired)
-  if (!active.length) return user.authorization_level || 'normal'
-  let best = 'trial'
-  for (const a of active) {
-    const idx = LEVEL_ORDER.indexOf(a.user_level)
-    if (idx > LEVEL_ORDER.indexOf(best)) best = a.user_level
-  }
-  return best
-}
-
-const userLongestExpiry = (user) => {
-  const auths = user.authorizations || []
-  const active = auths.filter(a => a.status === 'active')
-  if (!active.length) return null
-  let longest = null
-  for (const a of active) {
-    if (!a.valid_until) return '永久'
-    if (!longest || new Date(a.valid_until) > new Date(longest)) {
-      longest = a.valid_until
+      if (d.active_projects_data) {
+        projectList.value = d.active_projects_data
+      } else {
+        projectList.value = []
+      }
+    } else {
+      try {
+        const r = await agentApi.agentDashboard()
+        const d = r.data
+        agentProfile.value = d.agent || {}
+        agentWallet.value = d.wallet || {}
+        agentUsers.value = d.users || { total: 0, active: 0 }
+        agentDeviceCount.value = d.online_devices || 0
+        agentProjects.value = d.projects || []
+        agentExpiring.value = d.expiring_auths || []
+        agentSub.value = d.sub_agents || { can_create: false, list: [] }
+        agentSubExpiring.value = d.sub_expiring_auths || []
+        statsLoaded.value = true
+      } catch {}
     }
-  }
-  return longest ? formatDate(longest) : null
+  } catch {}
 }
 
-onMounted(async () => {
-  if (auth.isAdmin) {
-    const res = await agentApi.dashboard().catch(() => ({ data: {} }))
-    stats.value = { ...stats.value, ...res.data }
-    await Promise.all([loadLevelDistribution(), loadRecentUsers()])
-  } else {
-    await loadAgentStats()
-  }
-})
+onMounted(() => { loadAllStats() })
 </script>
 
 <style scoped>
-.dashboard { display: flex; flex-direction: column; gap: 16px; }
+.dashboard { display: flex; flex-direction: column; gap: 0; }
 
-/* 顶部统计卡片 */
+.top-cards { display: grid; gap: 12px; }
+.top-cards.admin-cards { grid-template-columns: repeat(5, 1fr); }
+.top-cards:not(.admin-cards) { grid-template-columns: repeat(2, 1fr); }
+
+.health-strip {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+  background: #f9fafb; border-radius: 6px; font-size: 12px; color: #6b7280;
+}
+.health-strip .health-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #909399; margin-right: 3px;
+}
+.health-strip .health-dot.ok      { background: #10b981; }
+.health-strip .health-dot.error   { background: #ef4444; }
+.health-strip .health-dot.unknown { background: #f59e0b; }
+.health-strip .health-dot.no_recent_flush { background: #f59e0b; }
+
 .stat-card {
-  background: #fff; border-radius: 10px; padding: 20px 24px;
-  display: flex; align-items: center; justify-content: space-between;
-  box-shadow: 0 1px 3px rgba(0,0,0,.07);
-  border-top: 3px solid transparent;
+  background: #fff; border-radius: 8px; padding: 16px 18px;
+  border-top: 3px solid #e5e7eb; cursor: pointer; transition: box-shadow .15s;
 }
-.stat-card.clickable { cursor: pointer; transition: box-shadow 0.15s; }
-.stat-card.clickable:hover { box-shadow: 0 3px 12px rgba(0,0,0,.12); }
-.stat-left { display: flex; flex-direction: column; gap: 4px; }
-.stat-value { font-size: 28px; font-weight: 700; color: #1e293b; line-height: 1; }
-.stat-label { font-size: 13px; color: #64748b; }
-.stat-sub   { font-size: 11px; color: #94a3b8; }
-.stat-icon  {
-  width: 48px; height: 48px; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
+.stat-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.stat-value { font-size: 22px; font-weight: 700; color: #1f2937; }
+.stat-label { font-size: 13px; color: #6b7280; margin-top: 2px; }
+.stat-sub  { font-size: 12px; color: #9ca3af; margin-top: 1px; }
 
-/* 卡片通用 */
-.inner-card { border-radius: 10px; }
-.card-title { font-size: 14px; font-weight: 600; color: #1e293b; }
-.card-header-row { display: flex; align-items: center; justify-content: space-between; }
+.inner-card { }
+.card-title { font-size: 14px; font-weight: 600; color: #374151; }
+.card-header-row { display: flex; justify-content: space-between; align-items: center; }
+.card-hint { font-size: 12px; color: #9ca3af; }
 .view-all { font-size: 12px; color: #2563eb; text-decoration: none; }
-.view-all:hover { text-decoration: underline; }
-.detail-link { font-size: 12px; color: #2563eb; text-decoration: none; }
 
-/* 级别分布 */
-.level-bars { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
-.level-row  { display: flex; flex-direction: column; gap: 5px; }
-.level-meta { display: flex; align-items: center; justify-content: space-between; }
-.level-count { font-size: 13px; font-weight: 600; color: #1e293b; }
-.level-total { font-size: 12px; color: #94a3b8; text-align: right; margin-top: 4px; }
-.chart-loading { padding: 8px 0; }
+.level-bars { display: flex; flex-direction: column; gap: 8px; }
+.level-row .level-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.level-count { font-size: 14px; font-weight: 600; color: #374151; margin-left: auto; }
+.level-total { font-size: 12px; color: #9ca3af; text-align: right; padding-top: 4px; }
 
-/* 设备概览 */
-.device-overview {
-  display: flex; align-items: center; gap: 20px;
-  margin-bottom: 14px; padding: 12px 16px;
-  background: #f8fafc; border-radius: 8px;
+.accounting-grid { display: flex; gap: 20px; flex-wrap: wrap; }
+.acct-item { text-align: center; min-width: 60px; }
+.acct-value { font-size: 16px; font-weight: 700; }
+.acct-value.in { color: #10b981; }
+.acct-value.out { color: #ef4444; }
+.acct-value.freeze { color: #f59e0b; }
+.acct-label { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+.expiring-list { display: flex; flex-direction: column; gap: 6px; }
+.expiring-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.expiring-user { font-weight: 600; color: #1f2937; min-width: 60px; }
+.expiring-project { color: #6b7280; margin-left: auto; }
+.expiring-date { color: #ef4444; font-weight: 600; white-space: nowrap; }
+
+.project-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.project-item { display: flex; gap: 6px; align-items: center; background: #f9fafb; border-radius: 6px; padding: 6px 12px; }
+.project-name { font-size: 13px; font-weight: 600; color: #1f2937; }
+.project-code { font-size: 11px; color: #9ca3af; }
+.stat-big { font-size: 32px; font-weight: 700; color: #1f2937; }
+.stat-sub-text { font-size: 13px; color: #6b7280; }
+
+.agent-id-card {
+  display: flex; justify-content: space-between; align-items: center;
+  background: linear-gradient(135deg, #1e293b, #334155);
+  color: #fff; border-radius: 8px; padding: 14px 20px;
 }
-.device-stat-item { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.ds-val  { font-size: 18px; font-weight: 700; color: #1e293b; }
-.ds-lbl  { font-size: 12px; color: #64748b; }
-
-.dot {
-  width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0;
-}
-.dot.online  { background: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,.2); }
-.dot.offline { background: #94a3b8; }
-.dot.running { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.2); }
-
-.online-bar-wrap {
-  flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0;
-}
-.online-pct { font-size: 12px; color: #64748b; flex-shrink: 0; }
-
-.led {
-  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-}
-.led.on  { background: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,.25); }
-.led.off { background: #94a3b8; }
-
-.text-muted  { color: #94a3b8; font-size: 12px; }
-.text-danger { color: #ef4444; }
-
-.more-hint { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 10px; }
-.more-hint a { color: #2563eb; text-decoration: none; }
-.more-hint a:hover { text-decoration: underline; }
+.agent-id-card .id-left { display: flex; align-items: center; gap: 10px; }
+.agent-id-card .id-name { font-size: 16px; font-weight: 700; }
+.agent-id-card .id-right { display: flex; gap: 12px; font-size: 13px; opacity: .9; }
+.agent-id-card .id-credit { opacity: .75; }
+.agent-id-card .id-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin: 0 4px 0 2px; }
+.agent-id-card.tier-bg-2 { background: linear-gradient(135deg, #1e3a5f, #2d5a87); }
+.agent-id-card.tier-bg-3 { background: linear-gradient(135deg, #5f3a1e, #876a2d); }
+.agent-id-card.tier-bg-4 { background: linear-gradient(135deg, #5f1e1e, #872d2d); }
+.agent-id-card .id-dot.normal { background: #10b981; }
+.agent-id-card .id-dot.watch { background: #f59e0b; }
+.agent-id-card .id-dot.restricted { background: #ef4444; }
+.agent-id-card .id-dot.frozen { background: #ef4444; }
+.agent-id-card .id-risk { font-size: 12px; opacity: .7; }
 </style>

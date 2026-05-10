@@ -19,7 +19,7 @@
         size="small"
         class="role-tag"
       >
-        {{ auth.isAdmin ? '管理员' : `代理 Lv.${auth.userInfo?.hierarchy_depth ?? '?'}` }}
+        {{ auth.isAdmin ? '管理员' : `代理 Lv.${agentTierLevel ?? auth.userInfo?.hierarchy_depth ?? '?'}` }}
       </el-tag>
 
       <el-dropdown @command="handleCommand" trigger="click">
@@ -43,12 +43,13 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { Fold, Expand, ArrowDown, SwitchButton } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore }  from '@/stores/app'
+import { agentApi } from '@/api/agent'
 
 const auth     = useAuthStore()
 const appStore = useAppStore()
@@ -56,6 +57,18 @@ const route    = useRoute()
 const router   = useRouter()
 
 const pageTitle = computed(() => route.meta?.title || '蜂巢·大圣')
+const agentTierLevel = ref(null)
+
+onMounted(async () => {
+  if (auth.isAgent) {
+    try {
+      const res = await agentApi.agentDashboard()
+      agentTierLevel.value = res.data?.agent?.tier_level ?? auth.userInfo?.hierarchy_depth
+    } catch {
+      agentTierLevel.value = auth.userInfo?.hierarchy_depth
+    }
+  }
+})
 
 const handleCommand = async (cmd) => {
   if (cmd === 'logout') {
