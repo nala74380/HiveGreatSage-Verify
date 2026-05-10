@@ -278,14 +278,12 @@ async def revoke_all(
     redis: aioredis.Redis = Depends(get_redis),
 ) -> MessageResponse:
     """
-    踢出所有 User Refresh Token 会话。
+    踢出所有 User Token 会话。
 
     当前边界:
-      1. 删除该用户在 Redis 中的所有 Refresh Token。
-      2. 吊销当前 Access Token。
-      3. 已签发的其它 Access Token 在自然过期前仍可能有效。
-
-    后续 token_version 落地后，应改为服务端版本号强校验。
+      1. 递增 user.token_version，使所有旧 Access Token 下一次请求立即 401。
+      2. 删除该用户在 Redis 中的所有 Refresh Token。
+      3. 吊销当前 Access Token 黑名单作为额外防御层。
     """
     client_ip = _client_ip(request)
     user_agent = request.headers.get("user-agent")

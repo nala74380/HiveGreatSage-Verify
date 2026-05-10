@@ -102,11 +102,14 @@ async def seed_params(game_session_factory, game_db_accessible):
 
     yield
 
-    # teardown：清理测试参数定义和用户参数值
+    # teardown：先按参数定义关联清理用户参数值；user_script_param 不存 param_key。
     async with game_session_factory() as session:
-        await session.execute(
-            text("DELETE FROM user_script_param WHERE param_key LIKE 'test_%'")
-        )
+        await session.execute(text("""
+            DELETE FROM user_script_param
+            WHERE param_def_id IN (
+                SELECT id FROM script_param_def WHERE param_key LIKE 'test_%'
+            )
+        """))
         await session.execute(
             text("DELETE FROM script_param_def WHERE param_key LIKE 'test_%'")
         )

@@ -22,12 +22,12 @@ r"""
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
 
 
-PROJECT_ID = 1
 AGENT_USERNAME_PREFIX = "acct_test_agent_"
 USER_USERNAME_PREFIX  = "acct_test_user_"
 
@@ -49,6 +49,19 @@ async def _create_agent(
     return res.json()
 
 
+async def _agent_headers(client: AsyncClient, username: str, password: str = "Test@2026") -> dict:
+    res = await client.post(
+        "/api/agents/auth/login",
+        json={"username": username, "password": password},
+    )
+    assert res.status_code == 200, f"代理登录失败: {res.text}"
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+def _valid_until(days: int = 30) -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+
+
 async def _create_user(
     client: AsyncClient, caller_headers: dict, *, username: str = None, password: str = "User@2026",
 ) -> dict:
@@ -65,9 +78,9 @@ async def _create_user(
 class TestPricing:
     """项目定价 CRUD。"""
 
-    async def test_set_price(self, client, admin_headers):
+    async def test_set_price(self, client, admin_headers, project_id):
         res = await client.put(
-            f"/admin/api/prices/{PROJECT_ID}/trial",
+            f"/admin/api/prices/{project_id}/trial",
             json={"points_per_device": 1.5},
             headers=admin_headers,
         )
@@ -75,25 +88,25 @@ class TestPricing:
         data = res.json()
         assert data["points_per_device"] == 1.5
 
-    async def test_get_prices(self, client, admin_headers):
-        res = await client.get(f"/admin/api/prices/{PROJECT_ID}", headers=admin_headers)
+    async def test_get_prices(self, client, admin_headers, project_id):
+        res = await client.get(f"/admin/api/prices/{project_id}", headers=admin_headers)
         assert res.status_code == 200
         prices = res.json()
         assert isinstance(prices, list)
         levels = {p["user_level"] for p in prices}
         assert "trial" in levels
 
-    async def test_delete_price_then_recreate(self, client, admin_headers):
+    async def test_delete_price_then_recreate(self, client, admin_headers, project_id):
         # delete
         res = await client.delete(
-            f"/admin/api/prices/{PROJECT_ID}/trial",
+            f"/admin/api/prices/{project_id}/trial",
             headers=admin_headers,
         )
         assert res.status_code == 204
 
         # recreate
         res = await client.put(
-            f"/admin/api/prices/{PROJECT_ID}/trial",
+            f"/admin/api/prices/{project_id}/trial",
             json={"points_per_device": 2.0},
             headers=admin_headers,
         )
@@ -175,13 +188,14 @@ class TestFreezeUnfreeze:
 class TestAuthorizationCharge:
     """授权扣点——扣费优先 charged 再 credit。"""
 
-    async def test_charge_deducts_charged_first(self, client, admin_headers):
+    async def test_charge_deducts_charged_first(self, client, admin_headers, project_id):
         agent = await _create_agent(client, admin_headers)
         agent_id = agent["id"]
+        agent_headers = await _agent_headers(client, agent["username"])
 
         # ensure pricing exists
         await client.put(
-            f"/admin/api/prices/{PROJECT_ID}/trial",
+            f"/admin/api/prices/{project_id}/trial",
             json={"points_per_device": 5.0},
             headers=admin_headers,
         )
@@ -189,62 +203,63 @@ class TestAuthorizationCharge:
         # grant agent project access
         await client.post(
             f"/admin/api/agents/{agent_id}/project-auths/",
-            json={"project_id": PROJECT_ID},
+            json={"project_id": project_id},
             headers=admin_headers,
         )
 
         # recharge
         await client.post(
             f"/admin/api/accounting/agents/{agent_id}/recharge",
-            json={"amount": 100, "description": "充值"},
+            json={"amount": 200, "description": "充值"},
             headers=admin_headers,
         )
 
-        # create user via agent
-        user = await _create_user(client, admin_headers)
+        # create user via agent, so authorization consumes agent wallet.
+        user = await _create_user(client, agent_headers)
         user_id = user["id"]
 
         # grant authorization (triggers charge)
         res = await client.post(
             f"/api/users/{user_id}/authorizations",
             json={
-                "game_project_id": PROJECT_ID,
+                "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 5,
-                "valid_until": None,
+                "valid_until": _valid_until(),
             },
-            headers=admin_headers,
+            headers=agent_headers,
         )
         assert res.status_code == 201, f"授权扣点失败: {res.text}"
         data = res.json()
         assert data["consumed_points"] > 0
 
-    async def test_charge_insufficient_balance(self, client, admin_headers):
+    async def test_charge_insufficient_balance(self, client, admin_headers, project_id):
         """余额不足时扣点应失败（402）。"""
         agent = await _create_agent(client, admin_headers)
         agent_id = agent["id"]
+        agent_headers = await _agent_headers(client, agent["username"])
 
         await client.put(
-            f"/admin/api/prices/{PROJECT_ID}/svip",
+            f"/admin/api/prices/{project_id}/svip",
             json={"points_per_device": 9999.0},
             headers=admin_headers,
         )
         await client.post(
             f"/admin/api/agents/{agent_id}/project-auths/",
-            json={"project_id": PROJECT_ID},
+            json={"project_id": project_id},
             headers=admin_headers,
         )
 
-        user = await _create_user(client, admin_headers)
+        user = await _create_user(client, agent_headers)
         res = await client.post(
             f"/api/users/{user['id']}/authorizations",
             json={
-                "game_project_id": PROJECT_ID,
+                "game_project_id": project_id,
                 "user_level": "svip",
                 "authorized_devices": 100,
-                "valid_until": None,
+                "valid_until": _valid_until(),
             },
-            headers=admin_headers,
+            headers=agent_headers,
         )
         assert res.status_code in (400, 402), (
             f"期望 400 或 402，实际 {res.status_code}: {res.text}"
@@ -254,39 +269,40 @@ class TestAuthorizationCharge:
 class TestDeleteRefund:
     """删除用户按比例自动返点。"""
 
-    async def test_delete_user_triggers_refund(self, client, admin_headers):
+    async def test_delete_user_triggers_refund(self, client, admin_headers, project_id):
         agent = await _create_agent(client, admin_headers)
         agent_id = agent["id"]
+        agent_headers = await _agent_headers(client, agent["username"])
 
         await client.put(
-            f"/admin/api/prices/{PROJECT_ID}/trial",
+            f"/admin/api/prices/{project_id}/trial",
             json={"points_per_device": 5.0},
             headers=admin_headers,
         )
         await client.post(
             f"/admin/api/agents/{agent_id}/project-auths/",
-            json={"project_id": PROJECT_ID},
+            json={"project_id": project_id},
             headers=admin_headers,
         )
         await client.post(
             f"/admin/api/accounting/agents/{agent_id}/recharge",
-            json={"amount": 100, "description": "充值"},
+            json={"amount": 300, "description": "充值"},
             headers=admin_headers,
         )
 
-        user = await _create_user(client, admin_headers)
+        user = await _create_user(client, agent_headers)
         user_id = user["id"]
 
         # authorize
         auth_res = await client.post(
             f"/api/users/{user_id}/authorizations",
             json={
-                "game_project_id": PROJECT_ID,
+                "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 10,
-                "valid_until": None,
+                "valid_until": _valid_until(),
             },
-            headers=admin_headers,
+            headers=agent_headers,
         )
         assert auth_res.status_code == 201
         cost_before = auth_res.json()["consumed_points"]
@@ -301,9 +317,9 @@ class TestDeleteRefund:
         # delete user
         del_res = await client.delete(
             f"/api/users/{user_id}",
-            headers=admin_headers,
+            headers=agent_headers,
         )
-        assert del_res.status_code == 200
+        assert del_res.status_code == 204
 
         # verify refund records exist
         refunds = await client.get(
@@ -315,7 +331,7 @@ class TestDeleteRefund:
         refund_data = refunds.json()
         assert refund_data["total"] > 0, "删除用户后应有返点记录"
 
-    async def test_delete_without_charge_produces_no_refund(self, client, admin_headers):
+    async def test_delete_without_charge_produces_no_refund(self, client, admin_headers, project_id):
         """管理员创建的用户（无代理扣点）删除时应无返点。"""
         user = await _create_user(client, admin_headers)
 
@@ -323,7 +339,7 @@ class TestDeleteRefund:
         auth_res = await client.post(
             f"/api/users/{user['id']}/authorizations",
             json={
-                "game_project_id": PROJECT_ID,
+                "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 1,
                 "valid_until": None,
@@ -337,7 +353,7 @@ class TestDeleteRefund:
             f"/api/users/{user['id']}",
             headers=admin_headers,
         )
-        assert del_res.status_code == 200
+        assert del_res.status_code == 204
 
         refunds = await client.get(
             "/admin/api/accounting/refunds",
@@ -350,43 +366,44 @@ class TestDeleteRefund:
 class TestIdempotency:
     """幂等键防重复扣点。"""
 
-    async def test_double_charge_differs_by_snapshot(self, client, admin_headers):
+    async def test_double_charge_differs_by_snapshot(self, client, admin_headers, project_id):
         """
         同一授权两次扣点（如首次授权 + 升级设备数）应为不同快照，
         不会因幂等键冲突而失败。
         """
         agent = await _create_agent(client, admin_headers)
         agent_id = agent["id"]
+        agent_headers = await _agent_headers(client, agent["username"])
 
         await client.put(
-            f"/admin/api/prices/{PROJECT_ID}/trial",
+            f"/admin/api/prices/{project_id}/trial",
             json={"points_per_device": 4.0},
             headers=admin_headers,
         )
         await client.post(
             f"/admin/api/agents/{agent_id}/project-auths/",
-            json={"project_id": PROJECT_ID},
+            json={"project_id": project_id},
             headers=admin_headers,
         )
         await client.post(
             f"/admin/api/accounting/agents/{agent_id}/recharge",
-            json={"amount": 200, "description": "充值"},
+            json={"amount": 400, "description": "充值"},
             headers=admin_headers,
         )
 
-        user = await _create_user(client, admin_headers)
+        user = await _create_user(client, agent_headers)
         user_id = user["id"]
 
         # first authorization
         res1 = await client.post(
             f"/api/users/{user_id}/authorizations",
             json={
-                "game_project_id": PROJECT_ID,
+                "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 10,
-                "valid_until": None,
+                "valid_until": _valid_until(),
             },
-            headers=admin_headers,
+            headers=agent_headers,
         )
         assert res1.status_code == 201
         auth_id = res1.json()["id"]
@@ -398,7 +415,7 @@ class TestIdempotency:
                 "additional_devices": 5,
                 "mode": "append",
             },
-            headers=admin_headers,
+            headers=agent_headers,
         )
         assert res2.status_code == 200, (
             f"幂等键冲突或升级失败: {res2.text}"
