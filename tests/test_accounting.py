@@ -314,10 +314,25 @@ class TestDeleteRefund:
         )
         assert wallet_before.status_code == 200
 
-        # delete user
-        del_res = await client.delete(
+        # Agent cannot delete user accounts or trigger refund settlement.
+        agent_del_res = await client.delete(
             f"/api/users/{user_id}",
             headers=agent_headers,
+        )
+        assert agent_del_res.status_code == 403
+
+        refunds_before_admin_delete = await client.get(
+            "/admin/api/accounting/refunds",
+            params={"user_id": user_id},
+            headers=admin_headers,
+        )
+        assert refunds_before_admin_delete.status_code == 200
+        assert refunds_before_admin_delete.json()["total"] == 0
+
+        # Admin delete triggers refund settlement.
+        del_res = await client.delete(
+            f"/api/users/{user_id}",
+            headers=admin_headers,
         )
         assert del_res.status_code == 204
 
