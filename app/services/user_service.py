@@ -444,10 +444,16 @@ async def grant_authorization(
                 AgentProjectAuth.status == "active",
             )
         )
-        if not agent_project_auth_result.scalar_one_or_none():
+        agent_pa = agent_project_auth_result.scalar_one_or_none()
+        if not agent_pa:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"代理没有项目「{project.display_name}」的授权权限",
+            )
+        if agent_pa.valid_until is not None and _ensure_aware(agent_pa.valid_until) <= now:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"代理的项目「{project.display_name}」授权已过期",
             )
 
     existing_result = await db.execute(
