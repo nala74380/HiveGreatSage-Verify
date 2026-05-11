@@ -68,6 +68,46 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item v-if="auth.isAdmin" label="代理业务等级">
+          <el-select
+            v-model="filter.creator_agent_tier_level"
+            clearable
+            placeholder="全部"
+            style="width: 130px"
+          >
+            <el-option label="Lv.1" :value="1" />
+            <el-option label="Lv.2" :value="2" />
+            <el-option label="Lv.3" :value="3" />
+            <el-option label="Lv.4" :value="4" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item v-if="auth.isAdmin" label="可创建下级">
+          <el-select
+            v-model="filter.creator_agent_can_create_sub_agents"
+            clearable
+            placeholder="全部"
+            style="width: 130px"
+          >
+            <el-option label="可以" :value="true" />
+            <el-option label="不可以" :value="false" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item v-if="auth.isAdmin" label="代理风险状态">
+          <el-select
+            v-model="filter.creator_agent_risk_status"
+            clearable
+            placeholder="全部"
+            style="width: 150px"
+          >
+            <el-option label="正常" value="normal" />
+            <el-option label="观察" value="watch" />
+            <el-option label="受限" value="restricted" />
+            <el-option label="冻结" value="frozen" />
+          </el-select>
+        </el-form-item>
+
         <el-form-item>
           <el-button type="primary" @click="searchUsers">查询</el-button>
           <el-button @click="resetFilter">重置</el-button>
@@ -737,6 +777,173 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
+
+        <el-tab-pane v-if="auth.isAdmin" label="设备绑定" name="devices">
+          <el-alert
+            title="设备绑定治理待接入：当前先提供按用户进入设备页的入口，后续补齐设备解绑、异常标记和授权状态联动。"
+            type="info"
+            show-icon
+            :closable="false"
+            class="small-alert"
+          />
+
+          <div class="governance-panel">
+            <div class="governance-row">
+              <span class="governance-label">用户设备</span>
+              <el-button
+                type="primary"
+                plain
+                size="small"
+                @click="router.push({ path: '/devices', query: { user_id: editDialog.row?.id, username: editDialog.row?.username } })"
+              >
+                查看设备
+              </el-button>
+            </div>
+
+            <el-table
+              :data="editDialog.auths"
+              size="small"
+              empty-text="暂无项目授权，无法按授权查看设备状态"
+              stripe
+            >
+              <el-table-column label="项目" min-width="150">
+                <template #default="{ row }">
+                  {{ authProjectName(row) }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="授权状态" width="110">
+                <template #default="{ row }">
+                  <el-tag :type="authStatusType(row)" size="small" effect="light">
+                    {{ authStatusText(row) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="授权设备" width="110">
+                <template #default="{ row }">
+                  {{ displayDeviceLimit(row.authorized_devices) }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="已激活" width="90">
+                <template #default="{ row }">
+                  {{ row.activated_devices ?? 0 }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="账务与冻结" name="finance">
+          <el-alert
+            :title="auth.isAdmin
+              ? '账务与冻结记录待接入：管理员应可查看扣点快照、返点记录、冻结权益记录和清算状态。'
+              : '账务与冻结记录待接入：代理仅可查看自己相关的扣点预览和冻结权益状态。'"
+            type="info"
+            show-icon
+            :closable="false"
+            class="small-alert"
+          />
+
+          <div class="placeholder-grid">
+            <div class="placeholder-item">
+              <div class="placeholder-title">扣点快照</div>
+              <div class="placeholder-text">待接入</div>
+            </div>
+
+            <div class="placeholder-item">
+              <div class="placeholder-title">返点记录</div>
+              <div class="placeholder-text">{{ auth.isAdmin ? '待接入' : '仅管理员可查看清算明细' }}</div>
+            </div>
+
+            <div class="placeholder-item">
+              <div class="placeholder-title">冻结权益记录</div>
+              <div class="placeholder-text">待接入 AuthorizationFreezeRecord</div>
+            </div>
+
+            <div class="placeholder-item">
+              <div class="placeholder-title">启用恢复记录</div>
+              <div class="placeholder-text">待接入</div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane v-if="auth.isAdmin" label="审计日志" name="audit">
+          <el-alert
+            title="审计日志待接入：后续展示创建用户、状态修改、密码修改、授权调整、停用启用、删除清算、设备解绑等事件。"
+            type="info"
+            show-icon
+            :closable="false"
+            class="small-alert"
+          />
+
+          <el-timeline class="audit-placeholder">
+            <el-timeline-item timestamp="待接入" type="primary">
+              用户与授权审计日志
+            </el-timeline-item>
+            <el-timeline-item timestamp="待接入">
+              设备与账务审计日志
+            </el-timeline-item>
+          </el-timeline>
+        </el-tab-pane>
+
+        <el-tab-pane v-if="auth.isAdmin" label="代理治理" name="creator">
+          <el-alert
+            title="创建代理治理待接入：后续补齐代理业务等级、风险状态、创建下级能力、项目授权状态和钱包状态。"
+            type="info"
+            show-icon
+            :closable="false"
+            class="small-alert"
+          />
+
+          <div class="governance-panel">
+            <div class="governance-row">
+              <span class="governance-label">创建来源</span>
+              <el-tag
+                size="small"
+                effect="plain"
+                :type="editDialog.row?.created_by_type === 'agent' ? 'warning' : 'danger'"
+              >
+                {{ editDialog.row?.created_by_display || '未知' }}
+              </el-tag>
+            </div>
+
+            <div
+              v-if="editDialog.row?.created_by_type === 'agent' && editDialog.row?.created_by_agent_id"
+              class="governance-row"
+            >
+              <span class="governance-label">创建代理</span>
+              <el-button
+                type="primary"
+                plain
+                size="small"
+                @click="openCreatorDetail(editDialog.row.created_by_agent_id)"
+              >
+                查看代理详情
+              </el-button>
+            </div>
+
+            <div class="placeholder-grid">
+              <div class="placeholder-item">
+                <div class="placeholder-title">业务等级</div>
+                <div class="placeholder-text">待接入</div>
+              </div>
+              <div class="placeholder-item">
+                <div class="placeholder-title">风险状态</div>
+                <div class="placeholder-text">待接入</div>
+              </div>
+              <div class="placeholder-item">
+                <div class="placeholder-title">创建下级能力</div>
+                <div class="placeholder-text">待接入</div>
+              </div>
+              <div class="placeholder-item">
+                <div class="placeholder-title">钱包状态</div>
+                <div class="placeholder-text">待接入</div>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -897,6 +1104,9 @@ const filter = reactive({
   level: null,
   project_id: null,
   creator_agent_id: null,
+  creator_agent_tier_level: null,
+  creator_agent_can_create_sub_agents: null,
+  creator_agent_risk_status: null,
 })
 
 const pagination = reactive({
@@ -1129,6 +1339,15 @@ async function loadUsers() {
     if (filter.level) params.level = filter.level
     if (filter.project_id) params.project_id = filter.project_id
     if (filter.creator_agent_id) params.creator_agent_id = filter.creator_agent_id
+    if (filter.creator_agent_tier_level) {
+      params.creator_agent_tier_level = filter.creator_agent_tier_level
+    }
+    if (filter.creator_agent_can_create_sub_agents !== null) {
+      params.creator_agent_can_create_sub_agents = filter.creator_agent_can_create_sub_agents
+    }
+    if (filter.creator_agent_risk_status) {
+      params.creator_agent_risk_status = filter.creator_agent_risk_status
+    }
 
     const res = await userApi.list(params)
 
@@ -1149,6 +1368,9 @@ function resetFilter() {
   filter.level = null
   filter.project_id = null
   filter.creator_agent_id = null
+  filter.creator_agent_tier_level = null
+  filter.creator_agent_can_create_sub_agents = null
+  filter.creator_agent_risk_status = null
   pagination.page = 1
   loadUsers()
 }
@@ -1704,10 +1926,63 @@ onMounted(async () => {
   width: 100%;
 }
 
+.governance-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.governance-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.governance-label {
+  width: 88px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.placeholder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.placeholder-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.placeholder-title {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.placeholder-text {
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.audit-placeholder {
+  margin-top: 16px;
+}
+
 @media (max-width: 900px) {
   .page-header {
     flex-direction: column;
     gap: 12px;
+  }
+
+  .placeholder-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

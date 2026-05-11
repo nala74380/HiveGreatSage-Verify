@@ -78,6 +78,117 @@ class TestUserManagement:
         assert "users" in data
         assert "total" in data
 
+    async def test_list_users_filters_by_creator_agent_governance(
+        self, client, admin_headers
+    ):
+        suffix = uuid.uuid4().hex[:8]
+
+        agent_a_name = f"gov_a_{suffix}"
+        agent_b_name = f"gov_b_{suffix}"
+
+        agent_a = await client.post(
+            "/api/agents/",
+            json={"username": agent_a_name, "password": "Agent@2026!"},
+            headers=admin_headers,
+        )
+        assert agent_a.status_code == 201
+        agent_a_id = agent_a.json()["id"]
+
+        agent_b = await client.post(
+            "/api/agents/",
+            json={"username": agent_b_name, "password": "Agent@2026!"},
+            headers=admin_headers,
+        )
+        assert agent_b.status_code == 201
+        agent_b_id = agent_b.json()["id"]
+
+        policy_res = await client.patch(
+            "/admin/api/agent-level-policies/3",
+            json={"can_create_sub_agents": True},
+            headers=admin_headers,
+        )
+        assert policy_res.status_code == 200
+
+        profile_a = await client.patch(
+            f"/admin/api/agents/{agent_a_id}/business-profile",
+            json={"tier_level": 3, "risk_status": "watch"},
+            headers=admin_headers,
+        )
+        assert profile_a.status_code == 200
+
+        profile_b = await client.patch(
+            f"/admin/api/agents/{agent_b_id}/business-profile",
+            json={"tier_level": 1, "risk_status": "restricted"},
+            headers=admin_headers,
+        )
+        assert profile_b.status_code == 200
+
+        login_a = await client.post(
+            "/api/agents/auth/login",
+            json={"username": agent_a_name, "password": "Agent@2026!"},
+        )
+        assert login_a.status_code == 200
+        agent_a_headers = {"Authorization": f"Bearer {login_a.json()['access_token']}"}
+
+        login_b = await client.post(
+            "/api/agents/auth/login",
+            json={"username": agent_b_name, "password": "Agent@2026!"},
+        )
+        assert login_b.status_code == 200
+        agent_b_headers = {"Authorization": f"Bearer {login_b.json()['access_token']}"}
+
+        user_a = await client.post(
+            "/api/users/",
+            json={"username": f"gov_user_a_{suffix}", "password": "User@2026!"},
+            headers=agent_a_headers,
+        )
+        assert user_a.status_code == 201
+        user_b = await client.post(
+            "/api/users/",
+            json={"username": f"gov_user_b_{suffix}", "password": "User@2026!"},
+            headers=agent_b_headers,
+        )
+        assert user_b.status_code == 201
+
+        by_tier = await client.get(
+            "/api/users/",
+            params={"creator_agent_tier_level": 3, "page_size": 500},
+            headers=admin_headers,
+        )
+        assert by_tier.status_code == 200
+        tier_agent_ids = {
+            item["created_by_agent_id"] for item in by_tier.json()["users"]
+        }
+        assert agent_a_id in tier_agent_ids
+        assert agent_b_id not in tier_agent_ids
+
+        by_risk = await client.get(
+            "/api/users/",
+            params={"creator_agent_risk_status": "restricted", "page_size": 500},
+            headers=admin_headers,
+        )
+        assert by_risk.status_code == 200
+        risk_agent_ids = {
+            item["created_by_agent_id"] for item in by_risk.json()["users"]
+        }
+        assert agent_b_id in risk_agent_ids
+        assert agent_a_id not in risk_agent_ids
+
+        by_create_sub = await client.get(
+            "/api/users/",
+            params={
+                "creator_agent_can_create_sub_agents": True,
+                "page_size": 500,
+            },
+            headers=admin_headers,
+        )
+        assert by_create_sub.status_code == 200
+        create_sub_agent_ids = {
+            item["created_by_agent_id"] for item in by_create_sub.json()["users"]
+        }
+        assert agent_a_id in create_sub_agent_ids
+        assert agent_b_id not in create_sub_agent_ids
+
     async def test_get_user_detail(self, client, admin_headers):
         suffix = uuid.uuid4().hex[:8]
         r = await client.post("/api/users/", json={

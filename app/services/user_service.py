@@ -32,7 +32,7 @@ r"""
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
@@ -46,6 +46,8 @@ from app.models.main.models import (
     GameProject,
     User,
 )
+from app.models.main.agent_profile import AgentBusinessProfile
+from app.models.main.project_access import AgentLevelPolicy
 from app.models.main.accounting import AccountingWallet
 from app.schemas.user import (
     AuthorizationCreateRequest,
@@ -122,6 +124,9 @@ async def list_users(
     level_filter: str | None,
     project_id_filter: int | None = None,
     creator_agent_id_filter: int | None = None,
+    creator_agent_tier_level_filter: int | None = None,
+    creator_agent_can_create_sub_agents_filter: bool | None = None,
+    creator_agent_risk_status_filter: str | None = None,
 ) -> UserListResponse:
     """
     查询用户列表。
@@ -131,6 +136,9 @@ async def list_users(
       - level：过滤 Authorization.user_level。
       - project_id：过滤 Authorization.game_project_id。
       - creator_agent_id：管理员查看指定代理创建的用户。
+      - creator_agent_tier_level：管理员按创建代理业务等级过滤。
+      - creator_agent_can_create_sub_agents：管理员按创建代理下级创建能力过滤。
+      - creator_agent_risk_status：管理员按创建代理风险状态过滤。
     """
     query = select(User).where(User.is_deleted == False)  # noqa: E712
 
@@ -139,6 +147,50 @@ async def list_users(
 
     if admin is not None and creator_agent_id_filter:
         query = query.where(User.created_by_agent_id == creator_agent_id_filter)
+
+    if admin is not None and (
+        creator_agent_tier_level_filter is not None
+        or creator_agent_can_create_sub_agents_filter is not None
+        or creator_agent_risk_status_filter is not None
+    ):
+        agent_filter_query = (
+            select(Agent.id)
+            .outerjoin(
+                AgentBusinessProfile,
+                AgentBusinessProfile.agent_id == Agent.id,
+            )
+            .outerjoin(
+                AgentLevelPolicy,
+                AgentLevelPolicy.level == func.coalesce(
+                    AgentBusinessProfile.tier_level,
+                    1,
+                ),
+            )
+        )
+
+        if creator_agent_tier_level_filter is not None:
+            agent_filter_query = agent_filter_query.where(
+                func.coalesce(AgentBusinessProfile.tier_level, 1)
+                == creator_agent_tier_level_filter
+            )
+
+        if creator_agent_risk_status_filter is not None:
+            agent_filter_query = agent_filter_query.where(
+                func.coalesce(AgentBusinessProfile.risk_status, "normal")
+                == creator_agent_risk_status_filter
+            )
+
+        if creator_agent_can_create_sub_agents_filter is not None:
+            effective_can_create = func.coalesce(
+                AgentBusinessProfile.can_create_sub_agents_override,
+                AgentLevelPolicy.can_create_sub_agents,
+                literal(False),
+            )
+            agent_filter_query = agent_filter_query.where(
+                effective_can_create == creator_agent_can_create_sub_agents_filter
+            )
+
+        query = query.where(User.created_by_agent_id.in_(agent_filter_query))
 
     if status_filter:
         query = query.where(User.status == status_filter)
