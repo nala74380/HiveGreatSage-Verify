@@ -107,6 +107,39 @@ BALANCE_TYPE_LABELS = {
 }
 
 
+async def _assert_wallet_can_operate(
+    wallet: AccountingWallet,
+    operation: str,
+) -> None:
+    """
+    统一校验钱包状态是否允许指定操作。
+
+    operation:
+      - recharge: wallet 必须 active 或 locked
+      - credit: wallet 必须 active 或 locked
+      - freeze/unfreeze: wallet 必须 active 或 locked
+      - consume: wallet 必须 active，且 risk_status 不能为 frozen
+      - refund: wallet 必须 active 或 locked（系统返点允许）
+    """
+    if operation in ("consume",):
+        if wallet.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"钱包状态为 {wallet.status}，不允许执行 {operation} 操作",
+            )
+        if wallet.risk_status in ("frozen",):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"钱包风控状态为 {wallet.risk_status}，不允许执行 {operation} 操作",
+            )
+    else:
+        if wallet.status not in ("active", "locked"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"钱包状态为 {wallet.status}，不允许执行 {operation} 操作",
+            )
+
+
 # ─────────────────────────────────────────────────────────────
 # 基础工具（本地特有函数 + 共享模块别名）
 # ─────────────────────────────────────────────────────────────
@@ -478,6 +511,7 @@ async def recharge_agent(
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db, for_update=True)
+    await _assert_wallet_can_operate(wallet, "recharge")
 
     document = await _create_document(
         document_type="recharge",
@@ -529,6 +563,7 @@ async def credit_agent(
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db, for_update=True)
+    await _assert_wallet_can_operate(wallet, "credit")
 
     document = await _create_document(
         document_type="credit",
@@ -580,6 +615,7 @@ async def freeze_credit(
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db, for_update=True)
+    await _assert_wallet_can_operate(wallet, "freeze")
 
     credit = _money(wallet.credit_balance)
     frozen = _money(wallet.frozen_credit)
@@ -639,6 +675,7 @@ async def unfreeze_credit(
 
     amount_dec = _money(amount)
     wallet = await get_or_create_wallet(agent_id, db, for_update=True)
+    await _assert_wallet_can_operate(wallet, "unfreeze")
 
     frozen = _money(wallet.frozen_credit)
 
@@ -777,6 +814,7 @@ async def consume_agent_authorization_points(
         }
 
     wallet = await get_or_create_wallet(agent_id, db, for_update=True)
+    await _assert_wallet_can_operate(wallet, "consume")
 
     charged = _money(wallet.charged_balance)
     credit = _money(wallet.credit_balance)
