@@ -135,7 +135,7 @@
           <el-col :span="8">
             <div class="mini-balance-card">
               <div class="mini-label">充值点数</div>
-              <div class="mini-value">{{ fmt(balance.recharge_balance) }}</div>
+              <div class="mini-value">{{ fmt(balance.charged_balance) }}</div>
             </div>
           </el-col>
           <el-col :span="8">
@@ -185,7 +185,7 @@
           </el-table-column>
           <el-table-column label="项目代号" width="140">
             <template #default="{ row }">
-              <span class="mono">{{ row.code_name }}</span>
+              <span class="mono">{{ row.game_project_code }}</span>
             </template>
           </el-table-column>
           <el-table-column label="授权到期" min-width="160">
@@ -262,7 +262,7 @@ const loading = ref(false)
 const profile = ref(null)
 
 const balance = ref({
-  recharge_balance: 0,
+  charged_balance: 0,
   credit_balance: 0,
   frozen_credit: 0,
 })
@@ -280,7 +280,7 @@ const fetchProfile = async () => {
 const fetchBalance = async () => {
   const res = await agentBalanceApi.myBalance()
   balance.value = {
-    recharge_balance: res.data.recharge_balance ?? 0,
+    charged_balance: res.data.charged_balance ?? 0,
     credit_balance: res.data.credit_balance ?? 0,
     frozen_credit: res.data.frozen_credit ?? 0,
   }

@@ -182,7 +182,6 @@ async def ledger(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     entry_type: str | None = Query(default=None, description="账本类型：recharge/credit/freeze/unfreeze/consume/refund/adjust/reversal"),
-    tx_type: str | None = Query(default=None, description="兼容旧字段，等同 entry_type"),
     agent_id: int | None = Query(default=None),
     related_user_id: int | None = Query(default=None),
     related_project_id: int | None = Query(default=None),
@@ -194,7 +193,7 @@ async def ledger(
         db=db,
         page=page,
         page_size=page_size,
-        tx_type=entry_type or tx_type,
+        entry_type=entry_type,
         related_user_id=related_user_id,
         related_project_id=related_project_id,
     )

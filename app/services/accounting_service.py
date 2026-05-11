@@ -1105,7 +1105,7 @@ async def get_balance_transactions(
     db: AsyncSession,
     page: int = 1,
     page_size: int = 50,
-    tx_type: str | None = None,
+    entry_type: str | None = None,
     related_user_id: int | None = None,
     related_project_id: int | None = None,
 ) -> dict:
@@ -1114,8 +1114,8 @@ async def get_balance_transactions(
     if agent_id is not None:
         query = query.where(AccountingLedgerEntry.agent_id == agent_id)
 
-    if tx_type:
-        query = query.where(AccountingLedgerEntry.entry_type == tx_type)
+    if entry_type:
+        query = query.where(AccountingLedgerEntry.entry_type == entry_type)
 
     if related_user_id:
         query = query.where(AccountingLedgerEntry.related_user_id == related_user_id)
@@ -1218,9 +1218,7 @@ async def get_balance_transactions(
             "id": entry.id,
             "entry_no": entry.entry_no,
 
-            # 旧字段兼容
-            "tx_type": entry.entry_type,
-            "tx_type_label": TX_TYPE_LABELS.get(entry.entry_type, entry.entry_type),
+            "entry_type_label": TX_TYPE_LABELS.get(entry.entry_type, entry.entry_type),
             "balance_type": entry.balance_type,
             "balance_type_label": BALANCE_TYPE_LABELS.get(entry.balance_type, entry.balance_type),
 

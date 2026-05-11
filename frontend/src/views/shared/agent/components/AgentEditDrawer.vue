@@ -413,7 +413,7 @@
                   <el-table-column label="类型" width="90">
                     <template #default="{ row }">
                       <el-tag size="small" effect="light">
-                        {{ row.tx_type_label || row.entry_type || row.tx_type }}
+                        {{ row.entry_type_label || row.entry_type }}
                       </el-tag>
                     </template>
                   </el-table-column>
@@ -891,10 +891,10 @@ const revokeAuth = async (row) => {
 
 const balanceValue = (type) => {
   if (type === 'charged') {
-    return balance.value?.charged_points ?? balance.value?.charged_balance
+    return balance.value?.charged_balance
   }
   if (type === 'credit') {
-    return balance.value?.credit_points ?? balance.value?.credit_balance
+    return balance.value?.credit_balance
   }
   return 0
 }

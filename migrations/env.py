@@ -40,6 +40,7 @@ from app.models.main.project_access import (  # noqa: F401
     ProjectAccessPolicy,
 )
 from app.models.main.system_setting import SystemSetting  # noqa: F401
+from app.models.main.audit import AuditLog  # noqa: F401
 
 # 注意：游戏库模型（GameBase）不在此导入。
 # 游戏表不经过 Alembic，由 GameBase.metadata.create_all() 在游戏库初始化时建表。

@@ -855,14 +855,14 @@ async def get_creator_agent_detail(
     agent_payload = {
         "id": agent.id,
         "username": agent.username,
-        "level": agent.hierarchy_depth,
+        "hierarchy_depth": agent.hierarchy_depth,
         "status": agent.status,
         "commission_rate": float(agent.commission_rate) if agent.commission_rate is not None else None,
         "created_at": agent.created_at.isoformat() if agent.created_at else None,
         "authorized_projects": authorized_projects,
         "balance": {
-            "charged_points": float(wallet.charged_balance) if wallet else 0.0,
-            "credit_points": float(wallet.credit_balance) if wallet else 0.0,
+            "charged_balance": float(wallet.charged_balance) if wallet else 0.0,
+            "credit_balance": float(wallet.credit_balance) if wallet else 0.0,
             "frozen_credit": float(wallet.frozen_credit) if wallet else 0.0,
             "available_total": float(wallet.available_total) if wallet else 0.0,
         },

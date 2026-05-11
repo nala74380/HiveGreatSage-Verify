@@ -132,7 +132,7 @@
 
         <el-table-column label="类型" width="120">
           <template #default="{ row }">
-            <el-tag :type="txTagType(row.tx_type)" effect="plain">
+            <el-tag :type="txTagType(row.entry_type)" effect="plain">
               {{ txTypeLabel(row) }}
             </el-tag>
           </template>
@@ -158,7 +158,7 @@
           <template #default="{ row }">
             <div class="business-text">{{ row.business_text || row.description || '—' }}</div>
 
-            <div v-if="row.tx_type === 'consume'" class="detail-line">
+            <div v-if="row.entry_type === 'consume'" class="detail-line">
               <el-tag size="small" effect="plain" type="info">
                 用户：{{ row.related_username || `ID=${row.related_user_id}` }}
               </el-tag>
@@ -180,7 +180,7 @@
               </el-tag>
             </div>
 
-            <div v-if="row.tx_type === 'refund'" class="detail-line refund-line">
+            <div v-if="row.entry_type === 'refund'" class="detail-line refund-line">
               <el-tag size="small" effect="plain" type="success">返点</el-tag>
               <el-tag size="small" effect="plain" type="info">
                 用户：{{ row.related_username || `ID=${row.related_user_id}` }}
@@ -254,7 +254,7 @@
  * 当前字段口径:
  *   - charged_balance 表示充值点数余额。
  *   - credit_balance 表示授信点数余额。
- *   - 不兼容旧字段 recharge_balance / charged_points / credit_points。
+ *   - 已清理旧字段，统一使用 charged_balance / credit_balance / entry_type / entry_type_label。
  */
 
 import { computed, onMounted, ref } from 'vue'
@@ -313,7 +313,7 @@ const fetchTransactions = async () => {
     const params = {
       page: page.value,
       page_size: pageSize.value,
-      tx_type: txType.value || undefined,
+      entry_type: txType.value || undefined,
     }
 
     const res = await agentBalanceApi.myTransactions(params)
@@ -355,7 +355,7 @@ const txTypeLabel = (row) => {
     adjust: '调整',
   }
 
-  return map[row.tx_type] || row.tx_type_label || row.tx_type || '未知'
+  return map[row.entry_type] || row.entry_type_label || row.entry_type || '未知'
 }
 
 const txTagType = (type) => {

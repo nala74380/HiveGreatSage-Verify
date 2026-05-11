@@ -922,7 +922,7 @@ async def scope_get_transactions(
     agent_id: int,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    tx_type: str | None = Query(default=None),
+    entry_type: str | None = Query(default=None),
     current_agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
@@ -936,7 +936,7 @@ async def scope_get_transactions(
         db=db,
         page=page,
         page_size=page_size,
-        tx_type=tx_type,
+        entry_type=entry_type,
     )
 
 

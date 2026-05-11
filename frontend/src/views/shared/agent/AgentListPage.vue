@@ -142,8 +142,8 @@
               {{ numberText(row.balance?.available_total) }}
             </span>
             <div class="pts-detail">
-              充值 {{ numberText(row.balance?.charged_points ?? row.balance?.charged_balance) }} +
-              授信 {{ numberText((row.balance?.credit_points ?? row.balance?.credit_balance ?? 0) - (row.balance?.frozen_credit ?? 0)) }}
+              充值 {{ numberText(row.balance?.charged_balance) }} +
+              授信 {{ numberText((row.balance?.credit_balance ?? 0) - (row.balance?.frozen_credit ?? 0)) }}
             </div>
           </template>
         </el-table-column>

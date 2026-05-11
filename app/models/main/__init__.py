@@ -23,6 +23,16 @@ from app.models.main.accounting import (
     AgentMonthlyBill,
 )
 
+from app.models.main.agent_profile import AgentBusinessProfile
+from app.models.main.project_access import (
+    AgentLevelPolicy,
+    AgentProjectAccessInvite,
+    AgentProjectAuthRequest,
+    ProjectAccessPolicy,
+)
+from app.models.main.system_setting import SystemSetting
+from app.models.main.audit import AuditLog
+
 __all__ = [
     "Admin",
     "Agent",
@@ -43,4 +53,11 @@ __all__ = [
     "AccountingAdjustmentRequest",
     "AccountingRiskEvent",
     "AgentMonthlyBill",
+    "AgentBusinessProfile",
+    "AgentLevelPolicy",
+    "AgentProjectAccessInvite",
+    "AgentProjectAuthRequest",
+    "ProjectAccessPolicy",
+    "SystemSetting",
+    "AuditLog",
 ]

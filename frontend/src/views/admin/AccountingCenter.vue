@@ -162,7 +162,7 @@
             <el-table-column label="类型" width="110">
               <template #default="{ row }">
                 <el-tag :type="entryTypeTag(row.entry_type)" effect="light">
-                  {{ row.entry_type_label || row.tx_type_label || row.entry_type }}
+                  {{ row.entry_type_label || row.entry_type }}
                 </el-tag>
               </template>
             </el-table-column>

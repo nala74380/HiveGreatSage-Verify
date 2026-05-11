@@ -86,8 +86,8 @@
               <div class="overview-block">
                 <div class="block-title">点数余额</div>
                 <el-descriptions :column="1" size="small" border>
-                  <el-descriptions-item label="充值点数">{{ numberText(balance?.charged_points) }}</el-descriptions-item>
-                  <el-descriptions-item label="授信点数">{{ numberText(balance?.credit_points) }}</el-descriptions-item>
+                  <el-descriptions-item label="充值点数">{{ numberText(balance?.charged_balance) }}</el-descriptions-item>
+                  <el-descriptions-item label="授信点数">{{ numberText(balance?.credit_balance) }}</el-descriptions-item>
                   <el-descriptions-item label="冻结授信">{{ numberText(balance?.frozen_credit) }}</el-descriptions-item>
                   <el-descriptions-item label="可用授信">{{ numberText(balance?.available_credit) }}</el-descriptions-item>
                   <el-descriptions-item label="可用总点数">{{ numberText(balance?.available_total) }}</el-descriptions-item>
@@ -177,7 +177,7 @@
           <el-tab-pane label="最近流水" name="transactions">
             <el-table :data="transactions" size="small" stripe empty-text="暂无流水记录">
               <el-table-column label="时间" width="160"><template #default="{ row }">{{ row.created_at ? formatDatetime(row.created_at) : '—' }}</template></el-table-column>
-              <el-table-column label="类型" width="90"><template #default="{ row }"><el-tag size="small" effect="light">{{ row.tx_type_label || row.tx_type }}</el-tag></template></el-table-column>
+              <el-table-column label="类型" width="90"><template #default="{ row }"><el-tag size="small" effect="light">{{ row.entry_type_label || row.entry_type }}</el-tag></template></el-table-column>
               <el-table-column label="余额类型" width="100"><template #default="{ row }">{{ row.balance_type_label || row.balance_type }}</template></el-table-column>
               <el-table-column label="变动" width="110" align="right"><template #default="{ row }"><span :class="Number(row.amount || 0) >= 0 ? 'amt-pos' : 'amt-neg'">{{ Number(row.amount || 0) >= 0 ? '+' : '' }}{{ numberText(row.amount) }}</span></template></el-table-column>
               <el-table-column label="变后余额" width="110" align="right"><template #default="{ row }">{{ numberText(row.balance_after) }}</template></el-table-column>
