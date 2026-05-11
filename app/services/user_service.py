@@ -539,7 +539,7 @@ async def update_authorization(
     auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
     project = await _get_project_or_404(auth.game_project_id, db)
 
-    # 代理只能升级设备数，不能改等级和状态
+    # 代理只能通过 /upgrade 升级设备数，不能改等级、状态、到期时间
     if admin is None and agent is not None:
         if body.user_level is not None and body.user_level != auth.user_level:
             raise HTTPException(
@@ -551,11 +551,15 @@ async def update_authorization(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="代理不能修改授权状态，请联系管理员处理",
             )
-        # 只能增加设备数
-        if body.authorized_devices is not None and body.authorized_devices < int(auth.authorized_devices or 0):
+        if "valid_until" in body.model_fields_set:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="代理不能减少授权设备数",
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="代理不能直接修改授权到期时间，请走续费/升级专用接口",
+            )
+        if body.authorized_devices is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="代理不能直接修改授权设备数，请走升级专用接口 /upgrade",
             )
 
     consumed_points = 0.0
@@ -644,6 +648,13 @@ async def preview_authorization_upgrade(
     auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
     project = await _get_project_or_404(auth.game_project_id, db)
 
+    # 代理升级前必须复核代理仍拥有该项目授权且未过期
+    if agent is not None:
+        await _assert_agent_project_auth_valid(
+            db=db, agent=agent, project_id=project.id,
+            project_name=project.display_name,
+        )
+
     old_devices = int(auth.authorized_devices or 0)
     new_devices = old_devices + additional_devices
     now = datetime.now(timezone.utc)
@@ -711,6 +722,13 @@ async def upgrade_authorization(
 
     auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
     project = await _get_project_or_404(auth.game_project_id, db)
+
+    # 代理升级前必须复核代理仍拥有该项目授权且未过期
+    if agent is not None:
+        await _assert_agent_project_auth_valid(
+            db=db, agent=agent, project_id=project.id,
+            project_name=project.display_name,
+        )
 
     old_devices = int(auth.authorized_devices or 0)
     new_devices = old_devices + body.additional_devices
@@ -924,6 +942,39 @@ async def _get_authorization_or_404(
         )
 
     return auth
+
+
+async def _assert_agent_project_auth_valid(
+    *,
+    db: AsyncSession,
+    agent: Agent,
+    project_id: int,
+    project_name: str = "",
+) -> None:
+    """
+    校验代理当前仍拥有指定项目的有效授权（status=active 且未过期）。
+    用于用户授权、升级、续费等需要代理项目准入的操作前置校验。
+    """
+    result = await db.execute(
+        select(AgentProjectAuth).where(
+            AgentProjectAuth.agent_id == agent.id,
+            AgentProjectAuth.project_id == project_id,
+            AgentProjectAuth.status == "active",
+        )
+    )
+    auth_record = result.scalar_one_or_none()
+    if not auth_record:
+        name = project_name or f"项目 {project_id}"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"代理没有项目「{name}」的授权权限",
+        )
+    if auth_record.valid_until is not None and _ensure_aware(auth_record.valid_until) <= datetime.now(timezone.utc):
+        name = project_name or f"项目 {project_id}"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"代理的项目「{name}」授权已过期",
+        )
 
 
 async def _assert_username_unique(username: str, db: AsyncSession) -> None:

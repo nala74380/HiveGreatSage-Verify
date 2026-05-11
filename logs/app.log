@@ -104,3 +104,16 @@
 2026-05-11 16:45:47.628 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
 2026-05-11 16:45:47.629 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
 2026-05-11 16:45:47.721 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-11 16:55:46.466 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-11 16:55:46.477 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-11 16:55:48.014 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-11 16:55:48.015 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-11 16:55:48.104 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-11 17:00:46.874 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-11 17:00:46.877 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-11 17:00:48.621 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-11 17:00:48.623 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-11 17:00:48.712 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-11 17:00:50.414 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-11 17:00:50.414 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-11 17:00:50.514 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
