@@ -49,7 +49,6 @@ from app.config import settings
 from app.core.redis_client import (
     delete_all_refresh_tokens,
     delete_refresh_token_v2,
-    expire_refresh_token_v2,
     get_refresh_token_by_value,
     revoke_token,
     store_refresh_token_v2,

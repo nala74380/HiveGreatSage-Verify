@@ -144,7 +144,7 @@ class TestAgentSubtree:
     async def test_subtree_level_correct(
         self, client, admin_headers, seed_agents
     ):
-        """各层 level 字段应正确（L1→L2→L3）。"""
+        """各层 hierarchy_depth 字段应正确（L1→L2→L3）。"""
         root_id = seed_agents["root"]["id"]
         r = await client.get(
             f"/api/agents/{root_id}/subtree",
@@ -409,8 +409,8 @@ class TestRevokeAll:
         self, client, admin_headers, project_id
     ):
         """
-        revoke-all 后当前 AT 在剩余有效期内仍可使用（JWT 固有限制）。
-        /me 接口应仍然返回 200（AT 未到黑名单TTL过期前）。
+        revoke-all 后当前 AT 已写入黑名单 + token_version 递增，
+        /me 接口应返回 401。
         """
         access_token, _ = await self._login_user(
             client, admin_headers, project_id

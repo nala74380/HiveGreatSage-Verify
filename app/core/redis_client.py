@@ -366,10 +366,11 @@ async def expire_refresh_token_v2(
     grace_seconds: int = _RT_ROTATION_GRACE_SECONDS,
 ) -> None:
     """
-    RT 轮换时调用：将旧 RT 的 TTL 设为短宽限期而非立即删除。
+    [DEPRECATED] 当前采用严格轮换策略，此函数不应再被调用。
 
-    目的：防止客户端在"收到新 RT 但尚未持久化"时崩溃导致设备永久锁定。
-    宽限期内旧 RT 仍可用（一次），之后由 Redis 自动过期清理。
+    历史用途：RT 轮换时将旧 RT 的 TTL 设为短宽限期。
+    当前主链路使用 delete_refresh_token_v2() 立即删除旧 RT。
+    保留此函数仅用于未来可能的策略回退参考。
     """
     pipe = redis.pipeline()
     pipe.expire(f"refresh:{user_id}:{jti}", grace_seconds)
