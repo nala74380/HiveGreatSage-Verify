@@ -415,8 +415,8 @@ async def refresh_access_token(
     new_refresh_token = create_refresh_token()
     rt_ttl = get_refresh_token_ttl_seconds()
 
-    # RT 轮换：旧 RT 设 60s 宽限期，防止客户端崩溃丢失新 RT 后永久锁定
-    await expire_refresh_token_v2(
+    # RT 严格轮换：旧 RT 立即删除，防止并发刷新产生多个有效 RT。
+    await delete_refresh_token_v2(
         redis=redis,
         user_id=user.id,
         jti=old_jti,
@@ -508,8 +508,9 @@ async def logout_user(
     """
     登出：将 AT 加入黑名单，并删除对应 RT 及其反查索引。
 
-    AT 已过期时也允许正常登出（直接跳过黑名单写入）。
+    AT 已过期时跳过黑名单写入，但仍根据 refresh_token 删除 RT。
     """
+    # 吊销 AT（如果仍在有效期内）
     try:
         payload = decode_access_token(access_token_str)
         jti: str = payload.get("jti", "")
@@ -517,20 +518,18 @@ async def logout_user(
 
         remaining = get_access_token_remaining_seconds(exp)
         await revoke_token(redis, jti, remaining)
+    except JWTError:
+        pass  # AT 已过期，跳过黑名单
 
-        rt_data = await get_refresh_token_by_value(redis, body.refresh_token)
-        if rt_data is None:
-            return MessageResponse(message="登出成功")
-
+    # 删除 RT（无论 AT 是否过期）
+    rt_data = await get_refresh_token_by_value(redis, body.refresh_token)
+    if rt_data is not None:
         await delete_refresh_token_v2(
             redis=redis,
             user_id=int(rt_data["user_id"]),
             jti=str(rt_data["jti"]),
             rt_value=body.refresh_token,
         )
-
-    except JWTError:
-        pass
 
     return MessageResponse(message="登出成功")
 

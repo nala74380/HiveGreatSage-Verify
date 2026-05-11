@@ -397,9 +397,11 @@ class TestRevokeAll:
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
-        # 用原 RT 刷新，应失败
+        # 用原 RT 刷新，应失败（严格轮换，旧 RT 已删除）
         r = await client.post("/api/auth/refresh", json={
             "refresh_token": refresh_token,
+            "device_fingerprint": "test_agent_device_001",
+            "client_type": "android",
         })
         assert r.status_code == 401
 
