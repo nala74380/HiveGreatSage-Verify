@@ -81,7 +81,7 @@
     </el-card>
 
     <!-- 批量操作 -->
-    <div v-if="selectedIds.length > 0" class="batch-toolbar">
+    <div v-if="auth.isAdmin && selectedIds.length > 0" class="batch-toolbar">
       <span class="batch-info">已选 {{ selectedIds.length }} 条</span>
 
       <el-button
@@ -109,7 +109,7 @@
         style="width: 100%"
         @selection-change="onSelectionChange"
       >
-        <el-table-column type="selection" width="44" />
+        <el-table-column v-if="auth.isAdmin" type="selection" width="44" />
 
         <el-table-column prop="id" label="ID" width="65" />
 
@@ -119,9 +119,17 @@
               <el-button
                 text
                 class="username-link"
-                @click="router.push({ path: '/devices', query: { user_id: row.id, username: row.username } })"
+                @click="router.push(`/users/${row.id}`)"
               >
                 {{ row.username }}
+              </el-button>
+              <el-button
+                text
+                size="small"
+                class="device-entry-link"
+                @click="router.push({ path: '/devices', query: { user_id: row.id, username: row.username } })"
+              >
+                设备
               </el-button>
               <StatusBadge :status="row.status" type="user" />
             </div>
@@ -248,7 +256,7 @@
 
             <el-popconfirm
               v-if="auth.isAdmin"
-              title="确认删除该用户？删除后用户列表将不再显示，但授权、设备、流水记录会保留用于审计。"
+              title="确认删除该用户？管理员删除会触发符合条件的返点清算；授权、设备、流水记录会保留用于审计。"
               confirm-button-text="确认删除"
               cancel-button-text="取消"
               @confirm="deleteUser(row)"
@@ -398,7 +406,7 @@
             </div>
 
             <div v-if="auth.isAgent" class="hint-text">
-              代理授权项目会按项目定价、项目等级、授权设备数量、授权周期扣点。
+              代理授权项目会按项目定价、项目等级、授权设备数量、授权周期扣点。当前仍是先创建用户、再授权项目的非原子流程；扣点预览与原子创建接口待接入，可能出现用户创建成功但授权失败。
             </div>
           </el-form-item>
         </template>
