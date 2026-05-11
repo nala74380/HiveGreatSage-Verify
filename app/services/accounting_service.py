@@ -90,7 +90,7 @@ BILLING_RULES = {
     },
 }
 
-TX_TYPE_LABELS = {
+ENTRY_TYPE_LABELS = {
     "recharge": "充值",
     "credit": "授信",
     "consume": "授权扣点",
@@ -1218,14 +1218,14 @@ async def get_balance_transactions(
             "id": entry.id,
             "entry_no": entry.entry_no,
 
-            "entry_type_label": TX_TYPE_LABELS.get(entry.entry_type, entry.entry_type),
+            "entry_type_label": ENTRY_TYPE_LABELS.get(entry.entry_type, entry.entry_type),
             "balance_type": entry.balance_type,
             "balance_type_label": BALANCE_TYPE_LABELS.get(entry.balance_type, entry.balance_type),
 
             # 新字段
             "direction": entry.direction,
             "entry_type": entry.entry_type,
-            "entry_type_label": TX_TYPE_LABELS.get(entry.entry_type, entry.entry_type),
+            "entry_type_label": ENTRY_TYPE_LABELS.get(entry.entry_type, entry.entry_type),
             "business_category": entry.business_category,
             "business_subtype": entry.business_subtype,
 
