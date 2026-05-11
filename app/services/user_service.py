@@ -437,24 +437,12 @@ async def grant_authorization(
                 detail="代理授权设备数必须大于 0",
             )
 
-        agent_project_auth_result = await db.execute(
-            select(AgentProjectAuth).where(
-                AgentProjectAuth.agent_id == agent.id,
-                AgentProjectAuth.project_id == body.game_project_id,
-                AgentProjectAuth.status == "active",
-            )
+        await _assert_agent_project_auth_valid(
+            db=db,
+            agent=agent,
+            project_id=body.game_project_id,
+            project_name=project.display_name,
         )
-        agent_pa = agent_project_auth_result.scalar_one_or_none()
-        if not agent_pa:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"代理没有项目「{project.display_name}」的授权权限",
-            )
-        if agent_pa.valid_until is not None and _ensure_aware(agent_pa.valid_until) <= now:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"代理的项目「{project.display_name}」授权已过期",
-            )
 
     existing_result = await db.execute(
         select(Authorization).where(
