@@ -354,12 +354,18 @@ async def soft_delete_user(
 
     规则:
       - 管理员可以删除所有用户。
-      - 代理只能删除自己创建的用户。
+      - 代理不允许删除用户账户，只能停用用户或停用项目授权。
       - 只做软删除 is_deleted=True，不物理删除数据。
       - 授权记录、设备记录、流水记录保留，便于后续审计。
-      - 删除前先按授权扣点快照自动返点。
+      - 管理员删除前先按授权扣点快照自动返点。
       - 返点只处理代理实际扣过点且未过期的授权。
     """
+    if agent is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="代理不允许删除用户账户，请停用用户或停用项目授权",
+        )
+
     user = await _get_user_or_404(user_id, db)
     _assert_can_access_user(user=user, admin=admin, agent=agent)
 

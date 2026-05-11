@@ -720,6 +720,10 @@
                   style="width: 100%"
                 />
               </div>
+
+              <div v-if="auth.isAgent" class="hint-text">
+                代理授权会扣点，扣点预览待接入；当前提交后由后端直接扣点并创建授权。
+              </div>
             </el-form-item>
 
             <el-form-item>
@@ -1160,9 +1164,14 @@ function clearSelection() {
 
 async function batchDelete() {
   if (!selectedIds.value.length) return
+  if (!auth.isAdmin) {
+    ElMessage.warning('只有管理员可以批量删除用户')
+    clearSelection()
+    return
+  }
 
   await ElMessageBox.confirm(
-    `确认删除 ${selectedIds.value.length} 个用户？删除后用户列表将不再显示，但授权、设备、流水记录会保留用于审计。`,
+    `确认删除 ${selectedIds.value.length} 个用户？管理员删除会触发符合条件的返点清算；授权、设备、流水记录会保留用于审计。`,
     '批量删除确认',
     {
       confirmButtonText: '确认删除',
@@ -1502,6 +1511,11 @@ onMounted(async () => {
   padding: 0;
   font-weight: 700;
   color: #2563eb;
+}
+
+.device-entry-link {
+  padding: 0;
+  font-size: 12px;
 }
 
 .creator-cell {

@@ -329,7 +329,7 @@ async def delete_user_endpoint(
         可删除所有用户。
 
     Agent:
-        只能删除自己创建的用户。
+        不允许删除用户账户，只能停用用户或停用项目授权。
 
     注意:
         这是 /api/users/{user_id} 共用删除接口。
