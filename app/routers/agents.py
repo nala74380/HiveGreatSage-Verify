@@ -885,6 +885,7 @@ async def create_agent_in_scope_endpoint(
       - 新下级 hierarchy_depth = 当前代理 hierarchy_depth + 1。
       - 业务画像默认由后续策略治理，不在此接口由代理端设置。
     """
+    # ── 前置校验：用户名唯一性 ──
     exists_result = await db.execute(
         select(Agent).where(Agent.username == body.username)
     )
@@ -894,6 +895,41 @@ async def create_agent_in_scope_endpoint(
             detail=f"代理用户名 '{body.username}' 已存在",
         )
 
+    # ── 前置校验：业务画像与权限 ──
+    current_profile = await _business_profile_dict(
+        db=db,
+        agent_id=current_agent.id,
+    )
+
+    if not current_profile.get("can_create_sub_agents", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前代理业务画像不允许创建下级代理",
+        )
+
+    # ── 前置校验：创建前计数（不含本次请求）──
+    max_sub = int(current_profile.get("max_sub_agents", 0) or 0)
+    if max_sub > 0:
+        existing_subs = await _count_rows(
+            db, Agent, Agent.parent_agent_id == current_agent.id
+        )
+        if existing_subs >= max_sub:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"当前代理下级代理数已达上限（{max_sub} 个）",
+            )
+
+    # ── 前置校验：业务等级 ──
+    parent_tier_level = int(current_profile["tier_level"] or 0)
+    child_tier_level = parent_tier_level - 1
+
+    if child_tier_level < 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前代理业务等级不允许创建下级代理",
+        )
+
+    # ── 所有前置校验通过，创建 Agent ──
     child = Agent(
         username=body.username,
         password_hash=hash_password(body.password),
@@ -907,37 +943,6 @@ async def create_agent_in_scope_endpoint(
     db.add(child)
     await db.flush()
     await db.refresh(child)
-
-    current_profile = await _business_profile_dict(
-        db=db,
-        agent_id=current_agent.id,
-    )
-
-    if not current_profile.get("can_create_sub_agents", False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="当前代理业务画像不允许创建下级代理",
-        )
-
-    max_sub = int(current_profile.get("max_sub_agents", 0) or 0)
-    if max_sub > 0:
-        existing_subs = await _count_rows(
-            db, Agent, Agent.parent_agent_id == current_agent.id
-        )
-        if existing_subs >= max_sub:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"当前代理下级代理数已达上限（{max_sub} 个）",
-            )
-
-    parent_tier_level = int(current_profile["tier_level"] or 0)
-    child_tier_level = parent_tier_level - 1
-
-    if child_tier_level < 1:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="当前代理业务等级不允许创建下级代理",
-        )
 
     child_profile = AgentBusinessProfile(
         agent_id=child.id,

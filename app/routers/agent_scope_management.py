@@ -392,6 +392,12 @@ async def _ensure_parent_project_scope(
     parent_until = _aware(parent_auth.valid_until)
     child_until = _aware(child_valid_until)
 
+    if parent_until is not None and parent_until <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前代理的项目授权已过期，不能给下级开通",
+        )
+
     if parent_until is not None:
         if child_until is None:
             raise HTTPException(

@@ -134,7 +134,7 @@ class TestAgentSubtree:
 
         assert data["total_agents"] >= 4, "子树代理数应至少 4 个"
         assert data["root"]["id"] == root_id
-        assert data["root"]["level"] == 1
+        assert data["root"]["hierarchy_depth"] == 1
 
         # root 应有 2 个直属子节点
         child_ids = {c["id"] for c in data["root"]["children"]}
@@ -152,20 +152,20 @@ class TestAgentSubtree:
         )
         data = r.json()
         root_node = data["root"]
-        assert root_node["level"] == 1
+        assert root_node["hierarchy_depth"] == 1
 
         # 找到 child1（有子节点的那个）
         child1_node = next(
             c for c in root_node["children"]
             if c["id"] == seed_agents["child1"]["id"]
         )
-        assert child1_node["level"] == 2
+        assert child1_node["hierarchy_depth"] == 2
 
         # grandchild 在 child1 的 children 里
         assert len(child1_node["children"]) >= 1
         gc = child1_node["children"][0]
         assert gc["id"] == seed_agents["grandchild"]["id"]
-        assert gc["level"] == 3
+        assert gc["hierarchy_depth"] == 3
 
     async def test_subtree_leaf_node(
         self, client, admin_headers, seed_agents
