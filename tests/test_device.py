@@ -36,6 +36,7 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
     )
     assert r2.status_code == 201, f"授权失败: {r2.status_code} | {r2.text}"
 
+    authorization_id = r2.json()["id"]
     device_fp = f"dev_{uuid.uuid4().hex[:12]}"
     r3 = await client.post("/api/auth/login", json={
         "username": username,
@@ -45,7 +46,12 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
         "client_type": "android",
     })
     assert r3.status_code == 200, f"登录失败: {r3.status_code} | {r3.text}"
-    return {"access_token": r3.json()["access_token"], "device_fp": device_fp, "user_id": user_id}
+    return {
+        "access_token": r3.json()["access_token"],
+        "device_fp": device_fp,
+        "user_id": user_id,
+        "authorization_id": authorization_id,
+    }
 
 
 class TestHeartbeat:
@@ -162,3 +168,47 @@ class TestDeviceList:
         assert data["is_online"] is True
         assert data["source"] == "redis"
         assert data["game_data"]["gold"] == 9999
+
+    async def test_device_api_rejects_old_token_after_authorization_suspended(
+        self,
+        client,
+        admin_headers,
+        project_id,
+    ):
+        session = await _login(client, admin_headers, project_id)
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+        heartbeat_body = {
+            "device_fingerprint": session["device_fp"],
+            "status": "running",
+            "game_data": {"gold": 777},
+        }
+
+        r1 = await client.post("/api/device/heartbeat", json=heartbeat_body, headers=headers)
+        assert r1.status_code == 200
+
+        suspend = await client.post(
+            f"/api/users/{session['user_id']}/authorizations/{session['authorization_id']}/suspend",
+            headers=admin_headers,
+        )
+        assert suspend.status_code == 200, suspend.text
+
+        r2 = await client.post("/api/device/heartbeat", json=heartbeat_body, headers=headers)
+        assert r2.status_code == 403
+
+        r3 = await client.get("/api/device/list", headers=headers)
+        assert r3.status_code == 403
+
+        r4 = await client.get(
+            f"/api/device/data?device_fingerprint={session['device_fp']}",
+            headers=headers,
+        )
+        assert r4.status_code == 403
+
+        enable = await client.post(
+            f"/api/users/{session['user_id']}/authorizations/{session['authorization_id']}/enable",
+            headers=admin_headers,
+        )
+        assert enable.status_code == 200, enable.text
+
+        r5 = await client.get("/api/device/list", headers=headers)
+        assert r5.status_code == 200

@@ -66,6 +66,10 @@ export const accountingApi = {
     return http.get('/admin/api/accounting/refunds', { params })
   },
 
+  freezes(params = {}) {
+    return http.get('/admin/api/accounting/freezes', { params })
+  },
+
   initReconciliationBaseline(params = {}) {
     return http.post('/admin/api/accounting/reconciliation/init-baseline', null, { params })
   },

@@ -451,7 +451,7 @@
             class="inner-alert"
           />
 
-          <el-tabs v-model="chargeSubTab" type="border-card">
+          <el-tabs v-model="chargeSubTab" type="border-card" @tab-change="handleChargeSubTabChange">
             <el-tab-pane label="授权扣点快照" name="charges">
               <div class="filter-row">
                 <el-form inline :model="chargeFilter">
@@ -614,6 +614,95 @@
                   :total="refundPager.total"
                   @size-change="loadRefunds"
                   @current-change="loadRefunds"
+                />
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane label="授权冻结记录" name="freezes">
+              <div class="filter-row">
+                <el-form inline :model="freezeFilter">
+                  <el-form-item label="状态">
+                    <el-select v-model="freezeFilter.freeze_status" clearable placeholder="全部" style="width:130px">
+                      <el-option label="冻结中" value="frozen" />
+                      <el-option label="已释放" value="released" />
+                      <el-option label="已清算" value="refunded" />
+                      <el-option label="已取消" value="cancelled" />
+                    </el-select>
+                  </el-form-item>
+
+                  <el-form-item label="类型">
+                    <el-select v-model="freezeFilter.freeze_type" clearable placeholder="全部" style="width:150px">
+                      <el-option label="代理停用" value="agent_suspend" />
+                      <el-option label="管理员停用" value="admin_suspend" />
+                    </el-select>
+                  </el-form-item>
+
+                  <el-form-item>
+                    <el-button type="primary" @click="searchFreezes">查询</el-button>
+                    <el-button @click="resetFreezeFilter">重置</el-button>
+                  </el-form-item>
+                </el-form>
+              </div>
+
+              <el-table
+                v-loading="freezeLoading"
+                :data="freezeRows"
+                stripe
+                row-key="id"
+                empty-text="暂无授权冻结记录"
+              >
+                <el-table-column prop="id" label="ID" width="80" />
+
+                <el-table-column label="代理 / 用户 / 项目" min-width="230">
+                  <template #default="{ row }">
+                    <div class="main-text">{{ row.agent_username || `代理ID=${row.agent_id || '-'}` }}</div>
+                    <div class="sub-text">用户：{{ row.user_username || row.user_id }}</div>
+                    <div class="sub-text">项目：{{ row.project_name || row.project_id }}</div>
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="冻结" min-width="190">
+                  <template #default="{ row }">
+                    <el-tag :type="freezeStatusTag(row.status)" effect="light">
+                      {{ freezeStatusLabel(row.status) }}
+                    </el-tag>
+                    <div class="sub-text">{{ freezeTypeLabel(row.freeze_type) }}</div>
+                    <div class="sub-text">{{ formatDatetime(row.frozen_at) }}</div>
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="剩余权益" min-width="170">
+                  <template #default="{ row }">
+                    <div>{{ row.remaining_hours ?? '-' }} 小时</div>
+                    <div class="sub-text">预估 {{ fmtMoney(row.estimated_remaining_points) }} 点</div>
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="有效期" min-width="220">
+                  <template #default="{ row }">
+                    <div>原：{{ formatDatetime(row.original_valid_until) }}</div>
+                    <div class="sub-text">新：{{ formatDatetime(row.new_valid_until) }}</div>
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="释放 / 清算" min-width="220">
+                  <template #default="{ row }">
+                    <div>释放：{{ formatDatetime(row.released_at) }}</div>
+                    <div class="sub-text">清算：{{ formatDatetime(row.refunded_at) }}</div>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <div class="pager-row">
+                <span class="total-text">共 {{ freezePager.total }} 条</span>
+                <el-pagination
+                  v-model:current-page="freezePager.page"
+                  v-model:page-size="freezePager.pageSize"
+                  :page-sizes="[20, 50, 100]"
+                  layout="sizes, prev, pager, next"
+                  :total="freezePager.total"
+                  @size-change="loadFreezes"
+                  @current-change="loadFreezes"
                 />
               </div>
             </el-tab-pane>
@@ -1017,6 +1106,7 @@ const ledgerLoading = ref(false)
 const walletLoading = ref(false)
 const chargeLoading = ref(false)
 const refundLoading = ref(false)
+const freezeLoading = ref(false)
 const reconciliationLoading = ref(false)
 const reconciliationActionLoading = ref(false)
 
@@ -1039,6 +1129,7 @@ const loadingAny = computed(() => (
   || walletLoading.value
   || chargeLoading.value
   || refundLoading.value
+  || freezeLoading.value
   || reconciliationLoading.value
   || reconciliationActionLoading.value
 ))
@@ -1066,6 +1157,7 @@ const ledgerRows = ref([])
 const walletRows = ref([])
 const chargeRows = ref([])
 const refundRows = ref([])
+const freezeRows = ref([])
 const reconciliationRuns = ref([])
 
 const ledgerFilter = reactive({
@@ -1089,6 +1181,11 @@ const chargeFilter = reactive({
   refund_status: '',
 })
 
+const freezeFilter = reactive({
+  freeze_status: '',
+  freeze_type: '',
+})
+
 const reconciliationFilter = reactive({
   agent_id: null,
   status: '',
@@ -1099,6 +1196,7 @@ const ledgerPager = reactive({ page: 1, pageSize: 50, total: 0 })
 const walletPager = reactive({ page: 1, pageSize: 50, total: 0 })
 const chargePager = reactive({ page: 1, pageSize: 50, total: 0 })
 const refundPager = reactive({ page: 1, pageSize: 50, total: 0 })
+const freezePager = reactive({ page: 1, pageSize: 50, total: 0 })
 const reconciliationPager = reactive({ page: 1, pageSize: 50, total: 0 })
 
 const actionDialog = reactive({
@@ -1185,6 +1283,34 @@ const refundStatusTag = (status) => {
     no_refund: 'info',
   }
   return map[status] || 'info'
+}
+
+const freezeStatusLabel = (status) => {
+  const map = {
+    frozen: '冻结中',
+    released: '已释放',
+    refunded: '已清算',
+    cancelled: '已取消',
+  }
+  return map[status] || status || '-'
+}
+
+const freezeStatusTag = (status) => {
+  const map = {
+    frozen: 'warning',
+    released: 'success',
+    refunded: 'info',
+    cancelled: 'info',
+  }
+  return map[status] || 'info'
+}
+
+const freezeTypeLabel = (type) => {
+  const map = {
+    agent_suspend: '代理停用冻结',
+    admin_suspend: '管理员停用冻结',
+  }
+  return map[type] || type || '-'
 }
 
 const entryTypeTag = (type) => {
@@ -1352,6 +1478,27 @@ const loadRefunds = async () => {
     refundPager.total = res.data.total || 0
   } finally {
     refundLoading.value = false
+  }
+}
+
+const loadFreezes = async () => {
+  freezeLoading.value = true
+
+  try {
+    const res = await accountingApi.freezes(cleanParams({
+      page: freezePager.page,
+      page_size: freezePager.pageSize,
+      agent_id: chargeFilter.agent_id,
+      user_id: chargeFilter.user_id,
+      project_id: chargeFilter.project_id,
+      freeze_status: freezeFilter.freeze_status,
+      freeze_type: freezeFilter.freeze_type,
+    }))
+
+    freezeRows.value = res.data.freezes || []
+    freezePager.total = res.data.total || 0
+  } finally {
+    freezeLoading.value = false
   }
 }
 
@@ -1547,6 +1694,24 @@ const resetChargeFilter = () => {
 
   safeLoad(loadCharges, '扣点快照加载失败')
   safeLoad(loadRefunds, '返点记录加载失败')
+}
+
+const handleChargeSubTabChange = (tabName) => {
+  if (tabName === 'freezes') {
+    safeLoad(loadFreezes, '冻结记录加载失败')
+  }
+}
+
+const searchFreezes = () => {
+  freezePager.page = 1
+  safeLoad(loadFreezes, '冻结记录加载失败')
+}
+
+const resetFreezeFilter = () => {
+  freezeFilter.freeze_status = ''
+  freezeFilter.freeze_type = ''
+  freezePager.page = 1
+  safeLoad(loadFreezes, '冻结记录加载失败')
 }
 
 const openWalletAction = (action, row) => {

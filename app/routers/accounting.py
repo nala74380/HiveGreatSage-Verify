@@ -44,6 +44,7 @@ from app.services.accounting_query_service import (
     get_accounting_wallet_detail,
     list_accounting_wallets,
     list_authorization_charge_snapshots,
+    list_authorization_freeze_records,
     list_refund_records,
 )
 from app.services.accounting_reconciliation_service import (
@@ -416,6 +417,30 @@ async def refunds(
         agent_id=agent_id,
         user_id=user_id,
         project_id=project_id,
+    )
+
+
+@router.get("/freezes", summary="授权冻结权益记录")
+async def freezes(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    agent_id: int | None = Query(default=None),
+    user_id: int | None = Query(default=None),
+    project_id: int | None = Query(default=None),
+    freeze_status: str | None = Query(default=None, pattern="^(frozen|released|refunded|cancelled)$"),
+    freeze_type: str | None = Query(default=None, pattern="^(agent_suspend|admin_suspend)$"),
+    _: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_main_db),
+) -> dict:
+    return await list_authorization_freeze_records(
+        db=db,
+        page=page,
+        page_size=page_size,
+        agent_id=agent_id,
+        user_id=user_id,
+        project_id=project_id,
+        freeze_status=freeze_status,
+        freeze_type=freeze_type,
     )
 
 

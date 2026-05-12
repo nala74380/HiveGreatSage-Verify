@@ -34,6 +34,7 @@ from app.models.main.accounting import (
     AccountingLedgerEntry,
     AccountingWallet,
     AuthorizationChargeSnapshot,
+    AuthorizationFreezeRecord,
 )
 from app.models.main.models import Agent, GameProject, User
 
@@ -406,6 +407,95 @@ async def list_refund_records(
 
     return {
         "refunds": rows,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_authorization_freeze_records(
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 50,
+    agent_id: int | None = None,
+    user_id: int | None = None,
+    project_id: int | None = None,
+    freeze_status: str | None = None,
+    freeze_type: str | None = None,
+) -> dict:
+    query = (
+        select(AuthorizationFreezeRecord, Agent, User, GameProject)
+        .outerjoin(Agent, Agent.id == AuthorizationFreezeRecord.agent_id)
+        .join(User, User.id == AuthorizationFreezeRecord.user_id)
+        .join(GameProject, GameProject.id == AuthorizationFreezeRecord.project_id)
+    )
+
+    conditions = []
+
+    if agent_id:
+        conditions.append(AuthorizationFreezeRecord.agent_id == agent_id)
+
+    if user_id:
+        conditions.append(AuthorizationFreezeRecord.user_id == user_id)
+
+    if project_id:
+        conditions.append(AuthorizationFreezeRecord.project_id == project_id)
+
+    if freeze_status:
+        conditions.append(AuthorizationFreezeRecord.status == freeze_status)
+
+    if freeze_type:
+        conditions.append(AuthorizationFreezeRecord.freeze_type == freeze_type)
+
+    if conditions:
+        query = query.where(and_(*conditions))
+
+    total = (
+        await db.execute(select(func.count()).select_from(query.subquery()))
+    ).scalar_one()
+
+    offset = (page - 1) * page_size
+
+    result = await db.execute(
+        query.order_by(AuthorizationFreezeRecord.id.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
+
+    rows = []
+    for record, agent, user, project in result.all():
+        rows.append({
+            "id": record.id,
+            "authorization_id": record.authorization_id,
+            "agent_id": record.agent_id,
+            "agent_username": agent.username if agent else None,
+            "user_id": record.user_id,
+            "user_username": user.username,
+            "project_id": record.project_id,
+            "project_name": project.display_name,
+            "game_project_code": project.code_name,
+            "freeze_type": record.freeze_type,
+            "status": record.status,
+            "frozen_at": record.frozen_at,
+            "frozen_by_agent_id": record.frozen_by_agent_id,
+            "frozen_by_admin_id": record.frozen_by_admin_id,
+            "original_valid_until": record.original_valid_until,
+            "remaining_hours": record.remaining_hours,
+            "estimated_remaining_points": _money(record.estimated_remaining_points),
+            "released_at": record.released_at,
+            "released_by_agent_id": record.released_by_agent_id,
+            "released_by_admin_id": record.released_by_admin_id,
+            "new_valid_until": record.new_valid_until,
+            "refunded_at": record.refunded_at,
+            "settled_by_admin_id": record.settled_by_admin_id,
+            "refund_document_id": record.refund_document_id,
+            "remark": record.remark,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        })
+
+    return {
+        "freezes": rows,
         "total": total,
         "page": page,
         "page_size": page_size,

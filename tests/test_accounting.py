@@ -455,6 +455,22 @@ class TestAuthorizationFreeze:
         assert frozen_row["remaining_hours"] > 0
         assert float(frozen_row["estimated_remaining_points"]) >= 0
 
+        freezes = await client.get(
+            "/admin/api/accounting/freezes",
+            params={"user_id": user_id, "freeze_status": "frozen"},
+            headers=admin_headers,
+        )
+        assert freezes.status_code == 200, freezes.text
+        freeze_data = freezes.json()
+        assert freeze_data["total"] == 1
+        assert freeze_data["freezes"][0]["authorization_id"] == auth_id
+        assert freeze_data["freezes"][0]["agent_id"] == agent_id
+        assert freeze_data["freezes"][0]["user_id"] == user_id
+        assert freeze_data["freezes"][0]["project_id"] == project_id
+        assert freeze_data["freezes"][0]["freeze_type"] == "agent_suspend"
+        assert freeze_data["freezes"][0]["status"] == "frozen"
+        assert freeze_data["freezes"][0]["remaining_hours"] > 0
+
         wallet_after_suspend = await client.get(
             f"/admin/api/accounting/wallets/{agent_id}",
             headers=admin_headers,
