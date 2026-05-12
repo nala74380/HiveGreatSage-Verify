@@ -49,6 +49,7 @@ from app.database import get_main_db
 from app.models.main.models import Admin, Agent
 from app.schemas.user import (
     AuthorizationCreateRequest,
+    AuthorizationCostPreviewResponse,
     AuthorizationResponse,
     AuthorizationUpdateRequest,
     AuthorizationUpgradePreviewResponse,
@@ -70,6 +71,7 @@ from app.services.user_service import (
     get_user,
     grant_authorization,
     list_users,
+    preview_authorization_cost,
     preview_authorization_upgrade,
     revoke_authorization,
     suspend_authorization_with_freeze,
@@ -402,6 +404,27 @@ async def update_user_password_endpoint(
 # ═══════════════════════════════════════════════════════════════
 # 用户项目授权
 # ═══════════════════════════════════════════════════════════════
+
+@router.post(
+    "/{user_id}/authorizations/preview",
+    response_model=AuthorizationCostPreviewResponse,
+    summary="预览授权新项目扣点",
+)
+async def grant_auth_preview_endpoint(
+    user_id: int,
+    body: AuthorizationCreateRequest,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationCostPreviewResponse:
+    admin, agent = caller
+    return await preview_authorization_cost(
+        user_id=user_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
 
 @router.post(
     "/{user_id}/authorizations",

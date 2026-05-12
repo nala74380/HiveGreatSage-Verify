@@ -133,6 +133,32 @@ class AuthorizationResponse(BaseModel):
     consumed_points: float = 0.0
 
 
+class AuthorizationCostPreviewResponse(BaseModel):
+    user_id: int
+    game_project_id: int
+    game_project_code: str
+    game_project_name: str
+    user_level: str
+    user_level_name: str
+    authorized_devices: int
+    valid_until: datetime | None
+    unit_price: float
+    period_count: int
+    billing_period: str
+    billing_period_name: str
+    billing_period_hours: int
+    paid_hours: int
+    unit_label: str
+    total_cost: float
+    will_charge: bool
+    agent_id: int | None = None
+    charged_balance: float | None = None
+    credit_balance: float | None = None
+    frozen_credit: float | None = None
+    available_total: float | None = None
+    enough_balance: bool | None = None
+
+
 class UserPasswordUpdateResponse(BaseModel):
     user_id: int
     username: str

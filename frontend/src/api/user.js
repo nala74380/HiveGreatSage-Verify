@@ -55,6 +55,10 @@ export const userApi = {
     return http.post(`/api/users/${userId}/authorizations`, data)
   },
 
+  previewGrantAuth(userId, data) {
+    return http.post(`/api/users/${userId}/authorizations/preview`, data)
+  },
+
   updateAuth(userId, authId, data) {
     return http.patch(`/api/users/${userId}/authorizations/${authId}`, data)
   },

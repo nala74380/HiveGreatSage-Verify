@@ -55,6 +55,7 @@ from app.models.main.accounting import (
 )
 from app.schemas.user import (
     AuthorizationCreateRequest,
+    AuthorizationCostPreviewResponse,
     AuthorizationInfo,
     AuthorizationResponse,
     AuthorizationUpdateRequest,
@@ -583,6 +584,124 @@ async def grant_authorization(
         auth=auth,
         project=project,
         consumed_points=consumed_points,
+    )
+
+
+async def preview_authorization_cost(
+    user_id: int,
+    body: AuthorizationCreateRequest,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationCostPreviewResponse:
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    project = await _get_project_or_404(body.game_project_id, db)
+
+    if body.user_level == "tester" and admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="tester 级别授权只有管理员可以预览和设置",
+        )
+    if body.valid_until is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="授权扣点预览必须设置到期时间",
+        )
+
+    if agent is not None:
+        if body.authorized_devices <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="代理授权预览设备数必须大于 0",
+            )
+        await _assert_agent_project_auth_valid(
+            db=db,
+            agent=agent,
+            project_id=body.game_project_id,
+            project_name=project.display_name,
+        )
+
+    existing_result = await db.execute(
+        select(Authorization).where(
+            Authorization.user_id == user_id,
+            Authorization.game_project_id == body.game_project_id,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+    if agent is not None and existing and existing.status == "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该用户已授权此项目，代理请走新增设备/续费/升级专用预览",
+        )
+    if existing and existing.status == "suspended":
+        frozen_result = await db.execute(
+            select(AuthorizationFreezeRecord).where(
+                AuthorizationFreezeRecord.authorization_id == existing.id,
+                AuthorizationFreezeRecord.status == "frozen",
+            )
+        )
+        if frozen_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="该授权已停用并冻结权益，请走启用恢复接口",
+            )
+
+    now = datetime.now(timezone.utc)
+    cost = await calculate_authorization_cost(
+        project_id=project.id,
+        user_level=body.user_level,
+        authorized_devices=body.authorized_devices,
+        start_at=now,
+        valid_until=body.valid_until,
+        db=db,
+    )
+
+    wallet_snapshot = {
+        "charged_balance": None,
+        "credit_balance": None,
+        "frozen_credit": None,
+        "available_total": None,
+        "enough_balance": None,
+    }
+    if agent is not None:
+        wallet_result = await db.execute(
+            select(AccountingWallet).where(AccountingWallet.agent_id == agent.id)
+        )
+        wallet = wallet_result.scalar_one_or_none()
+        charged = float(wallet.charged_balance or 0) if wallet else 0.0
+        credit = float(wallet.credit_balance or 0) if wallet else 0.0
+        frozen = float(wallet.frozen_credit or 0) if wallet else 0.0
+        available = charged + max(0.0, credit - frozen)
+        wallet_snapshot = {
+            "charged_balance": charged,
+            "credit_balance": credit,
+            "frozen_credit": frozen,
+            "available_total": available,
+            "enough_balance": available >= float(cost["total_cost"]),
+        }
+
+    return AuthorizationCostPreviewResponse(
+        user_id=user.id,
+        game_project_id=project.id,
+        game_project_code=project.code_name,
+        game_project_name=project.display_name,
+        user_level=body.user_level,
+        user_level_name=cost["level_name"],
+        authorized_devices=body.authorized_devices,
+        valid_until=body.valid_until,
+        unit_price=float(cost["unit_price"]),
+        period_count=int(cost["period_count"]),
+        billing_period=cost["billing_period"],
+        billing_period_name=cost["billing_period_name"],
+        billing_period_hours=int(cost["billing_period_hours"]),
+        paid_hours=int(cost["paid_hours"]),
+        unit_label=cost["unit_label"],
+        total_cost=float(cost["total_cost"]),
+        will_charge=agent is not None,
+        agent_id=agent.id if agent else None,
+        **wallet_snapshot,
     )
 
 

@@ -189,6 +189,56 @@ class TestFreezeUnfreeze:
 class TestAuthorizationCharge:
     """授权扣点——扣费优先 charged 再 credit。"""
 
+    async def test_grant_authorization_preview_matches_charge(self, client, admin_headers, project_id):
+        agent = await _create_agent(client, admin_headers)
+        agent_id = agent["id"]
+        agent_headers = await _agent_headers(client, agent["username"])
+
+        await client.put(
+            f"/admin/api/prices/{project_id}/trial",
+            json={"points_per_device": 5.0},
+            headers=admin_headers,
+        )
+        await client.post(
+            f"/admin/api/agents/{agent_id}/project-auths/",
+            json={"project_id": project_id},
+            headers=admin_headers,
+        )
+        await client.post(
+            f"/admin/api/accounting/agents/{agent_id}/recharge",
+            json={"amount": 200, "description": "充值"},
+            headers=admin_headers,
+        )
+
+        user = await _create_user(client, agent_headers)
+        payload = {
+            "game_project_id": project_id,
+            "user_level": "trial",
+            "authorized_devices": 5,
+            "valid_until": _valid_until(),
+        }
+
+        preview = await client.post(
+            f"/api/users/{user['id']}/authorizations/preview",
+            json=payload,
+            headers=agent_headers,
+        )
+        assert preview.status_code == 200, preview.text
+        preview_data = preview.json()
+        assert preview_data["will_charge"] is True
+        assert preview_data["agent_id"] == agent_id
+        assert preview_data["total_cost"] > 0
+        assert preview_data["enough_balance"] is True
+        assert preview_data["available_total"] == 200.0
+
+        grant = await client.post(
+            f"/api/users/{user['id']}/authorizations",
+            json=payload,
+            headers=agent_headers,
+        )
+        assert grant.status_code == 201, grant.text
+        assert grant.json()["consumed_points"] == preview_data["total_cost"]
+
     async def test_charge_deducts_charged_first(self, client, admin_headers, project_id):
         agent = await _create_agent(client, admin_headers)
         agent_id = agent["id"]

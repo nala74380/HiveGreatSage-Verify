@@ -762,11 +762,40 @@
               </div>
 
               <div v-if="auth.isAgent" class="hint-text">
-                代理授权会扣点，扣点预览待接入；当前提交后由后端直接扣点并创建授权。
+                代理授权会扣点，请先预览扣点；当前提交后由后端扣点并创建授权。
+              </div>
+
+              <div v-if="editDialog.grantPreview" class="cost-preview-panel">
+                <div class="preview-title">扣点预览</div>
+                <div class="preview-grid">
+                  <span>预计扣点</span>
+                  <strong>{{ fmtMoney(editDialog.grantPreview.total_cost) }} 点</strong>
+                  <span>计费周期</span>
+                  <strong>{{ editDialog.grantPreview.period_count }} {{ editDialog.grantPreview.billing_period_name }}</strong>
+                  <span>购买时长</span>
+                  <strong>{{ editDialog.grantPreview.paid_hours }} 小时</strong>
+                  <span>可用余额</span>
+                  <strong>{{ fmtMoney(editDialog.grantPreview.available_total) }} 点</strong>
+                </div>
+                <el-alert
+                  v-if="editDialog.grantPreview.enough_balance === false"
+                  title="代理可用点数不足，提交授权会失败"
+                  type="warning"
+                  show-icon
+                  :closable="false"
+                  class="small-alert"
+                />
               </div>
             </el-form-item>
 
             <el-form-item>
+              <el-button
+                v-if="auth.isAgent"
+                :loading="editDialog.grantPreviewLoading"
+                @click="previewGrantAuthCost"
+              >
+                预览扣点
+              </el-button>
               <el-button
                 type="primary"
                 :loading="editDialog.grantLoading"
@@ -1128,6 +1157,8 @@ const editDialog = reactive({
   loading: false,
   passwordLoading: false,
   grantLoading: false,
+  grantPreviewLoading: false,
+  grantPreview: null,
   generatedPassword: '',
   form: {
     status: 'active',
@@ -1258,6 +1289,10 @@ function displayInactiveDevices(item) {
 
   if (authorized === 0) return '不限'
   return Math.max(authorized - activated, 0)
+}
+
+function fmtMoney(value) {
+  return Number(value || 0).toFixed(2)
 }
 
 function authStatusText(item) {
@@ -1472,6 +1507,7 @@ async function openEditDialog(row) {
   }
   editDialog.generatedPassword = ''
   editDialog.grantForm = buildGrantForm()
+  editDialog.grantPreview = null
 
   await loadEditAuths()
 }
@@ -1556,7 +1592,40 @@ async function copyPassword() {
 
 function quickGrantAuth(project) {
   editDialog.grantForm = buildGrantForm(project.id)
+  editDialog.grantPreview = null
   editDialog.activeTab = 'auths'
+}
+
+function buildGrantPayload() {
+  return {
+    game_project_id: editDialog.grantForm.project_id,
+    user_level: editDialog.grantForm.user_level,
+    authorized_devices: editDialog.grantForm.authorized_devices,
+    valid_until: isoOrNull(editDialog.grantForm.valid_until),
+  }
+}
+
+async function previewGrantAuthCost() {
+  if (!editDialog.row?.id) return
+
+  if (!editDialog.grantForm.project_id) {
+    ElMessage.warning('请选择授权项目')
+    return
+  }
+
+  if (auth.isAgent && !editDialog.grantForm.valid_until) {
+    ElMessage.warning('代理授权项目时必须设置项目到期时间')
+    return
+  }
+
+  editDialog.grantPreviewLoading = true
+
+  try {
+    const res = await userApi.previewGrantAuth(editDialog.row.id, buildGrantPayload())
+    editDialog.grantPreview = res.data
+  } finally {
+    editDialog.grantPreviewLoading = false
+  }
 }
 
 async function quickGrantDo() {
@@ -1575,15 +1644,11 @@ async function quickGrantDo() {
   editDialog.grantLoading = true
 
   try {
-    await userApi.grantAuth(editDialog.row.id, {
-      game_project_id: editDialog.grantForm.project_id,
-      user_level: editDialog.grantForm.user_level,
-      authorized_devices: editDialog.grantForm.authorized_devices,
-      valid_until: isoOrNull(editDialog.grantForm.valid_until),
-    })
+    await userApi.grantAuth(editDialog.row.id, buildGrantPayload())
 
     ElMessage.success('项目授权成功')
     editDialog.grantForm = buildGrantForm()
+    editDialog.grantPreview = null
 
     await Promise.all([
       loadEditAuths(),
@@ -1973,6 +2038,32 @@ onMounted(async () => {
 
 .audit-placeholder {
   margin-top: 16px;
+}
+
+.cost-preview-panel {
+  max-width: 520px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.preview-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 6px 12px;
+  margin-bottom: 10px;
+  color: #64748b;
+}
+
+.preview-grid strong {
+  color: #0f172a;
 }
 
 @media (max-width: 900px) {
