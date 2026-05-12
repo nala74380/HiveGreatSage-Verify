@@ -48,7 +48,7 @@ from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprin
 from app.core.utils import get_game_project_by_code as _get_game_project
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime
-from app.models.main.models import DeviceBinding, User
+from app.models.main.models import Authorization, DeviceBinding, User
 
 logger = logging.getLogger(__name__)
 from app.schemas.device import (
@@ -86,6 +86,11 @@ async def process_heartbeat(
       4. 立即返回 200，不等待落库
     """
     game_project = await _get_game_project(main_db, game_project_code)
+    await _assert_active_authorization(
+        db=main_db,
+        user_id=current_user.id,
+        game_project_id=game_project.id,
+    )
     await _assert_device_bound(
         db=main_db,
         user_id=current_user.id,
@@ -126,6 +131,11 @@ async def get_device_list(
       第 3 层：主库 DeviceBinding 表（登录时就建立，即使还没发心跳也能显示）
     """
     game_project = await _get_game_project(main_db, game_project_code)
+    await _assert_active_authorization(
+        db=main_db,
+        user_id=current_user.id,
+        game_project_id=game_project.id,
+    )
 
     # 层 1：Redis 在线设备
     online_hbs = await get_user_heartbeats(redis, game_project.id, current_user.id)
@@ -186,6 +196,11 @@ async def get_device_data(
     若两处都没有数据，返回 source="not_found"。
     """
     game_project = await _get_game_project(main_db, game_project_code)
+    await _assert_active_authorization(
+        db=main_db,
+        user_id=current_user.id,
+        game_project_id=game_project.id,
+    )
     await _assert_device_bound(
         db=main_db,
         user_id=current_user.id,
@@ -243,6 +258,36 @@ async def get_device_data(
 # ─────────────────────────────────────────────────────────────
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
+
+
+async def _assert_active_authorization(
+    db: AsyncSession,
+    user_id: int,
+    game_project_id: int,
+) -> None:
+    result = await db.execute(
+        select(Authorization).where(
+            Authorization.user_id == user_id,
+            Authorization.game_project_id == game_project_id,
+            Authorization.status == "active",
+        )
+    )
+    auth = result.scalar_one_or_none()
+    if not auth:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="项目授权已停用或不存在，拒绝设备访问",
+        )
+
+    if auth.valid_until:
+        valid_until = auth.valid_until
+        if valid_until.tzinfo is None:
+            valid_until = valid_until.replace(tzinfo=timezone.utc)
+        if valid_until <= datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="项目授权已过期，拒绝设备访问",
+            )
 
 
 async def _assert_device_bound(
@@ -394,6 +439,11 @@ async def upload_imsi(
       - imsi_hash 列：HMAC-SHA256 哈希（非明文关联排障与加密反查索引）
     """
     game_project = await _get_game_project(db, game_project_code)
+    await _assert_active_authorization(
+        db=db,
+        user_id=current_user.id,
+        game_project_id=game_project.id,
+    )
     result = await db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == current_user.id,
