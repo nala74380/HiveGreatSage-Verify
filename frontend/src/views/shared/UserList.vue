@@ -1638,8 +1638,8 @@ async function saveAuthEdit() {
 async function revokeUserAuth(row) {
   if (!editDialog.row?.id || !row?.id) return
 
-  await userApi.revokeAuth(editDialog.row.id, row.id)
-  ElMessage.success('项目授权已停用')
+  await userApi.suspendAuth(editDialog.row.id, row.id)
+  ElMessage.success('项目授权已停用，剩余权益已冻结')
 
   await Promise.all([
     loadEditAuths(),

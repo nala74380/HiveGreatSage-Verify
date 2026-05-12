@@ -274,6 +274,120 @@ class AuthorizationChargeSnapshot(Base):
     project = relationship("GameProject", foreign_keys=[project_id])
 
 
+class AuthorizationFreezeRecord(Base):
+    """授权停用后的剩余权益冻结记录。"""
+
+    __tablename__ = "authorization_freeze_record"
+    __table_args__ = (
+        CheckConstraint(
+            "freeze_type IN ('agent_suspend', 'admin_suspend')",
+            name="ck_authorization_freeze_type",
+        ),
+        CheckConstraint(
+            "status IN ('frozen', 'released', 'refunded', 'cancelled')",
+            name="ck_authorization_freeze_status",
+        ),
+        CheckConstraint(
+            "remaining_hours IS NULL OR remaining_hours >= 0",
+            name="ck_authorization_freeze_remaining_hours_non_negative",
+        ),
+        CheckConstraint(
+            "estimated_remaining_points >= 0",
+            name="ck_authorization_freeze_estimated_points_non_negative",
+        ),
+        Index("idx_authorization_freeze_authorization", "authorization_id"),
+        Index("idx_authorization_freeze_agent", "agent_id", "frozen_at"),
+        Index("idx_authorization_freeze_user_project", "user_id", "project_id"),
+        Index("idx_authorization_freeze_status", "status", "frozen_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    authorization_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("authorization.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("agent.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("game_project.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    freeze_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="frozen")
+
+    frozen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    frozen_by_agent_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("agent.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    frozen_by_admin_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("admin.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    original_valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remaining_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_remaining_points: Mapped[float] = mapped_column(
+        Numeric(18, 2),
+        nullable=False,
+        server_default="0",
+    )
+
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    released_by_agent_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("agent.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    released_by_admin_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("admin.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    new_valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    settled_by_admin_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("admin.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    refund_document_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("accounting_document.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    remark: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    authorization = relationship("Authorization", foreign_keys=[authorization_id])
+    agent = relationship("Agent", foreign_keys=[agent_id])
+    user = relationship("User", foreign_keys=[user_id])
+    project = relationship("GameProject", foreign_keys=[project_id])
+    frozen_by_agent = relationship("Agent", foreign_keys=[frozen_by_agent_id])
+    frozen_by_admin = relationship("Admin", foreign_keys=[frozen_by_admin_id])
+    released_by_agent = relationship("Agent", foreign_keys=[released_by_agent_id])
+    released_by_admin = relationship("Admin", foreign_keys=[released_by_admin_id])
+    settled_by_admin = relationship("Admin", foreign_keys=[settled_by_admin_id])
+    refund_document = relationship("AccountingDocument", foreign_keys=[refund_document_id])
+
+
 class AccountingLedgerEntry(Base):
     """不可变账本明细表。"""
 

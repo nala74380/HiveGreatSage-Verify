@@ -26,6 +26,7 @@ from app.models.main.accounting import (  # noqa: F401
     AccountingDocument,
     AccountingLedgerEntry,
     AuthorizationChargeSnapshot,
+    AuthorizationFreezeRecord,
     AccountingReconciliationRun,
     AccountingReconciliationItem,
     AccountingAdjustmentRequest,

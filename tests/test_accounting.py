@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import text
 
 
 AGENT_USERNAME_PREFIX = "acct_test_agent_"
@@ -376,6 +377,150 @@ class TestDeleteRefund:
             headers=admin_headers,
         )
         assert refunds.json()["total"] == 0
+
+
+class TestAuthorizationFreeze:
+    """授权停用/启用冻结权益基础链路。"""
+
+    async def test_agent_suspend_enable_and_admin_delete_settle_freeze(
+        self, client, admin_headers, project_id, session_factory
+    ):
+        agent = await _create_agent(client, admin_headers)
+        agent_id = agent["id"]
+        agent_headers = await _agent_headers(client, agent["username"])
+
+        await client.put(
+            f"/admin/api/prices/{project_id}/trial",
+            json={"points_per_device": 5.0},
+            headers=admin_headers,
+        )
+        await client.post(
+            f"/admin/api/agents/{agent_id}/project-auths/",
+            json={"project_id": project_id},
+            headers=admin_headers,
+        )
+        await client.post(
+            f"/admin/api/accounting/agents/{agent_id}/recharge",
+            json={"amount": 300, "description": "充值"},
+            headers=admin_headers,
+        )
+
+        user = await _create_user(client, agent_headers)
+        user_id = user["id"]
+
+        auth_res = await client.post(
+            f"/api/users/{user_id}/authorizations",
+            json={
+                "game_project_id": project_id,
+                "user_level": "trial",
+                "authorized_devices": 10,
+                "valid_until": _valid_until(),
+            },
+            headers=agent_headers,
+        )
+        assert auth_res.status_code == 201, auth_res.text
+        auth_id = auth_res.json()["id"]
+
+        wallet_after_charge = await client.get(
+            f"/admin/api/accounting/wallets/{agent_id}",
+            headers=admin_headers,
+        )
+        assert wallet_after_charge.status_code == 200
+        available_after_charge = wallet_after_charge.json()["available_total"]
+
+        suspend_res = await client.post(
+            f"/api/users/{user_id}/authorizations/{auth_id}/suspend",
+            headers=agent_headers,
+        )
+        assert suspend_res.status_code == 200, suspend_res.text
+        assert suspend_res.json()["status"] == "suspended"
+
+        async with session_factory() as session:
+            frozen_row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT status, freeze_type, remaining_hours, estimated_remaining_points
+                        FROM authorization_freeze_record
+                        WHERE authorization_id = :auth_id
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"auth_id": auth_id},
+                )
+            ).mappings().one()
+        assert frozen_row["status"] == "frozen"
+        assert frozen_row["freeze_type"] == "agent_suspend"
+        assert frozen_row["remaining_hours"] > 0
+        assert float(frozen_row["estimated_remaining_points"]) >= 0
+
+        wallet_after_suspend = await client.get(
+            f"/admin/api/accounting/wallets/{agent_id}",
+            headers=admin_headers,
+        )
+        assert wallet_after_suspend.status_code == 200
+        assert wallet_after_suspend.json()["available_total"] == available_after_charge
+
+        enable_res = await client.post(
+            f"/api/users/{user_id}/authorizations/{auth_id}/enable",
+            headers=agent_headers,
+        )
+        assert enable_res.status_code == 200, enable_res.text
+        assert enable_res.json()["status"] == "active"
+
+        async with session_factory() as session:
+            released_status = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT status
+                        FROM authorization_freeze_record
+                        WHERE authorization_id = :auth_id
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"auth_id": auth_id},
+                )
+            ).scalar_one()
+        assert released_status == "released"
+
+        wallet_after_enable = await client.get(
+            f"/admin/api/accounting/wallets/{agent_id}",
+            headers=admin_headers,
+        )
+        assert wallet_after_enable.status_code == 200
+        assert wallet_after_enable.json()["available_total"] == available_after_charge
+
+        suspend_again = await client.post(
+            f"/api/users/{user_id}/authorizations/{auth_id}/suspend",
+            headers=agent_headers,
+        )
+        assert suspend_again.status_code == 200, suspend_again.text
+
+        delete_res = await client.delete(
+            f"/api/users/{user_id}",
+            headers=admin_headers,
+        )
+        assert delete_res.status_code == 204, delete_res.text
+
+        async with session_factory() as session:
+            statuses = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT status
+                        FROM authorization_freeze_record
+                        WHERE authorization_id = :auth_id
+                        ORDER BY id
+                        """
+                    ),
+                    {"auth_id": auth_id},
+                )
+            ).scalars().all()
+        assert "released" in statuses
+        assert "refunded" in statuses
 
 
 class TestIdempotency:

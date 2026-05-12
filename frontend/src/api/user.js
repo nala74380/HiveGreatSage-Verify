@@ -63,6 +63,14 @@ export const userApi = {
     return http.delete(`/api/users/${userId}/authorizations/${authId}`)
   },
 
+  suspendAuth(userId, authId) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/suspend`)
+  },
+
+  enableAuth(userId, authId) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/enable`)
+  },
+
   upgradeAuth(userId, authId, data) {
     return http.post(`/api/users/${userId}/authorizations/${authId}/upgrade`, data)
   },

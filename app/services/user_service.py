@@ -48,7 +48,11 @@ from app.models.main.models import (
 )
 from app.models.main.agent_profile import AgentBusinessProfile
 from app.models.main.project_access import AgentLevelPolicy
-from app.models.main.accounting import AccountingWallet
+from app.models.main.accounting import (
+    AccountingWallet,
+    AuthorizationChargeSnapshot,
+    AuthorizationFreezeRecord,
+)
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationInfo,
@@ -428,6 +432,12 @@ async def soft_delete_user(
         db=db,
         delete_time=delete_time,
     )
+    await settle_authorization_freezes_on_user_delete(
+        user_id=user.id,
+        db=db,
+        admin=admin,
+        settled_at=delete_time,
+    )
 
     auth_result = await db.execute(
         select(Authorization).where(
@@ -515,6 +525,19 @@ async def grant_authorization(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="该用户已授权此项目。代理修改等级/设备数/续期涉及补扣点，请由管理员处理或后续走专用续费接口。",
         )
+
+    if existing and existing.status == "suspended":
+        frozen_result = await db.execute(
+            select(AuthorizationFreezeRecord).where(
+                AuthorizationFreezeRecord.authorization_id == existing.id,
+                AuthorizationFreezeRecord.status == "frozen",
+            )
+        )
+        if frozen_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="该授权已停用并冻结权益，请走启用恢复接口，不要重新授权覆盖",
+            )
 
     now = datetime.now(timezone.utc)
     consumed_points = 0.0
@@ -661,7 +684,24 @@ async def revoke_authorization(
     admin: Admin | None = None,
     agent: Agent | None = None,
 ) -> None:
-    """撤销授权。当前规则：单独停用授权不退款；删除用户时才按规则自动返点。"""
+    """兼容旧 DELETE 路由：停用授权并写冻结权益记录。"""
+    await suspend_authorization_with_freeze(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+
+async def suspend_authorization_with_freeze(
+    user_id: int,
+    auth_id: int,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationResponse:
+    """停用授权并冻结剩余权益；不返点、不改钱包、不写账本。"""
     user = await _get_user_or_404(user_id, db)
     _assert_can_access_user(user=user, admin=admin, agent=agent)
 
@@ -670,8 +710,142 @@ async def revoke_authorization(
         auth_id=auth_id,
         db=db,
     )
+
+    if auth.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只有 active 授权可以停用",
+        )
+
+    project = await _get_project_or_404(auth.game_project_id, db)
+    now = datetime.now(timezone.utc)
+    remaining_hours = _authorization_remaining_hours(auth=auth, now=now)
+    estimated_points = await _estimate_authorization_remaining_points(
+        auth=auth,
+        remaining_hours=remaining_hours,
+        db=db,
+    )
+
+    existing_freeze_result = await db.execute(
+        select(AuthorizationFreezeRecord).where(
+            AuthorizationFreezeRecord.authorization_id == auth.id,
+            AuthorizationFreezeRecord.status == "frozen",
+        )
+    )
+    if existing_freeze_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该授权已存在冻结权益记录",
+        )
+
+    freeze = AuthorizationFreezeRecord(
+        authorization_id=auth.id,
+        agent_id=user.created_by_agent_id,
+        user_id=user.id,
+        project_id=auth.game_project_id,
+        freeze_type="agent_suspend" if agent is not None else "admin_suspend",
+        status="frozen",
+        frozen_at=now,
+        frozen_by_agent_id=agent.id if agent else None,
+        frozen_by_admin_id=admin.id if admin else None,
+        original_valid_until=auth.valid_until,
+        remaining_hours=remaining_hours,
+        estimated_remaining_points=estimated_points,
+        remark="停用授权时冻结剩余权益，不返点",
+    )
+    db.add(freeze)
+
     auth.status = "suspended"
     await db.flush()
+
+    return _authorization_to_response(auth=auth, project=project)
+
+
+async def enable_authorization_with_release(
+    user_id: int,
+    auth_id: int,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationResponse:
+    """启用 frozen 授权并释放剩余权益；不扣点、不改钱包、不写账本。"""
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    auth = await _get_authorization_or_404(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+    )
+    project = await _get_project_or_404(auth.game_project_id, db)
+
+    if auth.status != "suspended":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只有 suspended 授权可以启用",
+        )
+
+    freeze_result = await db.execute(
+        select(AuthorizationFreezeRecord)
+        .where(
+            AuthorizationFreezeRecord.authorization_id == auth.id,
+            AuthorizationFreezeRecord.status == "frozen",
+        )
+        .order_by(AuthorizationFreezeRecord.frozen_at.desc())
+    )
+    freeze = freeze_result.scalars().first()
+    if not freeze:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="未找到可释放的冻结权益记录",
+        )
+
+    if agent is not None:
+        await _assert_agent_project_auth_valid(
+            db=db,
+            agent=agent,
+            project_id=project.id,
+            project_name=project.display_name,
+        )
+
+    now = datetime.now(timezone.utc)
+    if freeze.remaining_hours is None:
+        new_valid_until = freeze.original_valid_until
+    else:
+        new_valid_until = now + timedelta(hours=int(freeze.remaining_hours))
+
+    auth.status = "active"
+    auth.valid_until = new_valid_until
+
+    freeze.status = "released"
+    freeze.released_at = now
+    freeze.released_by_agent_id = agent.id if agent else None
+    freeze.released_by_admin_id = admin.id if admin else None
+    freeze.new_valid_until = new_valid_until
+
+    await db.flush()
+
+    return _authorization_to_response(auth=auth, project=project)
+
+
+async def settle_authorization_freezes_on_user_delete(
+    user_id: int,
+    db: AsyncSession,
+    admin: Admin | None,
+    settled_at: datetime | None = None,
+) -> None:
+    """管理员删除用户时把仍 frozen 的权益记录标记为 refunded。"""
+    now = settled_at or datetime.now(timezone.utc)
+    result = await db.execute(
+        select(AuthorizationFreezeRecord).where(
+            AuthorizationFreezeRecord.user_id == user_id,
+            AuthorizationFreezeRecord.status == "frozen",
+        )
+    )
+    for freeze in result.scalars().all():
+        freeze.status = "refunded"
+        freeze.refunded_at = now
+        freeze.settled_by_admin_id = admin.id if admin else None
 
 
 async def preview_authorization_upgrade(
@@ -1253,3 +1427,42 @@ def _ensure_aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def _authorization_remaining_hours(auth: Authorization, now: datetime) -> int | None:
+    if auth.valid_until is None:
+        return None
+
+    valid_until = _ensure_aware(auth.valid_until)
+    if valid_until <= now:
+        return 0
+
+    seconds = (valid_until - now).total_seconds()
+    return int((seconds + 3599) // 3600)
+
+
+async def _estimate_authorization_remaining_points(
+    *,
+    auth: Authorization,
+    remaining_hours: int | None,
+    db: AsyncSession,
+) -> float:
+    if remaining_hours is None or remaining_hours <= 0:
+        return 0.0
+
+    result = await db.execute(
+        select(AuthorizationChargeSnapshot)
+        .where(AuthorizationChargeSnapshot.authorization_id == auth.id)
+        .order_by(AuthorizationChargeSnapshot.created_at.desc())
+    )
+    snapshot = result.scalars().first()
+    if not snapshot:
+        return 0.0
+
+    paid_hours = int(snapshot.paid_hours or 0)
+    if paid_hours <= 0:
+        return 0.0
+
+    original_cost = float(snapshot.original_cost or 0.0)
+    estimate = original_cost * min(remaining_hours, paid_hours) / paid_hours
+    return round(max(0.0, estimate), 2)

@@ -65,12 +65,14 @@ from app.schemas.user import (
 from app.services.audit_service import create_audit_log
 from app.services.user_service import (
     create_user,
+    enable_authorization_with_release,
     get_creator_agent_detail,
     get_user,
     grant_authorization,
     list_users,
     preview_authorization_upgrade,
     revoke_authorization,
+    suspend_authorization_with_freeze,
     soft_delete_user,
     update_authorization,
     update_user,
@@ -470,6 +472,82 @@ async def update_auth_endpoint(
             **_actor_metadata(caller),
             **_authorization_metadata(result),
             "changed_fields": body.model_dump(exclude_unset=True),
+        },
+    )
+    return result
+
+
+@router.post(
+    "/{user_id}/authorizations/{auth_id}/suspend",
+    response_model=AuthorizationResponse,
+    summary="停用授权并冻结剩余权益",
+)
+async def suspend_auth_endpoint(
+    user_id: int,
+    auth_id: int,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationResponse:
+    admin, agent = caller
+    result = await suspend_authorization_with_freeze(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.suspend_freeze",
+        target_type="authorization",
+        target_id=auth_id,
+        summary=f"停用用户 {user_id} 授权 {auth_id} 并冻结权益",
+        metadata={
+            **_actor_metadata(caller),
+            **_authorization_metadata(result),
+            "user_id": user_id,
+            "authorization_id": auth_id,
+        },
+    )
+    return result
+
+
+@router.post(
+    "/{user_id}/authorizations/{auth_id}/enable",
+    response_model=AuthorizationResponse,
+    summary="启用授权并恢复冻结权益",
+)
+async def enable_auth_endpoint(
+    user_id: int,
+    auth_id: int,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationResponse:
+    admin, agent = caller
+    result = await enable_authorization_with_release(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.enable_release",
+        target_type="authorization",
+        target_id=auth_id,
+        summary=f"启用用户 {user_id} 授权 {auth_id} 并恢复权益",
+        metadata={
+            **_actor_metadata(caller),
+            **_authorization_metadata(result),
+            "user_id": user_id,
+            "authorization_id": auth_id,
         },
     )
     return result
