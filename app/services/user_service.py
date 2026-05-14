@@ -57,6 +57,9 @@ from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationCostPreviewResponse,
     AuthorizationInfo,
+    AuthorizationRenewPreviewResponse,
+    AuthorizationRenewRequest,
+    AuthorizationRenewResponse,
     AuthorizationResponse,
     AuthorizationUpdateRequest,
     AuthorizationUpgradePreviewResponse,
@@ -965,6 +968,177 @@ async def settle_authorization_freezes_on_user_delete(
         freeze.status = "refunded"
         freeze.refunded_at = now
         freeze.settled_by_admin_id = admin.id if admin else None
+
+
+async def preview_authorization_renew(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationRenewRequest,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationRenewPreviewResponse:
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    project = await _get_project_or_404(auth.game_project_id, db)
+    start_at = await _validate_authorization_renew(
+        auth=auth,
+        project=project,
+        new_valid_until=body.valid_until,
+        db=db,
+        agent=agent,
+    )
+
+    cost = await calculate_authorization_cost(
+        project_id=project.id,
+        user_level=auth.user_level,
+        authorized_devices=auth.authorized_devices,
+        start_at=start_at,
+        valid_until=body.valid_until,
+        db=db,
+    )
+
+    wallet_snapshot = {
+        "charged_balance": None,
+        "credit_balance": None,
+        "frozen_credit": None,
+        "available_total": None,
+        "enough_balance": None,
+    }
+    if agent is not None:
+        wallet_result = await db.execute(
+            select(AccountingWallet).where(AccountingWallet.agent_id == agent.id)
+        )
+        wallet = wallet_result.scalar_one_or_none()
+        charged = float(wallet.charged_balance or 0) if wallet else 0.0
+        credit = float(wallet.credit_balance or 0) if wallet else 0.0
+        frozen = float(wallet.frozen_credit or 0) if wallet else 0.0
+        available = charged + max(0.0, credit - frozen)
+        wallet_snapshot = {
+            "charged_balance": charged,
+            "credit_balance": credit,
+            "frozen_credit": frozen,
+            "available_total": available,
+            "enough_balance": available >= float(cost["total_cost"]),
+        }
+
+    return AuthorizationRenewPreviewResponse(
+        authorization_id=auth.id,
+        game_project_id=project.id,
+        game_project_code=project.code_name,
+        game_project_name=project.display_name,
+        user_level=auth.user_level,
+        authorized_devices=int(auth.authorized_devices or 0),
+        old_valid_until=auth.valid_until,
+        new_valid_until=body.valid_until,
+        unit_price=float(cost["unit_price"]),
+        period_count=int(cost["period_count"]),
+        billing_period=cost["billing_period"],
+        billing_period_name=cost["billing_period_name"],
+        billing_period_hours=int(cost["billing_period_hours"]),
+        paid_hours=int(cost["paid_hours"]),
+        unit_label=cost["unit_label"],
+        total_cost=float(cost["total_cost"]),
+        will_charge=agent is not None,
+        agent_id=agent.id if agent else None,
+        **wallet_snapshot,
+    )
+
+
+async def renew_authorization(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationRenewRequest,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationRenewResponse:
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    project = await _get_project_or_404(auth.game_project_id, db)
+    start_at = await _validate_authorization_renew(
+        auth=auth,
+        project=project,
+        new_valid_until=body.valid_until,
+        db=db,
+        agent=agent,
+    )
+
+    old_valid_until = auth.valid_until
+    consumed_points = 0.0
+    if agent is not None:
+        cost = await calculate_authorization_cost(
+            project_id=project.id,
+            user_level=auth.user_level,
+            authorized_devices=auth.authorized_devices,
+            start_at=start_at,
+            valid_until=body.valid_until,
+            db=db,
+        )
+        consumed_points = float(cost["total_cost"])
+        await consume_agent_authorization_points(
+            agent_id=agent.id,
+            user_id=user.id,
+            project_id=project.id,
+            authorization_id=auth.id,
+            user_level=auth.user_level,
+            authorized_devices=auth.authorized_devices,
+            start_at=start_at,
+            valid_until=body.valid_until,
+            db=db,
+        )
+
+    auth.valid_until = body.valid_until
+    await db.flush()
+
+    return AuthorizationRenewResponse(
+        authorization=_authorization_to_response(auth, project, consumed_points),
+        consumed_points=consumed_points,
+        old_valid_until=old_valid_until,
+        new_valid_until=body.valid_until,
+    )
+
+
+async def _validate_authorization_renew(
+    auth: Authorization,
+    project: GameProject,
+    new_valid_until: datetime,
+    db: AsyncSession,
+    agent: Agent | None,
+) -> datetime:
+    if auth.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只有 active 授权可以续费",
+        )
+    if int(auth.authorized_devices or 0) <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="续费授权设备数必须大于 0",
+        )
+
+    now = datetime.now(timezone.utc)
+    target = _ensure_aware(new_valid_until)
+    base = max(now, _ensure_aware(auth.valid_until)) if auth.valid_until else now
+    if target <= base:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="续费后的到期时间必须晚于当前有效期",
+        )
+
+    if agent is not None:
+        await _assert_agent_project_auth_valid(
+            db=db,
+            agent=agent,
+            project_id=project.id,
+            project_name=project.display_name,
+        )
+
+    return base
 
 
 async def preview_authorization_upgrade(

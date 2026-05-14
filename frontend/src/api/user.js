@@ -85,6 +85,14 @@ export const userApi = {
     })
   },
 
+  renewPreview(userId, authId, data) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/renew/preview`, data)
+  },
+
+  renewAuth(userId, authId, data) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/renew`, data)
+  },
+
   // ── 创建者详情 ────────────────────────────────────────────
   creatorAgentDetail(agentId, params = {}) {
     return http.get(`/api/users/creators/agents/${agentId}`, { params })

@@ -98,6 +98,45 @@ class AuthorizationUpgradeResponse(BaseModel):
     new_expiry: datetime | None = None
 
 
+class AuthorizationRenewRequest(BaseModel):
+    valid_until: datetime = Field(..., description="续费后的授权到期时间")
+
+    model_config = {"extra": "forbid"}
+
+
+class AuthorizationRenewPreviewResponse(BaseModel):
+    authorization_id: int
+    game_project_id: int
+    game_project_code: str
+    game_project_name: str
+    user_level: str
+    authorized_devices: int
+    old_valid_until: datetime | None = None
+    new_valid_until: datetime
+    unit_price: float
+    period_count: int
+    billing_period: str
+    billing_period_name: str
+    billing_period_hours: int
+    paid_hours: int
+    unit_label: str
+    total_cost: float
+    will_charge: bool
+    agent_id: int | None = None
+    charged_balance: float | None = None
+    credit_balance: float | None = None
+    frozen_credit: float | None = None
+    available_total: float | None = None
+    enough_balance: bool | None = None
+
+
+class AuthorizationRenewResponse(BaseModel):
+    authorization: "AuthorizationResponse"
+    consumed_points: float
+    old_valid_until: datetime | None = None
+    new_valid_until: datetime
+
+
 # ── 响应模型 ──────────────────────────────────────────────────
 
 class AuthorizationInfo(BaseModel):

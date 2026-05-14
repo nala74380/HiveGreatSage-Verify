@@ -45,7 +45,7 @@
             <el-option
               v-for="p in allProjects"
               :key="p.id"
-              :label="projectName(p)"
+              :label="projectOptionLabel(p)"
               :value="p.id"
             />
           </el-select>
@@ -367,8 +367,9 @@
             <el-option
               v-for="p in allProjects"
               :key="p.id"
-              :label="`${projectName(p)}${p.project_type === 'game' ? ' 🎮' : ' 🔑'}`"
+              :label="projectOptionLabel(p)"
               :value="p.id"
+              :disabled="isProjectOptionDisabled(p)"
             />
           </el-select>
         </el-form-item>
@@ -633,8 +634,8 @@
 
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button text size="small" @click="openAuthEditDialog(row)">
-                  编辑
+                <el-button text size="small" @click="openAuthActionDialog(row)">
+                  {{ auth.isAgent ? '新增设备' : '编辑' }}
                 </el-button>
 
                 <el-button
@@ -684,8 +685,9 @@
                 <el-option
                   v-for="p in unauthorizedProjects"
                   :key="p.id"
-                  :label="projectName(p)"
+                  :label="projectOptionLabel(p)"
                   :value="p.id"
+                  :disabled="isProjectOptionDisabled(p)"
                 />
               </el-select>
             </el-form-item>
@@ -1072,6 +1074,83 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="authUpgradeDialog.visible"
+      title="新增授权设备"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form :model="authUpgradeDialog.form" label-width="120px">
+        <el-form-item label="项目">
+          <span class="readonly-val">{{ authProjectName(authUpgradeDialog.row) }}</span>
+        </el-form-item>
+
+        <el-form-item label="当前设备数">
+          <span class="readonly-val">{{ displayDeviceLimit(authUpgradeDialog.row?.authorized_devices) }}</span>
+        </el-form-item>
+
+        <el-form-item label="新增设备数">
+          <el-input-number
+            v-model="authUpgradeDialog.form.additional_devices"
+            :min="1"
+            :step="1"
+            controls-position="right"
+            style="width: 170px"
+            @change="resetAuthUpgradePreview"
+          />
+        </el-form-item>
+
+        <el-form-item label="计费模式">
+          <el-radio-group v-model="authUpgradeDialog.form.mode" @change="resetAuthUpgradePreview">
+            <el-radio-button label="append">追加</el-radio-button>
+            <el-radio-button label="average">均摊</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <div v-if="authUpgradeDialog.preview" class="cost-preview-panel upgrade-preview-panel">
+          <div class="preview-title">新增设备扣点预览</div>
+          <div class="preview-grid">
+            <span>原设备数</span>
+            <strong>{{ displayDeviceLimit(authUpgradeDialog.preview.old_devices) }}</strong>
+            <span>新设备数</span>
+            <strong>{{ displayDeviceLimit(authUpgradeDialog.preview.new_devices) }}</strong>
+            <span>新增设备</span>
+            <strong>{{ authUpgradeDialog.preview.additional_devices }} 台</strong>
+            <span>预计扣点</span>
+            <strong>{{ fmtMoney(authUpgradeDialog.preview.consumed_points) }} 点</strong>
+            <span>新到期</span>
+            <strong>{{ authUpgradeDialog.preview.new_expiry ? formatDate(authUpgradeDialog.preview.new_expiry) : '-' }}</strong>
+          </div>
+        </div>
+
+        <el-alert
+          title="代理新增设备必须先预览扣点，再确认提交；管理员仍使用授权编辑入口。"
+          type="info"
+          show-icon
+          :closable="false"
+          class="small-alert"
+        />
+      </el-form>
+
+      <template #footer>
+        <el-button @click="authUpgradeDialog.visible = false">取消</el-button>
+        <el-button
+          :loading="authUpgradeDialog.previewLoading"
+          @click="previewAuthUpgrade"
+        >
+          预览扣点
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="authUpgradeDialog.loading"
+          :disabled="!authUpgradeDialog.preview"
+          @click="submitAuthUpgrade"
+        >
+          确认新增
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1103,6 +1182,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '@/api/user'
 import { agentApi } from '@/api/agent'
 import { adminProjectApi as projectApi } from '@/api/admin/project'
+import { agentProjectAccessApi } from '@/api/agent/projectAccess'
 import { useAuthStore } from '@/stores/auth'
 
 import StatusBadge from '@/components/common/StatusBadge.vue'
@@ -1183,6 +1263,18 @@ const authEditDialog = reactive({
   },
 })
 
+const authUpgradeDialog = reactive({
+  visible: false,
+  loading: false,
+  previewLoading: false,
+  row: null,
+  preview: null,
+  form: {
+    additional_devices: 1,
+    mode: 'append',
+  },
+})
+
 const createRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -1252,6 +1344,58 @@ function normalizeProject(project) {
     ...project,
     display_name: projectName(project),
   }
+}
+
+function normalizeCatalogProject(project) {
+  return normalizeProject({
+    ...project,
+    is_catalog_item: true,
+  })
+}
+
+function projectPriceText(project, level) {
+  const prices = Array.isArray(project?.prices) ? project.prices : []
+  const item = prices.find(p => p.level === level)
+  if (!item) return '未定价'
+  return `${fmtMoney(item.points)}点/${item.unit_label || '周期/设备'}`
+}
+
+function projectAccessText(project) {
+  if (!auth.isAgent || !project?.is_catalog_item) return ''
+  if (project.is_authorized) {
+    return project.auth_valid_until
+      ? `已授权，到期 ${formatDate(project.auth_valid_until)}`
+      : '已授权，永久'
+  }
+  if (project.access_status === 'pending') return '申请中'
+  if (project.access_status === 'apply_available') return '可申请，未开通'
+  if (project.access_status === 'auto_open_available') return '可自助开通'
+  return '未开通'
+}
+
+function levelLabel(level) {
+  const map = {
+    trial: '试用',
+    normal: '普通',
+    vip: 'VIP',
+    svip: 'SVIP',
+    tester: '测试',
+  }
+  return map[level] || level || '-'
+}
+
+function projectOptionLabel(project) {
+  const base = projectName(project)
+  if (!auth.isAgent || !project?.is_catalog_item) return base
+
+  const level = editDialog.visible
+    ? editDialog.grantForm.user_level
+    : createDialog.form.auth_user_level
+  return `${base}｜${projectAccessText(project)}｜${levelLabel(level)} ${projectPriceText(project, level)}`
+}
+
+function isProjectOptionDisabled(project) {
+  return auth.isAgent && project?.is_catalog_item && !project.is_authorized
 }
 
 function normalizeAuthItem(item) {
@@ -1344,12 +1488,18 @@ function setAuthEditExpiry(days) {
   setDateAfterDays(authEditDialog.form, 'valid_until', days)
 }
 
+function resetAuthUpgradePreview() {
+  authUpgradeDialog.preview = null
+}
+
 async function loadLookups() {
-  const projectReq = projectApi.list({
-    page: 1,
-    page_size: 100,
-    is_active: true,
-  })
+  const projectReq = auth.isAgent
+    ? agentProjectAccessApi.catalog()
+    : projectApi.list({
+        page: 1,
+        page_size: 100,
+        is_active: true,
+      })
 
   const agentReq = auth.isAdmin
     ? agentApi.list({ page: 1, page_size: 500 })
@@ -1357,7 +1507,10 @@ async function loadLookups() {
 
   const [projectRes, agentRes] = await Promise.all([projectReq, agentReq])
 
-  allProjects.value = (projectRes.data.projects || []).map(normalizeProject)
+  const projectRows = auth.isAgent
+    ? (projectRes.data || []).map(normalizeCatalogProject)
+    : (projectRes.data.projects || []).map(normalizeProject)
+  allProjects.value = projectRows
   allAgents.value = agentRes.data.agents || []
 }
 
@@ -1659,6 +1812,29 @@ async function quickGrantDo() {
   }
 }
 
+function openAuthActionDialog(row) {
+  if (auth.isAgent) {
+    openAuthUpgradeDialog(row)
+    return
+  }
+  openAuthEditDialog(row)
+}
+
+function openAuthUpgradeDialog(row) {
+  if (row.status !== 'active') {
+    ElMessage.warning('只有有效授权可以新增设备')
+    return
+  }
+
+  authUpgradeDialog.row = row
+  authUpgradeDialog.form = {
+    additional_devices: 1,
+    mode: 'append',
+  }
+  authUpgradeDialog.preview = null
+  authUpgradeDialog.visible = true
+}
+
 function openAuthEditDialog(row) {
   authEditDialog.row = row
   authEditDialog.form = {
@@ -1668,6 +1844,56 @@ function openAuthEditDialog(row) {
     status: row.status || 'active',
   }
   authEditDialog.visible = true
+}
+
+async function previewAuthUpgrade() {
+  if (!editDialog.row?.id || !authUpgradeDialog.row?.id) return
+  if (Number(authUpgradeDialog.form.additional_devices || 0) <= 0) {
+    ElMessage.warning('新增设备数必须大于 0')
+    return
+  }
+
+  authUpgradeDialog.previewLoading = true
+
+  try {
+    const res = await userApi.upgradePreview(
+      editDialog.row.id,
+      authUpgradeDialog.row.id,
+      authUpgradeDialog.form.additional_devices,
+      authUpgradeDialog.form.mode
+    )
+    authUpgradeDialog.preview = res.data
+  } finally {
+    authUpgradeDialog.previewLoading = false
+  }
+}
+
+async function submitAuthUpgrade() {
+  if (!editDialog.row?.id || !authUpgradeDialog.row?.id) return
+  if (!authUpgradeDialog.preview) {
+    ElMessage.warning('请先预览扣点')
+    return
+  }
+
+  authUpgradeDialog.loading = true
+
+  try {
+    await userApi.upgradeAuth(editDialog.row.id, authUpgradeDialog.row.id, {
+      additional_devices: authUpgradeDialog.form.additional_devices,
+      mode: authUpgradeDialog.form.mode,
+    })
+
+    ElMessage.success('授权设备数已新增')
+    authUpgradeDialog.visible = false
+    authUpgradeDialog.preview = null
+
+    await Promise.all([
+      loadEditAuths(),
+      loadUsers(),
+    ])
+  } finally {
+    authUpgradeDialog.loading = false
+  }
 }
 
 async function saveAuthEdit() {
@@ -2066,6 +2292,10 @@ onMounted(async () => {
   color: #0f172a;
 }
 
+.upgrade-preview-panel {
+  margin: 4px 0 16px 120px;
+}
+
 @media (max-width: 900px) {
   .page-header {
     flex-direction: column;
@@ -2074,6 +2304,10 @@ onMounted(async () => {
 
   .placeholder-grid {
     grid-template-columns: 1fr;
+  }
+
+  .upgrade-preview-panel {
+    margin-left: 0;
   }
 }
 </style>

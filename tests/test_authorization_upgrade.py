@@ -15,6 +15,7 @@ r"""
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 
 async def _create_user_with_authorization(client, admin_headers: dict, project_id: int) -> dict:
@@ -43,6 +44,39 @@ async def _create_user_with_authorization(client, admin_headers: dict, project_i
     auth = auth_response.json()
 
     return {"user_id": user["id"], "auth_id": auth["id"]}
+
+
+async def _create_user_with_expiring_authorization(client, admin_headers: dict, project_id: int) -> dict:
+    username = f"renew_test_{uuid.uuid4().hex[:8]}"
+    password = "TestPass@2026!"
+    valid_until = datetime.now(timezone.utc) + timedelta(days=30)
+
+    user_response = await client.post(
+        "/api/users/",
+        json={"username": username, "password": password},
+        headers=admin_headers,
+    )
+    assert user_response.status_code == 201, user_response.text
+    user = user_response.json()
+
+    auth_response = await client.post(
+        f"/api/users/{user['id']}/authorizations",
+        json={
+            "game_project_id": project_id,
+            "user_level": "normal",
+            "authorized_devices": 2,
+            "valid_until": valid_until.isoformat(),
+        },
+        headers=admin_headers,
+    )
+    assert auth_response.status_code == 201, auth_response.text
+    auth = auth_response.json()
+
+    return {
+        "user_id": user["id"],
+        "auth_id": auth["id"],
+        "old_valid_until": valid_until,
+    }
 
 
 class TestAuthorizationUpgradePreview:
@@ -74,3 +108,40 @@ class TestAuthorizationUpgradePreview:
         assert data["additional_devices"] == 2
         assert data["mode"] == "append"
         assert data["consumed_points"] == 0.0
+
+
+class TestAuthorizationRenew:
+    async def test_preview_requires_admin_or_agent_token(self, client, admin_headers, project_id):
+        item = await _create_user_with_expiring_authorization(client, admin_headers, project_id)
+        new_valid_until = item["old_valid_until"] + timedelta(days=30)
+
+        response = await client.post(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/renew/preview",
+            json={"valid_until": new_valid_until.isoformat()},
+        )
+
+        assert response.status_code == 401
+
+    async def test_admin_can_preview_and_renew_without_charge(self, client, admin_headers, project_id):
+        item = await _create_user_with_expiring_authorization(client, admin_headers, project_id)
+        new_valid_until = item["old_valid_until"] + timedelta(days=30)
+
+        preview_response = await client.post(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/renew/preview",
+            json={"valid_until": new_valid_until.isoformat()},
+            headers=admin_headers,
+        )
+        assert preview_response.status_code == 200, preview_response.text
+        preview = preview_response.json()
+        assert preview["authorized_devices"] == 2
+        assert preview["will_charge"] is False
+
+        renew_response = await client.post(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/renew",
+            json={"valid_until": new_valid_until.isoformat()},
+            headers=admin_headers,
+        )
+        assert renew_response.status_code == 200, renew_response.text
+        data = renew_response.json()
+        assert data["consumed_points"] == 0.0
+        assert data["authorization"]["valid_until"] is not None

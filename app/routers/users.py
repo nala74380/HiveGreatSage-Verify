@@ -50,6 +50,9 @@ from app.models.main.models import Admin, Agent
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationCostPreviewResponse,
+    AuthorizationRenewPreviewResponse,
+    AuthorizationRenewRequest,
+    AuthorizationRenewResponse,
     AuthorizationResponse,
     AuthorizationUpdateRequest,
     AuthorizationUpgradePreviewResponse,
@@ -72,7 +75,9 @@ from app.services.user_service import (
     grant_authorization,
     list_users,
     preview_authorization_cost,
+    preview_authorization_renew,
     preview_authorization_upgrade,
+    renew_authorization,
     revoke_authorization,
     suspend_authorization_with_freeze,
     soft_delete_user,
@@ -609,6 +614,71 @@ async def revoke_auth_endpoint(
             "authorization_id": auth_id,
         },
     )
+
+
+@router.post(
+    "/{user_id}/authorizations/{auth_id}/renew/preview",
+    response_model=AuthorizationRenewPreviewResponse,
+    summary="预览授权续费扣点",
+)
+async def renew_preview_endpoint(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationRenewRequest,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationRenewPreviewResponse:
+    admin, agent = caller
+    return await preview_authorization_renew(
+        user_id=user_id,
+        auth_id=auth_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+
+@router.post(
+    "/{user_id}/authorizations/{auth_id}/renew",
+    response_model=AuthorizationRenewResponse,
+    summary="授权续费",
+)
+async def renew_auth_endpoint(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationRenewRequest,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationRenewResponse:
+    admin, agent = caller
+    result = await renew_authorization(
+        user_id=user_id,
+        auth_id=auth_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.renew",
+        target_type="authorization",
+        target_id=auth_id,
+        summary=f"续费用户 {user_id} 授权 {auth_id}",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": user_id,
+            "authorization_id": auth_id,
+            "old_valid_until": result.old_valid_until.isoformat() if result.old_valid_until else None,
+            "new_valid_until": result.new_valid_until.isoformat(),
+            "consumed_points": result.consumed_points,
+        },
+    )
+    return result
 
 
 @router.get(
