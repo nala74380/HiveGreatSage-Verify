@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin
@@ -64,6 +64,7 @@ async def list_audit_logs(
     action_prefix: str | None = Query(default=None, description="动作名前缀，如 auth. / accounting."),
     target_type: str | None = Query(default=None),
     target_id: str | None = Query(default=None),
+    user_id: int | None = Query(default=None, description="按用户 ID 聚合查询用户、授权、设备、账务相关审计"),
     request_id: str | None = Query(default=None),
     date_from: datetime | None = Query(default=None, description="开始时间，ISO8601"),
     date_to: datetime | None = Query(default=None, description="结束时间，ISO8601"),
@@ -93,6 +94,11 @@ async def list_audit_logs(
         conditions.append(AuditLog.target_type == target_type)
     if target_id:
         conditions.append(AuditLog.target_id == target_id)
+    if user_id is not None:
+        conditions.append(or_(
+            (AuditLog.target_type == "user") & (AuditLog.target_id == str(user_id)),
+            AuditLog.metadata_json["user_id"].astext == str(user_id),
+        ))
     if request_id:
         conditions.append(AuditLog.request_id == request_id)
     if date_from:
@@ -128,6 +134,7 @@ async def list_audit_logs(
             "action_prefix": action_prefix,
             "target_type": target_type,
             "target_id": target_id,
+            "user_id": user_id,
             "request_id": request_id,
             "date_from": date_from.isoformat() if date_from else None,
             "date_to": date_to.isoformat() if date_to else None,

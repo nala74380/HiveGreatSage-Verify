@@ -137,6 +137,42 @@ class AuthorizationRenewResponse(BaseModel):
     new_valid_until: datetime
 
 
+class AuthorizationLevelUpgradeRequest(BaseModel):
+    user_level: UserLevel = Field(..., description="升级后的项目内授权等级")
+
+    model_config = {"extra": "forbid"}
+
+
+class AuthorizationLevelUpgradePreviewResponse(BaseModel):
+    authorization_id: int
+    game_project_id: int
+    game_project_code: str
+    game_project_name: str
+    old_user_level: str
+    new_user_level: str
+    old_user_level_name: str
+    new_user_level_name: str
+    authorized_devices: int
+    valid_until: datetime | None = None
+    old_total_cost: float
+    new_total_cost: float
+    difference_cost: float
+    will_charge: bool
+    agent_id: int | None = None
+    charged_balance: float | None = None
+    credit_balance: float | None = None
+    frozen_credit: float | None = None
+    available_total: float | None = None
+    enough_balance: bool | None = None
+
+
+class AuthorizationLevelUpgradeResponse(BaseModel):
+    authorization: "AuthorizationResponse"
+    consumed_points: float
+    old_user_level: str
+    new_user_level: str
+
+
 # ── 响应模型 ──────────────────────────────────────────────────
 
 class AuthorizationInfo(BaseModel):

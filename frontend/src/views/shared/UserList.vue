@@ -484,7 +484,7 @@
         </div>
       </template>
 
-      <el-tabs v-model="editDialog.activeTab">
+      <el-tabs v-model="editDialog.activeTab" @tab-change="handleEditTabChange">
         <el-tab-pane label="基础信息" name="base">
           <el-form :model="editDialog.form" label-width="110px">
             <el-form-item label="用户名">
@@ -632,10 +632,21 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" width="220" fixed="right">
               <template #default="{ row }">
-                <el-button text size="small" @click="openAuthActionDialog(row)">
-                  {{ auth.isAgent ? '新增设备' : '编辑' }}
+                <template v-if="auth.isAgent">
+                  <el-button text size="small" @click="openAuthUpgradeDialog(row)">
+                    新增设备
+                  </el-button>
+                  <el-button text size="small" @click="openAuthRenewDialog(row)">
+                    续费
+                  </el-button>
+                  <el-button text size="small" @click="openAuthLevelDialog(row)">
+                    升级
+                  </el-button>
+                </template>
+                <el-button v-else text size="small" @click="openAuthEditDialog(row)">
+                  编辑
                 </el-button>
 
                 <el-button
@@ -869,54 +880,293 @@
         <el-tab-pane label="账务与冻结" name="finance">
           <el-alert
             :title="auth.isAdmin
-              ? '账务与冻结记录待接入：管理员应可查看扣点快照、返点记录、冻结权益记录和清算状态。'
-              : '账务与冻结记录待接入：代理仅可查看自己相关的扣点预览和冻结权益状态。'"
+              ? '已接入授权冻结权益记录；扣点快照和返点记录将继续按用户维度补齐。'
+              : '代理可通过授权动作查看扣点预览；冻结权益状态由管理员侧查看。'"
             type="info"
             show-icon
             :closable="false"
             class="small-alert"
           />
 
-          <div class="placeholder-grid">
-            <div class="placeholder-item">
-              <div class="placeholder-title">扣点快照</div>
-              <div class="placeholder-text">待接入</div>
+          <div v-if="auth.isAdmin" class="finance-panel">
+            <div class="auth-section-title">
+              授权扣点快照
+              <el-button
+                size="small"
+                :icon="Refresh"
+                :loading="editDialog.finance.chargeLoading"
+                @click="loadUserCharges"
+                class="small-refresh-btn"
+              />
             </div>
 
-            <div class="placeholder-item">
-              <div class="placeholder-title">返点记录</div>
-              <div class="placeholder-text">{{ auth.isAdmin ? '待接入' : '仅管理员可查看清算明细' }}</div>
+            <el-table
+              v-loading="editDialog.finance.chargeLoading"
+              :data="editDialog.finance.charges"
+              size="small"
+              stripe
+              empty-text="暂无授权扣点快照"
+            >
+              <el-table-column label="项目" min-width="150">
+                <template #default="{ row }">
+                  {{ row.project_name || row.game_project_code || '-' }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="等级/设备" width="120">
+                <template #default="{ row }">
+                  <LevelTag :level="row.user_level" />
+                  <div class="sub-text">{{ displayDeviceLimit(row.authorized_devices) }}</div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="扣点" width="160">
+                <template #default="{ row }">
+                  <div>{{ fmtMoney(row.original_cost) }} 点</div>
+                  <div class="sub-text">充值 {{ fmtMoney(row.charged_consumed) }}</div>
+                  <div class="sub-text">授信 {{ fmtMoney(row.credit_consumed) }}</div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="返点状态" width="110">
+                <template #default="{ row }">
+                  <el-tag :type="refundStatusTag(row.refund_status)" size="small" effect="light">
+                    {{ refundStatusLabel(row.refund_status) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="有效期" min-width="220">
+                <template #default="{ row }">
+                  <div>{{ formatDatetime(row.valid_from) }}</div>
+                  <div class="sub-text">至 {{ formatDatetime(row.valid_until) }}</div>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="pager-row compact-pager">
+              <span class="total-text">共 {{ editDialog.finance.chargeTotal }} 条</span>
+              <el-pagination
+                v-model:current-page="editDialog.finance.chargePage"
+                v-model:page-size="editDialog.finance.chargePageSize"
+                :page-sizes="[10, 20, 50]"
+                layout="sizes, prev, pager, next"
+                :total="editDialog.finance.chargeTotal"
+                @size-change="loadUserCharges"
+                @current-change="loadUserCharges"
+              />
+            </div>
+          </div>
+
+          <div v-if="auth.isAdmin" class="finance-panel">
+            <div class="auth-section-title">
+              删除返点记录
+              <el-button
+                size="small"
+                :icon="Refresh"
+                :loading="editDialog.finance.refundLoading"
+                @click="loadUserRefunds"
+                class="small-refresh-btn"
+              />
             </div>
 
-            <div class="placeholder-item">
-              <div class="placeholder-title">冻结权益记录</div>
-              <div class="placeholder-text">待接入 AuthorizationFreezeRecord</div>
+            <el-table
+              v-loading="editDialog.finance.refundLoading"
+              :data="editDialog.finance.refunds"
+              size="small"
+              stripe
+              empty-text="暂无删除返点记录"
+            >
+              <el-table-column label="项目" min-width="150">
+                <template #default="{ row }">
+                  {{ row.project_name || row.game_project_code || '-' }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="原扣点" width="110">
+                <template #default="{ row }">
+                  {{ fmtMoney(row.original_cost) }} 点
+                </template>
+              </el-table-column>
+
+              <el-table-column label="返点" width="160">
+                <template #default="{ row }">
+                  <div class="amount-in">+{{ fmtMoney(row.refunded_points) }} 点</div>
+                  <div class="sub-text">充值 {{ fmtMoney(row.refunded_charged) }}</div>
+                  <div class="sub-text">授信 {{ fmtMoney(row.refunded_credit) }}</div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="使用情况" min-width="170">
+                <template #default="{ row }">
+                  <div>购买 {{ row.last_refund_paid_hours || row.paid_hours || 0 }} 小时</div>
+                  <div class="sub-text">已用 {{ row.last_refund_used_hours || 0 }} 小时</div>
+                  <div class="sub-text">已用 {{ fmtMoney(row.last_refund_used_cost) }} 点</div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="返点时间" width="170">
+                <template #default="{ row }">
+                  {{ formatDatetime(row.refunded_at) }}
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="pager-row compact-pager">
+              <span class="total-text">共 {{ editDialog.finance.refundTotal }} 条</span>
+              <el-pagination
+                v-model:current-page="editDialog.finance.refundPage"
+                v-model:page-size="editDialog.finance.refundPageSize"
+                :page-sizes="[10, 20, 50]"
+                layout="sizes, prev, pager, next"
+                :total="editDialog.finance.refundTotal"
+                @size-change="loadUserRefunds"
+                @current-change="loadUserRefunds"
+              />
+            </div>
+          </div>
+
+          <div v-if="auth.isAdmin" class="finance-panel">
+            <div class="auth-section-title">
+              授权冻结权益记录
+              <el-button
+                size="small"
+                :icon="Refresh"
+                :loading="editDialog.finance.freezeLoading"
+                @click="loadUserFreezes"
+                class="small-refresh-btn"
+              />
             </div>
 
-            <div class="placeholder-item">
-              <div class="placeholder-title">启用恢复记录</div>
-              <div class="placeholder-text">待接入</div>
+            <el-table
+              v-loading="editDialog.finance.freezeLoading"
+              :data="editDialog.finance.freezes"
+              size="small"
+              stripe
+              empty-text="暂无授权冻结记录"
+            >
+              <el-table-column label="项目" min-width="150">
+                <template #default="{ row }">
+                  {{ row.project_name || row.game_project_code || '-' }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="状态" width="110">
+                <template #default="{ row }">
+                  <el-tag :type="freezeStatusTag(row.status)" size="small" effect="light">
+                    {{ freezeStatusLabel(row.status) }}
+                  </el-tag>
+                  <div class="sub-text">{{ freezeTypeLabel(row.freeze_type) }}</div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="冻结权益" min-width="160">
+                <template #default="{ row }">
+                  <div>{{ row.remaining_hours ?? '-' }} 小时</div>
+                  <div class="sub-text">{{ fmtMoney(row.estimated_points) }} 点</div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="冻结时间" width="170">
+                <template #default="{ row }">
+                  {{ formatDatetime(row.frozen_at) }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="释放/清算" width="170">
+                <template #default="{ row }">
+                  {{ row.released_at ? formatDatetime(row.released_at) : (row.settled_at ? formatDatetime(row.settled_at) : '-') }}
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="pager-row compact-pager">
+              <span class="total-text">共 {{ editDialog.finance.freezeTotal }} 条</span>
+              <el-pagination
+                v-model:current-page="editDialog.finance.freezePage"
+                v-model:page-size="editDialog.finance.freezePageSize"
+                :page-sizes="[10, 20, 50]"
+                layout="sizes, prev, pager, next"
+                :total="editDialog.finance.freezeTotal"
+                @size-change="loadUserFreezes"
+                @current-change="loadUserFreezes"
+              />
             </div>
           </div>
         </el-tab-pane>
 
         <el-tab-pane v-if="auth.isAdmin" label="审计日志" name="audit">
           <el-alert
-            title="审计日志待接入：后续展示创建用户、状态修改、密码修改、授权调整、停用启用、删除清算、设备解绑等事件。"
+            title="按当前用户聚合展示用户、授权、设备与账务相关审计日志。"
             type="info"
             show-icon
             :closable="false"
             class="small-alert"
           />
 
-          <el-timeline class="audit-placeholder">
-            <el-timeline-item timestamp="待接入" type="primary">
-              用户与授权审计日志
-            </el-timeline-item>
-            <el-timeline-item timestamp="待接入">
-              设备与账务审计日志
-            </el-timeline-item>
-          </el-timeline>
+          <div class="auth-section-title">
+            用户审计日志
+            <el-button
+              size="small"
+              :icon="Refresh"
+              :loading="editDialog.audit.loading"
+              @click="loadUserAuditLogs"
+              class="small-refresh-btn"
+            />
+          </div>
+
+          <el-table
+            v-loading="editDialog.audit.loading"
+            :data="editDialog.audit.logs"
+            size="small"
+            stripe
+            empty-text="暂无审计日志"
+          >
+            <el-table-column label="时间" width="170">
+              <template #default="{ row }">
+                {{ formatDatetime(row.created_at) }}
+              </template>
+            </el-table-column>
+
+            <el-table-column label="操作" min-width="220">
+              <template #default="{ row }">
+                <div class="main-text">{{ row.summary || row.action }}</div>
+                <div class="sub-text">{{ row.action }}</div>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="操作者" width="120">
+              <template #default="{ row }">
+                {{ actorLabel(row) }}
+              </template>
+            </el-table-column>
+
+            <el-table-column label="目标" width="150">
+              <template #default="{ row }">
+                <div>{{ row.target_type || '-' }}</div>
+                <div class="sub-text">{{ row.target_id || '-' }}</div>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="请求ID" min-width="160">
+              <template #default="{ row }">
+                <span class="mono-text">{{ row.request_id || '-' }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div class="pager-row compact-pager">
+            <span class="total-text">共 {{ editDialog.audit.total }} 条</span>
+            <el-pagination
+              v-model:current-page="editDialog.audit.page"
+              v-model:page-size="editDialog.audit.pageSize"
+              :page-sizes="[10, 20, 50]"
+              layout="sizes, prev, pager, next"
+              :total="editDialog.audit.total"
+              @size-change="loadUserAuditLogs"
+              @current-change="loadUserAuditLogs"
+            />
+          </div>
         </el-tab-pane>
 
         <el-tab-pane v-if="auth.isAdmin" label="代理治理" name="creator">
@@ -1151,6 +1401,146 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="authRenewDialog.visible"
+      title="授权续费"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form :model="authRenewDialog.form" label-width="120px">
+        <el-form-item label="项目">
+          <span class="readonly-val">{{ authProjectName(authRenewDialog.row) }}</span>
+        </el-form-item>
+
+        <el-form-item label="当前到期">
+          <span class="readonly-val">{{ authRenewDialog.row?.valid_until ? formatDate(authRenewDialog.row.valid_until) : '-' }}</span>
+        </el-form-item>
+
+        <el-form-item label="续费到期">
+          <div class="expiry-picker-wrap">
+            <div class="quick-btns">
+              <el-button size="small" @click="setAuthRenewExpiry(30)">+30天</el-button>
+              <el-button size="small" @click="setAuthRenewExpiry(90)">+90天</el-button>
+              <el-button size="small" @click="setAuthRenewExpiry(365)">+365天</el-button>
+            </div>
+            <el-date-picker
+              v-model="authRenewDialog.form.valid_until"
+              type="datetime"
+              placeholder="选择新的到期时间"
+              style="width: 100%"
+              @change="resetAuthRenewPreview"
+            />
+          </div>
+        </el-form-item>
+
+        <div v-if="authRenewDialog.preview" class="cost-preview-panel upgrade-preview-panel">
+          <div class="preview-title">续费扣点预览</div>
+          <div class="preview-grid">
+            <span>设备数</span>
+            <strong>{{ displayDeviceLimit(authRenewDialog.preview.authorized_devices) }}</strong>
+            <span>原到期</span>
+            <strong>{{ authRenewDialog.preview.old_valid_until ? formatDate(authRenewDialog.preview.old_valid_until) : '-' }}</strong>
+            <span>新到期</span>
+            <strong>{{ formatDate(authRenewDialog.preview.new_valid_until) }}</strong>
+            <span>预计扣点</span>
+            <strong>{{ fmtMoney(authRenewDialog.preview.total_cost) }} 点</strong>
+            <span>可用余额</span>
+            <strong>{{ fmtMoney(authRenewDialog.preview.available_total) }} 点</strong>
+          </div>
+          <el-alert
+            v-if="authRenewDialog.preview.enough_balance === false"
+            title="代理可用点数不足，提交续费会失败"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="small-alert"
+          />
+        </div>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="authRenewDialog.visible = false">取消</el-button>
+        <el-button :loading="authRenewDialog.previewLoading" @click="previewAuthRenew">
+          预览扣点
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="authRenewDialog.loading"
+          :disabled="!authRenewDialog.preview"
+          @click="submitAuthRenew"
+        >
+          确认续费
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="authLevelDialog.visible"
+      title="授权等级升级"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form :model="authLevelDialog.form" label-width="120px">
+        <el-form-item label="项目">
+          <span class="readonly-val">{{ authProjectName(authLevelDialog.row) }}</span>
+        </el-form-item>
+
+        <el-form-item label="当前等级">
+          <LevelTag :level="authLevelDialog.row?.user_level" />
+        </el-form-item>
+
+        <el-form-item label="升级到">
+          <el-select v-model="authLevelDialog.form.user_level" style="width: 180px" @change="resetAuthLevelPreview">
+            <el-option label="试用" value="trial" />
+            <el-option label="普通" value="normal" />
+            <el-option label="VIP" value="vip" />
+            <el-option label="SVIP" value="svip" />
+          </el-select>
+        </el-form-item>
+
+        <div v-if="authLevelDialog.preview" class="cost-preview-panel upgrade-preview-panel">
+          <div class="preview-title">等级升级差价预览</div>
+          <div class="preview-grid">
+            <span>原等级</span>
+            <strong>{{ authLevelDialog.preview.old_user_level_name }}</strong>
+            <span>新等级</span>
+            <strong>{{ authLevelDialog.preview.new_user_level_name }}</strong>
+            <span>旧成本</span>
+            <strong>{{ fmtMoney(authLevelDialog.preview.old_total_cost) }} 点</strong>
+            <span>新成本</span>
+            <strong>{{ fmtMoney(authLevelDialog.preview.new_total_cost) }} 点</strong>
+            <span>差价扣点</span>
+            <strong>{{ fmtMoney(authLevelDialog.preview.difference_cost) }} 点</strong>
+            <span>可用余额</span>
+            <strong>{{ fmtMoney(authLevelDialog.preview.available_total) }} 点</strong>
+          </div>
+          <el-alert
+            v-if="authLevelDialog.preview.enough_balance === false"
+            title="代理可用点数不足，提交升级会失败"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="small-alert"
+          />
+        </div>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="authLevelDialog.visible = false">取消</el-button>
+        <el-button :loading="authLevelDialog.previewLoading" @click="previewAuthLevelUpgrade">
+          预览扣点
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="authLevelDialog.loading"
+          :disabled="!authLevelDialog.preview"
+          @click="submitAuthLevelUpgrade"
+        >
+          确认升级
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1181,6 +1571,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { userApi } from '@/api/user'
 import { agentApi } from '@/api/agent'
+import { accountingApi } from '@/api/accounting'
+import { auditApi } from '@/api/audit'
 import { adminProjectApi as projectApi } from '@/api/admin/project'
 import { agentProjectAccessApi } from '@/api/agent/projectAccess'
 import { useAuthStore } from '@/stores/auth'
@@ -1249,6 +1641,30 @@ const editDialog = reactive({
   },
   auths: [],
   grantForm: buildGrantForm(),
+  finance: {
+    chargeLoading: false,
+    charges: [],
+    chargePage: 1,
+    chargePageSize: 10,
+    chargeTotal: 0,
+    refundLoading: false,
+    refunds: [],
+    refundPage: 1,
+    refundPageSize: 10,
+    refundTotal: 0,
+    freezeLoading: false,
+    freezes: [],
+    freezePage: 1,
+    freezePageSize: 10,
+    freezeTotal: 0,
+  },
+  audit: {
+    loading: false,
+    logs: [],
+    page: 1,
+    pageSize: 20,
+    total: 0,
+  },
 })
 
 const authEditDialog = reactive({
@@ -1272,6 +1688,28 @@ const authUpgradeDialog = reactive({
   form: {
     additional_devices: 1,
     mode: 'append',
+  },
+})
+
+const authRenewDialog = reactive({
+  visible: false,
+  loading: false,
+  previewLoading: false,
+  row: null,
+  preview: null,
+  form: {
+    valid_until: null,
+  },
+})
+
+const authLevelDialog = reactive({
+  visible: false,
+  loading: false,
+  previewLoading: false,
+  row: null,
+  preview: null,
+  form: {
+    user_level: 'vip',
   },
 })
 
@@ -1455,6 +1893,59 @@ function authStatusType(item) {
   return 'info'
 }
 
+function freezeStatusLabel(status) {
+  const map = {
+    frozen: '冻结中',
+    released: '已释放',
+    refunded: '已清算',
+    cancelled: '已取消',
+  }
+  return map[status] || status || '-'
+}
+
+function freezeStatusTag(status) {
+  const map = {
+    frozen: 'warning',
+    released: 'success',
+    refunded: 'info',
+    cancelled: 'info',
+  }
+  return map[status] || 'info'
+}
+
+function freezeTypeLabel(type) {
+  const map = {
+    agent_suspend: '代理停用冻结',
+    admin_suspend: '管理员停用冻结',
+  }
+  return map[type] || type || '-'
+}
+
+function refundStatusLabel(status) {
+  const map = {
+    none: '未返点',
+    partial: '部分返点',
+    refunded: '已返点',
+    skipped: '已跳过',
+  }
+  return map[status] || status || '未返点'
+}
+
+function refundStatusTag(status) {
+  const map = {
+    none: 'info',
+    partial: 'warning',
+    refunded: 'success',
+    skipped: 'info',
+  }
+  return map[status] || 'info'
+}
+
+function actorLabel(row) {
+  if (!row?.actor_type) return '-'
+  return row.actor_id ? `${row.actor_type}#${row.actor_id}` : row.actor_type
+}
+
 function userStatusText(status) {
   const map = {
     active: '正常',
@@ -1488,8 +1979,25 @@ function setAuthEditExpiry(days) {
   setDateAfterDays(authEditDialog.form, 'valid_until', days)
 }
 
+function setAuthRenewExpiry(days) {
+  const base = authRenewDialog.row?.valid_until
+    ? new Date(authRenewDialog.row.valid_until)
+    : new Date()
+  base.setDate(base.getDate() + days)
+  authRenewDialog.form.valid_until = base
+  resetAuthRenewPreview()
+}
+
 function resetAuthUpgradePreview() {
   authUpgradeDialog.preview = null
+}
+
+function resetAuthRenewPreview() {
+  authRenewDialog.preview = null
+}
+
+function resetAuthLevelPreview() {
+  authLevelDialog.preview = null
 }
 
 async function loadLookups() {
@@ -1661,8 +2169,28 @@ async function openEditDialog(row) {
   editDialog.generatedPassword = ''
   editDialog.grantForm = buildGrantForm()
   editDialog.grantPreview = null
+  editDialog.finance.charges = []
+  editDialog.finance.chargePage = 1
+  editDialog.finance.chargeTotal = 0
+  editDialog.finance.refunds = []
+  editDialog.finance.refundPage = 1
+  editDialog.finance.refundTotal = 0
+  editDialog.finance.freezes = []
+  editDialog.finance.freezePage = 1
+  editDialog.finance.freezeTotal = 0
+  editDialog.audit.logs = []
+  editDialog.audit.page = 1
+  editDialog.audit.total = 0
 
   await loadEditAuths()
+}
+
+function handleEditTabChange(tabName) {
+  if (tabName === 'finance' && auth.isAdmin) {
+    loadUserFinance()
+  } else if (tabName === 'audit' && auth.isAdmin) {
+    loadUserAuditLogs()
+  }
 }
 
 async function loadEditAuths() {
@@ -1678,6 +2206,86 @@ async function loadEditAuths() {
       : []
 
   editDialog.auths = auths.map(normalizeAuthItem)
+}
+
+async function loadUserFreezes() {
+  if (!auth.isAdmin || !editDialog.row?.id) return
+
+  editDialog.finance.freezeLoading = true
+
+  try {
+    const res = await accountingApi.freezes({
+      page: editDialog.finance.freezePage,
+      page_size: editDialog.finance.freezePageSize,
+      user_id: editDialog.row.id,
+    })
+    editDialog.finance.freezes = res.data.freezes || []
+    editDialog.finance.freezeTotal = res.data.total || 0
+  } finally {
+    editDialog.finance.freezeLoading = false
+  }
+}
+
+async function loadUserFinance() {
+  await Promise.all([
+    loadUserCharges(),
+    loadUserRefunds(),
+    loadUserFreezes(),
+  ])
+}
+
+async function loadUserCharges() {
+  if (!auth.isAdmin || !editDialog.row?.id) return
+
+  editDialog.finance.chargeLoading = true
+
+  try {
+    const res = await accountingApi.charges({
+      page: editDialog.finance.chargePage,
+      page_size: editDialog.finance.chargePageSize,
+      user_id: editDialog.row.id,
+    })
+    editDialog.finance.charges = res.data.charges || []
+    editDialog.finance.chargeTotal = res.data.total || 0
+  } finally {
+    editDialog.finance.chargeLoading = false
+  }
+}
+
+async function loadUserRefunds() {
+  if (!auth.isAdmin || !editDialog.row?.id) return
+
+  editDialog.finance.refundLoading = true
+
+  try {
+    const res = await accountingApi.refunds({
+      page: editDialog.finance.refundPage,
+      page_size: editDialog.finance.refundPageSize,
+      user_id: editDialog.row.id,
+    })
+    editDialog.finance.refunds = res.data.refunds || []
+    editDialog.finance.refundTotal = res.data.total || 0
+  } finally {
+    editDialog.finance.refundLoading = false
+  }
+}
+
+async function loadUserAuditLogs() {
+  if (!auth.isAdmin || !editDialog.row?.id) return
+
+  editDialog.audit.loading = true
+
+  try {
+    const res = await auditApi.list({
+      page: editDialog.audit.page,
+      page_size: editDialog.audit.pageSize,
+      user_id: editDialog.row.id,
+    })
+    editDialog.audit.logs = res.data.logs || []
+    editDialog.audit.total = res.data.total || 0
+  } finally {
+    editDialog.audit.loading = false
+  }
 }
 
 async function submitEdit() {
@@ -1812,14 +2420,6 @@ async function quickGrantDo() {
   }
 }
 
-function openAuthActionDialog(row) {
-  if (auth.isAgent) {
-    openAuthUpgradeDialog(row)
-    return
-  }
-  openAuthEditDialog(row)
-}
-
 function openAuthUpgradeDialog(row) {
   if (row.status !== 'active') {
     ElMessage.warning('只有有效授权可以新增设备')
@@ -1833,6 +2433,35 @@ function openAuthUpgradeDialog(row) {
   }
   authUpgradeDialog.preview = null
   authUpgradeDialog.visible = true
+}
+
+function openAuthRenewDialog(row) {
+  if (row.status !== 'active') {
+    ElMessage.warning('只有有效授权可以续费')
+    return
+  }
+
+  authRenewDialog.row = row
+  authRenewDialog.form = {
+    valid_until: row.valid_until ? new Date(row.valid_until) : null,
+  }
+  authRenewDialog.preview = null
+  authRenewDialog.visible = true
+}
+
+function openAuthLevelDialog(row) {
+  if (row.status !== 'active') {
+    ElMessage.warning('只有有效授权可以升级等级')
+    return
+  }
+
+  const nextLevel = row.user_level === 'vip' ? 'svip' : 'vip'
+  authLevelDialog.row = row
+  authLevelDialog.form = {
+    user_level: nextLevel,
+  }
+  authLevelDialog.preview = null
+  authLevelDialog.visible = true
 }
 
 function openAuthEditDialog(row) {
@@ -1893,6 +2522,98 @@ async function submitAuthUpgrade() {
     ])
   } finally {
     authUpgradeDialog.loading = false
+  }
+}
+
+async function previewAuthRenew() {
+  if (!editDialog.row?.id || !authRenewDialog.row?.id) return
+  if (!authRenewDialog.form.valid_until) {
+    ElMessage.warning('请选择新的到期时间')
+    return
+  }
+
+  authRenewDialog.previewLoading = true
+
+  try {
+    const res = await userApi.renewPreview(editDialog.row.id, authRenewDialog.row.id, {
+      valid_until: isoOrNull(authRenewDialog.form.valid_until),
+    })
+    authRenewDialog.preview = res.data
+  } finally {
+    authRenewDialog.previewLoading = false
+  }
+}
+
+async function submitAuthRenew() {
+  if (!editDialog.row?.id || !authRenewDialog.row?.id) return
+  if (!authRenewDialog.preview) {
+    ElMessage.warning('请先预览扣点')
+    return
+  }
+
+  authRenewDialog.loading = true
+
+  try {
+    await userApi.renewAuth(editDialog.row.id, authRenewDialog.row.id, {
+      valid_until: isoOrNull(authRenewDialog.form.valid_until),
+    })
+
+    ElMessage.success('项目授权已续费')
+    authRenewDialog.visible = false
+    authRenewDialog.preview = null
+
+    await Promise.all([
+      loadEditAuths(),
+      loadUsers(),
+    ])
+  } finally {
+    authRenewDialog.loading = false
+  }
+}
+
+async function previewAuthLevelUpgrade() {
+  if (!editDialog.row?.id || !authLevelDialog.row?.id) return
+  if (!authLevelDialog.form.user_level) {
+    ElMessage.warning('请选择升级后的等级')
+    return
+  }
+
+  authLevelDialog.previewLoading = true
+
+  try {
+    const res = await userApi.levelUpgradePreview(editDialog.row.id, authLevelDialog.row.id, {
+      user_level: authLevelDialog.form.user_level,
+    })
+    authLevelDialog.preview = res.data
+  } finally {
+    authLevelDialog.previewLoading = false
+  }
+}
+
+async function submitAuthLevelUpgrade() {
+  if (!editDialog.row?.id || !authLevelDialog.row?.id) return
+  if (!authLevelDialog.preview) {
+    ElMessage.warning('请先预览扣点')
+    return
+  }
+
+  authLevelDialog.loading = true
+
+  try {
+    await userApi.levelUpgradeAuth(editDialog.row.id, authLevelDialog.row.id, {
+      user_level: authLevelDialog.form.user_level,
+    })
+
+    ElMessage.success('项目授权等级已升级')
+    authLevelDialog.visible = false
+    authLevelDialog.preview = null
+
+    await Promise.all([
+      loadEditAuths(),
+      loadUsers(),
+    ])
+  } finally {
+    authLevelDialog.loading = false
   }
 }
 
@@ -2294,6 +3015,19 @@ onMounted(async () => {
 
 .upgrade-preview-panel {
   margin: 4px 0 16px 120px;
+}
+
+.finance-panel {
+  margin-top: 16px;
+}
+
+.compact-pager {
+  margin-top: 12px;
+}
+
+.mono-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
 }
 
 @media (max-width: 900px) {

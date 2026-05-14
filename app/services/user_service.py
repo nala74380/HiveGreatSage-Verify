@@ -57,6 +57,9 @@ from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationCostPreviewResponse,
     AuthorizationInfo,
+    AuthorizationLevelUpgradePreviewResponse,
+    AuthorizationLevelUpgradeRequest,
+    AuthorizationLevelUpgradeResponse,
     AuthorizationRenewPreviewResponse,
     AuthorizationRenewRequest,
     AuthorizationRenewResponse,
@@ -1321,6 +1324,198 @@ async def upgrade_authorization(
         new_devices=new_devices,
         new_expiry=auth.valid_until,
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# 授权等级升级
+# ═══════════════════════════════════════════════════════════════
+
+async def preview_authorization_level_upgrade(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationLevelUpgradeRequest,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationLevelUpgradePreviewResponse:
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    project = await _get_project_or_404(auth.game_project_id, db)
+    old_cost, new_cost, difference = await _calculate_level_upgrade_difference(
+        auth=auth,
+        project=project,
+        new_user_level=body.user_level,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+    wallet_snapshot = {
+        "charged_balance": None,
+        "credit_balance": None,
+        "frozen_credit": None,
+        "available_total": None,
+        "enough_balance": None,
+    }
+    if agent is not None:
+        wallet_result = await db.execute(
+            select(AccountingWallet).where(AccountingWallet.agent_id == agent.id)
+        )
+        wallet = wallet_result.scalar_one_or_none()
+        charged = float(wallet.charged_balance or 0) if wallet else 0.0
+        credit = float(wallet.credit_balance or 0) if wallet else 0.0
+        frozen = float(wallet.frozen_credit or 0) if wallet else 0.0
+        available = charged + max(0.0, credit - frozen)
+        wallet_snapshot = {
+            "charged_balance": charged,
+            "credit_balance": credit,
+            "frozen_credit": frozen,
+            "available_total": available,
+            "enough_balance": available >= difference,
+        }
+
+    return AuthorizationLevelUpgradePreviewResponse(
+        authorization_id=auth.id,
+        game_project_id=project.id,
+        game_project_code=project.code_name,
+        game_project_name=project.display_name,
+        old_user_level=auth.user_level,
+        new_user_level=body.user_level,
+        old_user_level_name=LEVEL_NAMES.get(auth.user_level, auth.user_level),
+        new_user_level_name=LEVEL_NAMES.get(body.user_level, body.user_level),
+        authorized_devices=int(auth.authorized_devices or 0),
+        valid_until=auth.valid_until,
+        old_total_cost=old_cost,
+        new_total_cost=new_cost,
+        difference_cost=difference,
+        will_charge=agent is not None,
+        agent_id=agent.id if agent else None,
+        **wallet_snapshot,
+    )
+
+
+async def level_upgrade_authorization(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationLevelUpgradeRequest,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationLevelUpgradeResponse:
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    project = await _get_project_or_404(auth.game_project_id, db)
+    _old_cost, _new_cost, difference = await _calculate_level_upgrade_difference(
+        auth=auth,
+        project=project,
+        new_user_level=body.user_level,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+    old_user_level = auth.user_level
+    consumed_points = 0.0
+    if agent is not None and difference > 0:
+        consumed_points = difference
+        await consume_agent_authorization_points(
+            agent_id=agent.id,
+            user_id=user.id,
+            project_id=project.id,
+            authorization_id=auth.id,
+            user_level=body.user_level,
+            authorized_devices=auth.authorized_devices,
+            start_at=datetime.now(timezone.utc),
+            valid_until=auth.valid_until,
+            db=db,
+        )
+
+    auth.user_level = body.user_level
+    await db.flush()
+
+    return AuthorizationLevelUpgradeResponse(
+        authorization=_authorization_to_response(auth, project, consumed_points),
+        consumed_points=consumed_points,
+        old_user_level=old_user_level,
+        new_user_level=body.user_level,
+    )
+
+
+async def _calculate_level_upgrade_difference(
+    auth: Authorization,
+    project: GameProject,
+    new_user_level: str,
+    db: AsyncSession,
+    admin: Admin | None,
+    agent: Agent | None,
+) -> tuple[float, float, float]:
+    if auth.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="只有 active 授权可以升级等级",
+        )
+    if new_user_level == "tester" and admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="tester 级别授权只有管理员可以设置",
+        )
+    if new_user_level == auth.user_level:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新等级不能与当前等级相同",
+        )
+    if int(auth.authorized_devices or 0) <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="升级等级的授权设备数必须大于 0",
+        )
+
+    now = datetime.now(timezone.utc)
+    if not auth.valid_until:
+        if agent is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="代理等级升级必须存在授权到期时间",
+            )
+        return 0.0, 0.0, 0.0
+
+    if _ensure_aware(auth.valid_until) <= now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="授权已到期，请重新授权",
+        )
+
+    if agent is not None:
+        await _assert_agent_project_auth_valid(
+            db=db,
+            agent=agent,
+            project_id=project.id,
+            project_name=project.display_name,
+        )
+
+    old_cost = await calculate_authorization_cost(
+        project_id=project.id,
+        user_level=auth.user_level,
+        authorized_devices=auth.authorized_devices,
+        start_at=now,
+        valid_until=auth.valid_until,
+        db=db,
+    )
+    new_cost = await calculate_authorization_cost(
+        project_id=project.id,
+        user_level=new_user_level,
+        authorized_devices=auth.authorized_devices,
+        start_at=now,
+        valid_until=auth.valid_until,
+        db=db,
+    )
+    old_total = float(old_cost["total_cost"])
+    new_total = float(new_cost["total_cost"])
+    return old_total, new_total, max(new_total - old_total, 0.0)
 
 
 # ═══════════════════════════════════════════════════════════════

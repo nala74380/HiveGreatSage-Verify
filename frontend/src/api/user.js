@@ -93,6 +93,14 @@ export const userApi = {
     return http.post(`/api/users/${userId}/authorizations/${authId}/renew`, data)
   },
 
+  levelUpgradePreview(userId, authId, data) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/level-upgrade/preview`, data)
+  },
+
+  levelUpgradeAuth(userId, authId, data) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/level-upgrade`, data)
+  },
+
   // ── 创建者详情 ────────────────────────────────────────────
   creatorAgentDetail(agentId, params = {}) {
     return http.get(`/api/users/creators/agents/${agentId}`, { params })

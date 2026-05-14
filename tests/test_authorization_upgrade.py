@@ -145,3 +145,41 @@ class TestAuthorizationRenew:
         data = renew_response.json()
         assert data["consumed_points"] == 0.0
         assert data["authorization"]["valid_until"] is not None
+
+
+class TestAuthorizationLevelUpgrade:
+    async def test_preview_requires_admin_or_agent_token(self, client, admin_headers, project_id):
+        item = await _create_user_with_expiring_authorization(client, admin_headers, project_id)
+
+        response = await client.post(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/level-upgrade/preview",
+            json={"user_level": "vip"},
+        )
+
+        assert response.status_code == 401
+
+    async def test_admin_can_preview_and_level_upgrade_without_charge(self, client, admin_headers, project_id):
+        item = await _create_user_with_expiring_authorization(client, admin_headers, project_id)
+
+        preview_response = await client.post(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/level-upgrade/preview",
+            json={"user_level": "vip"},
+            headers=admin_headers,
+        )
+        assert preview_response.status_code == 200, preview_response.text
+        preview = preview_response.json()
+        assert preview["old_user_level"] == "normal"
+        assert preview["new_user_level"] == "vip"
+        assert preview["will_charge"] is False
+
+        upgrade_response = await client.post(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/level-upgrade",
+            json={"user_level": "vip"},
+            headers=admin_headers,
+        )
+        assert upgrade_response.status_code == 200, upgrade_response.text
+        data = upgrade_response.json()
+        assert data["consumed_points"] == 0.0
+        assert data["old_user_level"] == "normal"
+        assert data["new_user_level"] == "vip"
+        assert data["authorization"]["user_level"] == "vip"

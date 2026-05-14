@@ -50,6 +50,9 @@ from app.models.main.models import Admin, Agent
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationCostPreviewResponse,
+    AuthorizationLevelUpgradePreviewResponse,
+    AuthorizationLevelUpgradeRequest,
+    AuthorizationLevelUpgradeResponse,
     AuthorizationRenewPreviewResponse,
     AuthorizationRenewRequest,
     AuthorizationRenewResponse,
@@ -73,8 +76,10 @@ from app.services.user_service import (
     get_creator_agent_detail,
     get_user,
     grant_authorization,
+    level_upgrade_authorization,
     list_users,
     preview_authorization_cost,
+    preview_authorization_level_upgrade,
     preview_authorization_renew,
     preview_authorization_upgrade,
     renew_authorization,
@@ -705,6 +710,71 @@ async def upgrade_preview_endpoint(
         admin=admin,
         agent=agent,
     )
+
+
+@router.post(
+    "/{user_id}/authorizations/{auth_id}/level-upgrade/preview",
+    response_model=AuthorizationLevelUpgradePreviewResponse,
+    summary="预览授权等级升级差价扣点",
+)
+async def level_upgrade_preview_endpoint(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationLevelUpgradeRequest,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationLevelUpgradePreviewResponse:
+    admin, agent = caller
+    return await preview_authorization_level_upgrade(
+        user_id=user_id,
+        auth_id=auth_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+
+@router.post(
+    "/{user_id}/authorizations/{auth_id}/level-upgrade",
+    response_model=AuthorizationLevelUpgradeResponse,
+    summary="授权等级升级",
+)
+async def level_upgrade_auth_endpoint(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationLevelUpgradeRequest,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationLevelUpgradeResponse:
+    admin, agent = caller
+    result = await level_upgrade_authorization(
+        user_id=user_id,
+        auth_id=auth_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+    actor_type, actor_id = _actor(caller)
+    await create_audit_log(
+        db=db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="user_authorization.level_upgrade",
+        target_type="authorization",
+        target_id=auth_id,
+        summary=f"升级用户 {user_id} 授权 {auth_id} 等级",
+        metadata={
+            **_actor_metadata(caller),
+            "user_id": user_id,
+            "authorization_id": auth_id,
+            "old_user_level": result.old_user_level,
+            "new_user_level": result.new_user_level,
+            "consumed_points": result.consumed_points,
+        },
+    )
+    return result
 
 
 @router.post(
