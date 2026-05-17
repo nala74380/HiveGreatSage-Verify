@@ -1,15 +1,14 @@
 r"""
 文件位置: app/core/crypto.py
 文件名称: crypto.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-05-09
-版本: V1.0.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+日期/时间: 2026-05-18
+版本: V1.1.0
 功能说明:
     应用层字段加密/解密（Fernet 对称加密）。
 
     适用场景:
-      - IMSI 等需要加密存储、且偶尔需要反查原文的敏感字段。
-      - 不需要反查的字段应使用 hash_sensitive_value（单向 HMAC-SHA256）。
+      - 需要加密存储、且偶尔需要反查原文的敏感字段。
 
     密钥管理:
       - 主密钥从 settings.SECRET_KEY 经 HKDF 派生 32 字节 Fernet key。
@@ -19,7 +18,7 @@ r"""
     安全边界:
       - 本模块不负责数据库加密。
       - 密文存储为 base64 字符串，长度固定约 100-200 字符。
-      - 日志/审计中永远不输出明文 IMSI。
+      - 日志/审计中永远不输出明文敏感字段。
 """
 
 import base64
@@ -30,10 +29,6 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.config import settings
 
-
-# ── Fernet key 派生（SECRET_KEY → 32-byte Fernet key）──────────
-# Fernet 需要 32 字节的 URL-safe base64-encoded key。
-# 从 SECRET_KEY 通过 HKDF 派生，确保每次启动产生相同 key。
 
 def _derive_fernet_key() -> bytes:
     """HKDF 派生 32 字节密钥，再 base64 编码为 Fernet 所需格式。"""

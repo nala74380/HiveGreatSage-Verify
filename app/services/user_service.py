@@ -64,7 +64,6 @@ from app.schemas.user import (
     AuthorizationRenewRequest,
     AuthorizationRenewResponse,
     AuthorizationResponse,
-    AuthorizationUpdateRequest,
     AuthorizationUpgradePreviewResponse,
     CreatorAgentDetailResponse,
     UserCreateRequest,
@@ -79,6 +78,7 @@ from app.services.accounting_service import (
     LEVEL_NAMES,
     _ceil_hours,
     calculate_authorization_cost,
+    consume_agent_authorization_level_upgrade_diff_points,
     consume_agent_authorization_points,
     consume_agent_authorization_topup_points,
     refund_user_authorization_points_on_delete,
@@ -292,7 +292,7 @@ async def update_user(
 
     注意:
       - 项目内等级、授权设备数、到期时间不在这里更新。
-      - 这些字段通过 update_authorization 更新。
+      - 授权治理必须走专用动作接口（新增设备/续费/等级升级/停用/启用）。
     """
     user = await _get_user_or_404(user_id, db)
     _assert_can_access_user(user=user, admin=admin, agent=agent)
@@ -615,29 +615,13 @@ async def preview_authorization_cost(
         db=db,
     )
 
-    wallet_snapshot = {
-        "charged_balance": None,
-        "credit_balance": None,
-        "frozen_credit": None,
-        "available_total": None,
-        "enough_balance": None,
-    }
+    wallet_snapshot = _empty_wallet_preview_snapshot()
     if agent is not None:
-        wallet_result = await db.execute(
-            select(AccountingWallet).where(AccountingWallet.agent_id == agent.id)
+        wallet_snapshot = await _build_agent_wallet_preview_snapshot(
+            db=db,
+            agent_id=agent.id,
+            total_cost=float(cost["total_cost"]),
         )
-        wallet = wallet_result.scalar_one_or_none()
-        charged = float(wallet.charged_balance or 0) if wallet else 0.0
-        credit = float(wallet.credit_balance or 0) if wallet else 0.0
-        frozen = float(wallet.frozen_credit or 0) if wallet else 0.0
-        available = charged + max(0.0, credit - frozen)
-        wallet_snapshot = {
-            "charged_balance": charged,
-            "credit_balance": credit,
-            "frozen_credit": frozen,
-            "available_total": available,
-            "enough_balance": available >= float(cost["total_cost"]),
-        }
 
     return AuthorizationCostPreviewResponse(
         user_id=user.id,
@@ -659,97 +643,6 @@ async def preview_authorization_cost(
         will_charge=agent is not None,
         agent_id=agent.id if agent else None,
         **wallet_snapshot,
-    )
-
-
-async def update_authorization(
-    user_id: int,
-    auth_id: int,
-    body: AuthorizationUpdateRequest,
-    db: AsyncSession,
-    admin: Admin | None = None,
-    agent: Agent | None = None,
-) -> AuthorizationResponse:
-    """
-    修改用户项目授权。
-
-    当前安全策略:
-      - 管理员可以修改等级、设备数、到期时间、状态。
-      - 代理暂不允许修改已授权项目，避免账务补扣/退款规则未定导致错账。
-      - 管理员修改授权当前不生成授权扣点快照。
-    """
-    user = await _get_user_or_404(user_id, db)
-    _assert_can_access_user(user=user, admin=admin, agent=agent)
-
-    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
-    project = await _get_project_or_404(auth.game_project_id, db)
-
-    # 代理只能通过 /upgrade 升级设备数，不能改等级、状态、到期时间
-    if admin is None and agent is not None:
-        if body.user_level is not None and body.user_level != auth.user_level:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="代理不能修改授权等级，请联系管理员处理",
-            )
-        if body.status is not None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="代理不能修改授权状态，请联系管理员处理",
-            )
-        if "valid_until" in body.model_fields_set:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="代理不能直接修改授权到期时间，请走续费/升级专用接口",
-            )
-        if body.authorized_devices is not None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="代理不能直接修改授权设备数，请走升级专用接口 /upgrade",
-            )
-
-    consumed_points = 0.0
-
-    if body.user_level is not None:
-        auth.user_level = body.user_level
-
-    if body.authorized_devices is not None:
-        old_devices = int(auth.authorized_devices or 0)
-        new_devices = int(body.authorized_devices)
-        auth.authorized_devices = new_devices
-
-        # 代理升级设备数时扣点
-        if agent is not None and new_devices > old_devices:
-            additional = new_devices - old_devices
-            cost = await calculate_authorization_cost(
-                project_id=project.id, user_level=auth.user_level,
-                authorized_devices=additional,
-                start_at=datetime.now(timezone.utc),
-                valid_until=auth.valid_until,
-                db=db,
-            )
-            consumed_points = float(cost.get("total_cost") or 0.0)
-            if consumed_points > 0:
-                await consume_agent_authorization_points(
-                    agent_id=agent.id, user_id=user.id, project_id=project.id,
-                    authorization_id=auth.id, user_level=auth.user_level,
-                    authorized_devices=additional,
-                    start_at=datetime.now(timezone.utc),
-                    valid_until=auth.valid_until,
-                    db=db,
-                )
-
-    if "valid_until" in body.model_fields_set:
-        auth.valid_until = body.valid_until
-
-    if body.status is not None:
-        auth.status = body.status
-
-    await db.flush()
-
-    return _authorization_to_response(
-        auth=auth,
-        project=project,
-        consumed_points=consumed_points,
     )
 
 
@@ -924,6 +817,61 @@ async def settle_authorization_freezes_on_user_delete(
         freeze.settled_by_admin_id = admin.id if admin else None
 
 
+def _empty_wallet_preview_snapshot() -> dict:
+    return {
+        "charged_balance": None,
+        "credit_balance": None,
+        "frozen_credit": None,
+        "available_total": None,
+        "enough_balance": None,
+        "charged_consumed": None,
+        "credit_consumed": None,
+        "charged_balance_after": None,
+        "credit_balance_after": None,
+        "available_total_after": None,
+    }
+
+
+def _build_wallet_preview_snapshot(wallet: AccountingWallet | None, total_cost: float) -> dict:
+    charged = float(wallet.charged_balance or 0) if wallet else 0.0
+    credit = float(wallet.credit_balance or 0) if wallet else 0.0
+    frozen = float(wallet.frozen_credit or 0) if wallet else 0.0
+    safe_cost = max(0.0, float(total_cost or 0.0))
+    available = charged + max(0.0, credit - frozen)
+
+    charged_consumed = min(charged, safe_cost)
+    credit_consumed = max(0.0, safe_cost - charged_consumed)
+    charged_after = max(0.0, charged - charged_consumed)
+    credit_after = max(0.0, credit - credit_consumed)
+    available_after = charged_after + max(0.0, credit_after - frozen)
+
+    return {
+        "charged_balance": charged,
+        "credit_balance": credit,
+        "frozen_credit": frozen,
+        "available_total": available,
+        "enough_balance": available >= safe_cost,
+        "charged_consumed": charged_consumed,
+        "credit_consumed": credit_consumed,
+        "charged_balance_after": charged_after,
+        "credit_balance_after": credit_after,
+        "available_total_after": available_after,
+    }
+
+
+async def _build_agent_wallet_preview_snapshot(
+    *,
+    db: AsyncSession,
+    agent_id: int,
+    total_cost: float,
+) -> dict:
+    wallet_result = await db.execute(
+        select(AccountingWallet).where(AccountingWallet.agent_id == agent_id)
+    )
+    wallet = wallet_result.scalar_one_or_none()
+    return _build_wallet_preview_snapshot(wallet, total_cost)
+
+
 async def preview_authorization_renew(
     user_id: int,
     auth_id: int,
@@ -954,29 +902,13 @@ async def preview_authorization_renew(
         db=db,
     )
 
-    wallet_snapshot = {
-        "charged_balance": None,
-        "credit_balance": None,
-        "frozen_credit": None,
-        "available_total": None,
-        "enough_balance": None,
-    }
+    wallet_snapshot = _empty_wallet_preview_snapshot()
     if agent is not None:
-        wallet_result = await db.execute(
-            select(AccountingWallet).where(AccountingWallet.agent_id == agent.id)
+        wallet_snapshot = await _build_agent_wallet_preview_snapshot(
+            db=db,
+            agent_id=agent.id,
+            total_cost=float(cost["total_cost"]),
         )
-        wallet = wallet_result.scalar_one_or_none()
-        charged = float(wallet.charged_balance or 0) if wallet else 0.0
-        credit = float(wallet.credit_balance or 0) if wallet else 0.0
-        frozen = float(wallet.frozen_credit or 0) if wallet else 0.0
-        available = charged + max(0.0, credit - frozen)
-        wallet_snapshot = {
-            "charged_balance": charged,
-            "credit_balance": credit,
-            "frozen_credit": frozen,
-            "available_total": available,
-            "enough_balance": available >= float(cost["total_cost"]),
-        }
 
     return AuthorizationRenewPreviewResponse(
         authorization_id=auth.id,
@@ -1206,12 +1138,21 @@ async def preview_authorization_upgrade(
             unit_price = float(cost.get("unit_price") or 0.0)
             period_hours = int(cost.get("billing_period_hours") or period_hours)
 
+    wallet_snapshot = _empty_wallet_preview_snapshot()
+    if agent is not None:
+        wallet_snapshot = await _build_agent_wallet_preview_snapshot(
+            db=db,
+            agent_id=agent.id,
+            total_cost=consumed_points,
+        )
+
     return AuthorizationUpgradePreviewResponse(
         old_devices=old_devices,
         new_devices=new_devices,
         additional_devices=additional_devices,
         mode=mode,
         consumed_points=consumed_points,
+        total_cost=consumed_points,
         new_expiry=valid_until_for_cost,
         unit_price=unit_price,
         period_hours=period_hours,
@@ -1219,6 +1160,7 @@ async def preview_authorization_upgrade(
         old_devices_topup_cost=old_devices_topup_cost,
         old_remaining_hours=old_remaining_hours,
         topup_delta_hours=topup_delta_hours,
+        **wallet_snapshot,
     )
 
 
@@ -1432,29 +1374,13 @@ async def preview_authorization_level_upgrade(
         agent=agent,
     )
 
-    wallet_snapshot = {
-        "charged_balance": None,
-        "credit_balance": None,
-        "frozen_credit": None,
-        "available_total": None,
-        "enough_balance": None,
-    }
+    wallet_snapshot = _empty_wallet_preview_snapshot()
     if agent is not None:
-        wallet_result = await db.execute(
-            select(AccountingWallet).where(AccountingWallet.agent_id == agent.id)
+        wallet_snapshot = await _build_agent_wallet_preview_snapshot(
+            db=db,
+            agent_id=agent.id,
+            total_cost=difference,
         )
-        wallet = wallet_result.scalar_one_or_none()
-        charged = float(wallet.charged_balance or 0) if wallet else 0.0
-        credit = float(wallet.credit_balance or 0) if wallet else 0.0
-        frozen = float(wallet.frozen_credit or 0) if wallet else 0.0
-        available = charged + max(0.0, credit - frozen)
-        wallet_snapshot = {
-            "charged_balance": charged,
-            "credit_balance": credit,
-            "frozen_credit": frozen,
-            "available_total": available,
-            "enough_balance": available >= difference,
-        }
 
     return AuthorizationLevelUpgradePreviewResponse(
         authorization_id=auth.id,
@@ -1502,15 +1428,16 @@ async def level_upgrade_authorization(
     consumed_points = 0.0
     if agent is not None and difference > 0:
         consumed_points = difference
-        await consume_agent_authorization_points(
+        await consume_agent_authorization_level_upgrade_diff_points(
             agent_id=agent.id,
             user_id=user.id,
             project_id=project.id,
             authorization_id=auth.id,
-            user_level=body.user_level,
+            new_user_level=body.user_level,
             authorized_devices=auth.authorized_devices,
             start_at=datetime.now(timezone.utc),
             valid_until=auth.valid_until,
+            total_cost=difference,
             db=db,
         )
 

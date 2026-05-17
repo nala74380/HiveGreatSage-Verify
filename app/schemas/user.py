@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field, model_validator
 
 UserLevel = Literal["trial", "normal", "vip", "svip", "tester"]
 UserStatus = Literal["active", "suspended", "expired"]
-AuthorizationStatus = Literal["active", "suspended", "expired"]
 
 
 # ── 用户请求 ──────────────────────────────────────────────────
@@ -60,15 +59,6 @@ class AuthorizationCreateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class AuthorizationUpdateRequest(BaseModel):
-    user_level: UserLevel | None = Field(default=None, description="项目内授权等级")
-    authorized_devices: int | None = Field(default=None, ge=0, description="项目授权设备数")
-    valid_until: datetime | None = Field(default=None, description="项目授权到期时间")
-    status: AuthorizationStatus | None = Field(default=None, description="授权状态")
-
-    model_config = {"extra": "forbid"}
-
-
 # ── 升级请求/响应 ────────────────────────────────────────────
 
 class AuthorizationUpgradeRequest(BaseModel):
@@ -84,6 +74,7 @@ class AuthorizationUpgradePreviewResponse(BaseModel):
     additional_devices: int
     mode: str
     consumed_points: float
+    total_cost: float | None = None
     new_expiry: datetime | None = None
     unit_price: float
     period_hours: int
@@ -91,6 +82,16 @@ class AuthorizationUpgradePreviewResponse(BaseModel):
     old_devices_topup_cost: float | None = None
     old_remaining_hours: int | None = None
     topup_delta_hours: int | None = None
+    charged_balance: float | None = None
+    credit_balance: float | None = None
+    frozen_credit: float | None = None
+    available_total: float | None = None
+    enough_balance: bool | None = None
+    charged_consumed: float | None = None
+    credit_consumed: float | None = None
+    charged_balance_after: float | None = None
+    credit_balance_after: float | None = None
+    available_total_after: float | None = None
 
 
 class AuthorizationUpgradeResponse(BaseModel):
@@ -136,6 +137,11 @@ class AuthorizationRenewPreviewResponse(BaseModel):
     frozen_credit: float | None = None
     available_total: float | None = None
     enough_balance: bool | None = None
+    charged_consumed: float | None = None
+    credit_consumed: float | None = None
+    charged_balance_after: float | None = None
+    credit_balance_after: float | None = None
+    available_total_after: float | None = None
 
 
 class AuthorizationRenewResponse(BaseModel):
@@ -172,6 +178,11 @@ class AuthorizationLevelUpgradePreviewResponse(BaseModel):
     frozen_credit: float | None = None
     available_total: float | None = None
     enough_balance: bool | None = None
+    charged_consumed: float | None = None
+    credit_consumed: float | None = None
+    charged_balance_after: float | None = None
+    credit_balance_after: float | None = None
+    available_total_after: float | None = None
 
 
 class AuthorizationLevelUpgradeResponse(BaseModel):
@@ -240,6 +251,11 @@ class AuthorizationCostPreviewResponse(BaseModel):
     frozen_credit: float | None = None
     available_total: float | None = None
     enough_balance: bool | None = None
+    charged_consumed: float | None = None
+    credit_consumed: float | None = None
+    charged_balance_after: float | None = None
+    credit_balance_after: float | None = None
+    available_total_after: float | None = None
 
 
 class UserPasswordUpdateResponse(BaseModel):

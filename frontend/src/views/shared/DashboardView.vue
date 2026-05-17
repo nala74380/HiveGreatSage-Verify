@@ -105,13 +105,51 @@
           <el-tag type="success" effect="plain" size="small">在线 {{ onlineDevices }} 台</el-tag>
         </div>
       </template>
-      <el-empty v-if="!projectList.length" description="暂无激活项目" :image-size="40" />
-      <div v-else class="project-row">
-        <div v-for="p in projectList" :key="p.code" class="project-item">
-          <span class="project-name">{{ p.display }}</span>
-          <span class="project-code">{{ p.code }}</span>
-        </div>
-      </div>
+      <el-table
+        v-if="projectList.length"
+        :data="projectList"
+        size="small"
+        stripe
+        class="project-overview-table"
+      >
+        <el-table-column label="项目" min-width="180">
+          <template #default="{ row }">
+            <div class="project-cell">
+              <span class="project-name">{{ row.display }}</span>
+              <span class="project-code">{{ row.code }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="授权(有效/总)" width="130">
+          <template #default="{ row }">
+            {{ row.active_authorization_count }}/{{ row.authorization_count }}
+          </template>
+        </el-table-column>
+        <el-table-column label="用户数" width="90" prop="user_count" />
+        <el-table-column label="在线设备" width="90" prop="online_count" />
+        <el-table-column label="激活/绑定" width="110">
+          <template #default="{ row }">
+            {{ row.activated_devices }}/{{ row.total_bound_devices }}
+          </template>
+        </el-table-column>
+        <el-table-column label="过期授权" width="90" prop="expired_authorization_count" />
+        <el-table-column label="风险状态" min-width="170">
+          <template #default="{ row }">
+            <div class="project-risk-tags">
+              <el-tag v-if="row.expiring_in_7d_count > 0" type="danger" size="small" effect="plain">
+                7天到期 {{ row.expiring_in_7d_count }}
+              </el-tag>
+              <el-tag v-if="row.suspended_authorization_count > 0" type="warning" size="small" effect="plain">
+                停用 {{ row.suspended_authorization_count }}
+              </el-tag>
+              <span v-if="row.expiring_in_7d_count <= 0 && row.suspended_authorization_count <= 0" class="risk-ok">
+                正常
+              </span>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="暂无激活项目" :image-size="40" />
     </el-card>
 
     <!-- Agent 视角 -->
@@ -277,7 +315,20 @@ const normalizeAdminDashboard = (payload = {}) => ({
   system_health: payload.system_health || {},
   level_distribution: payload.level_distribution || {},
   expiring_auths: payload.expiring_auths || [],
-  active_projects_data: payload.active_projects_data || [],
+  active_projects_data: (payload.active_projects_data || []).map((item = {}) => ({
+    project_id: item.project_id ?? null,
+    code: item.code || '-',
+    display: item.display || item.code || '未命名项目',
+    online_count: Number(item.online_count || 0),
+    user_count: Number(item.user_count || 0),
+    authorization_count: Number(item.authorization_count || 0),
+    active_authorization_count: Number(item.active_authorization_count || 0),
+    suspended_authorization_count: Number(item.suspended_authorization_count || 0),
+    expired_authorization_count: Number(item.expired_authorization_count || 0),
+    expiring_in_7d_count: Number(item.expiring_in_7d_count || 0),
+    total_bound_devices: Number(item.total_bound_devices || 0),
+    activated_devices: Number(item.activated_devices || 0),
+  })),
 })
 
 const normalizeAgentDashboard = (payload = {}) => ({
@@ -394,8 +445,28 @@ onMounted(() => { loadAllStats() })
 .expiring-project { color: #6b7280; margin-left: auto; }
 .expiring-date { color: #ef4444; font-weight: 600; white-space: nowrap; }
 
-.project-row { display: flex; gap: 12px; flex-wrap: wrap; }
-.project-item { display: flex; gap: 6px; align-items: center; background: #f9fafb; border-radius: 6px; padding: 6px 12px; }
+.project-overview-table { width: 100%; }
+.project-overview-table :deep(th.el-table__cell) {
+  background: #f8fafc;
+  color: #374151;
+}
+.project-overview-table :deep(.el-table__cell) {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.project-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
+}
+.project-risk-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.risk-ok { font-size: 12px; font-weight: 600; color: #10b981; }
 .project-name { font-size: 13px; font-weight: 600; color: #1f2937; }
 .project-code { font-size: 11px; color: #9ca3af; }
 .stat-big { font-size: 32px; font-weight: 700; color: #1f2937; }

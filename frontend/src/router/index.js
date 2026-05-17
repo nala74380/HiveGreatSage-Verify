@@ -51,12 +51,6 @@ const router = createRouter({
           meta: { requiresAuth: true, title: '用户管理' },
         },
         {
-          path: 'users/:id',
-          name: 'UserDetail',
-          component: () => import('@/views/shared/UserDetail.vue'),
-          meta: { requiresAuth: true, title: '用户详情' },
-        },
-        {
           path: 'devices',
           name: 'DeviceList',
           component: () => import('@/views/shared/DeviceList.vue'),

@@ -12,6 +12,10 @@ from httpx import AsyncClient
 from tests.conftest import ADMIN_USERNAME, ADMIN_PASSWORD
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 class TestAdminLogin:
     async def test_admin_login_success(self, client):
         r = await client.post("/admin/api/auth/login", json={
@@ -40,6 +44,22 @@ class TestAdminLogin:
         data = r.json()
         assert "total_users" in data
         assert "total_agents" in data
+        assert "active_projects_data" in data
+        assert isinstance(data["active_projects_data"], list)
+        if data["active_projects_data"]:
+            project_item = data["active_projects_data"][0]
+            assert "project_id" in project_item
+            assert "code" in project_item
+            assert "display" in project_item
+            assert "online_count" in project_item
+            assert "user_count" in project_item
+            assert "authorization_count" in project_item
+            assert "active_authorization_count" in project_item
+            assert "suspended_authorization_count" in project_item
+            assert "expired_authorization_count" in project_item
+            assert "expiring_in_7d_count" in project_item
+            assert "total_bound_devices" in project_item
+            assert "activated_devices" in project_item
 
 
 class TestUserManagement:
@@ -187,7 +207,7 @@ class TestUserManagement:
                 "user_level": "normal",
                 "authorized_devices": 20,
             },
-            headers=admin_headers,
+            headers={**admin_headers, "Idempotency-Key": _idem("grant")},
         )
         assert r.status_code == 201
         auth_id = r.json()["id"]
@@ -201,6 +221,40 @@ class TestUserManagement:
         r = await client.delete(f"/api/users/{user_id}/authorizations/{auth_id}",
                                 headers=admin_headers)
         assert r.status_code == 204
+
+    async def test_patch_authorization_direct_edit_is_disabled(self, client, admin_headers, project_id):
+        suffix = uuid.uuid4().hex[:8]
+        created = await client.post(
+            "/api/users/",
+            json={
+                "username": f"authpatch_{suffix}",
+                "password": "P@2026!",
+            },
+            headers=admin_headers,
+        )
+        assert created.status_code == 201
+        user_id = created.json()["id"]
+
+        granted = await client.post(
+            f"/api/users/{user_id}/authorizations",
+            json={
+                "game_project_id": project_id,
+                "user_level": "normal",
+                "authorized_devices": 20,
+            },
+            headers={**admin_headers, "Idempotency-Key": _idem("grant")},
+        )
+        assert granted.status_code == 201
+        auth_id = granted.json()["id"]
+
+        patched = await client.patch(
+            f"/api/users/{user_id}/authorizations/{auth_id}",
+            json={
+                "authorized_devices": 30,
+            },
+            headers=admin_headers,
+        )
+        assert patched.status_code == 405
 
     async def test_user_not_found(self, client, admin_headers):
         r = await client.get("/api/users/99999999", headers=admin_headers)
@@ -298,7 +352,7 @@ class TestAgentManagement:
             "user_level": "tester",
             "authorized_devices": 5,
             "valid_until": "2099-01-01T00:00:00Z",
-        }, headers=agent_headers)
+        }, headers={**agent_headers, "Idempotency-Key": _idem("grant")})
         assert r.status_code == 403
 
     async def test_list_agents(self, client, admin_headers):

@@ -37,6 +37,10 @@ def _uniq() -> str:
     return uuid.uuid4().hex[:8]
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 async def _create_agent(
     client: AsyncClient, admin_headers: dict, *, username: str = None, password: str = "Test@2026",
 ) -> dict:
@@ -74,6 +78,20 @@ async def _create_user(
     )
     assert res.status_code == 201, f"创建用户失败: {res.text}"
     return res.json()
+
+
+async def _grant_authorization(
+    client: AsyncClient,
+    *,
+    user_id: int,
+    payload: dict,
+    headers: dict,
+):
+    return await client.post(
+        f"/api/users/{user_id}/authorizations",
+        json=payload,
+        headers={**headers, "Idempotency-Key": _idem("grant")},
+    )
 
 
 class TestPricing:
@@ -230,14 +248,30 @@ class TestAuthorizationCharge:
         assert preview_data["total_cost"] > 0
         assert preview_data["enough_balance"] is True
         assert preview_data["available_total"] == 200.0
+        assert preview_data["charged_consumed"] >= 0
+        assert preview_data["credit_consumed"] >= 0
+        assert preview_data["available_total_after"] == pytest.approx(
+            preview_data["available_total"] - preview_data["total_cost"],
+            rel=0,
+            abs=0.01,
+        )
 
+        grant_key = _idem("grant")
         grant = await client.post(
             f"/api/users/{user['id']}/authorizations",
             json=payload,
-            headers=agent_headers,
+            headers={**agent_headers, "Idempotency-Key": grant_key},
         )
         assert grant.status_code == 201, grant.text
         assert grant.json()["consumed_points"] == preview_data["total_cost"]
+
+        grant_retry = await client.post(
+            f"/api/users/{user['id']}/authorizations",
+            json=payload,
+            headers={**agent_headers, "Idempotency-Key": grant_key},
+        )
+        assert grant_retry.status_code == 201, grant_retry.text
+        assert grant_retry.json()["id"] == grant.json()["id"]
 
     async def test_charge_deducts_charged_first(self, client, admin_headers, project_id):
         agent = await _create_agent(client, admin_headers)
@@ -270,9 +304,10 @@ class TestAuthorizationCharge:
         user_id = user["id"]
 
         # grant authorization (triggers charge)
-        res = await client.post(
-            f"/api/users/{user_id}/authorizations",
-            json={
+        res = await _grant_authorization(
+            client,
+            user_id=user_id,
+            payload={
                 "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 5,
@@ -302,9 +337,10 @@ class TestAuthorizationCharge:
         )
 
         user = await _create_user(client, agent_headers)
-        res = await client.post(
-            f"/api/users/{user['id']}/authorizations",
-            json={
+        res = await _grant_authorization(
+            client,
+            user_id=user["id"],
+            payload={
                 "game_project_id": project_id,
                 "user_level": "svip",
                 "authorized_devices": 100,
@@ -345,9 +381,10 @@ class TestDeleteRefund:
         user_id = user["id"]
 
         # authorize
-        auth_res = await client.post(
-            f"/api/users/{user_id}/authorizations",
-            json={
+        auth_res = await _grant_authorization(
+            client,
+            user_id=user_id,
+            payload={
                 "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 10,
@@ -402,9 +439,10 @@ class TestDeleteRefund:
         user = await _create_user(client, admin_headers)
 
         # authorize as admin (no agent charge)
-        auth_res = await client.post(
-            f"/api/users/{user['id']}/authorizations",
-            json={
+        auth_res = await _grant_authorization(
+            client,
+            user_id=user["id"],
+            payload={
                 "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 1,
@@ -458,9 +496,10 @@ class TestAuthorizationFreeze:
         user = await _create_user(client, agent_headers)
         user_id = user["id"]
 
-        auth_res = await client.post(
-            f"/api/users/{user_id}/authorizations",
-            json={
+        auth_res = await _grant_authorization(
+            client,
+            user_id=user_id,
+            payload={
                 "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 10,
@@ -621,9 +660,10 @@ class TestIdempotency:
         user_id = user["id"]
 
         # first authorization
-        res1 = await client.post(
-            f"/api/users/{user_id}/authorizations",
-            json={
+        res1 = await _grant_authorization(
+            client,
+            user_id=user_id,
+            payload={
                 "game_project_id": project_id,
                 "user_level": "trial",
                 "authorized_devices": 10,
@@ -636,12 +676,12 @@ class TestIdempotency:
 
         # second deduction: upgrade devices
         res2 = await client.post(
-            f"/api/users/{user_id}/authorizations/{auth_id}/upgrade",
+            f"/api/users/{user_id}/authorizations/{auth_id}/devices/add",
             json={
                 "additional_devices": 5,
                 "mode": "append",
             },
-            headers=agent_headers,
+            headers={**agent_headers, "Idempotency-Key": _idem("add-devices")},
         )
         assert res2.status_code == 200, (
             f"幂等键冲突或升级失败: {res2.text}"

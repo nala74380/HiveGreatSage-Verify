@@ -103,7 +103,7 @@
             <span v-if="row.username">
               <router-link
                 v-if="row.user_id"
-                :to="`/users/${row.user_id}`"
+                :to="{ path: '/users', query: { focus_user_id: row.user_id } }"
                 class="user-link"
               >
                 {{ row.username }}

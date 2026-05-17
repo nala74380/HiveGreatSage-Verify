@@ -1134,6 +1134,185 @@ async def consume_agent_authorization_topup_points(
     }
 
 
+async def consume_agent_authorization_level_upgrade_diff_points(
+    *,
+    agent_id: int,
+    user_id: int,
+    project_id: int,
+    authorization_id: int,
+    new_user_level: str,
+    authorized_devices: int,
+    total_cost: float | Decimal,
+    start_at: datetime,
+    valid_until: datetime,
+    db: AsyncSession,
+) -> dict:
+    """授权等级升级只扣差价：按给定总额扣点并生成扣点快照。"""
+    if authorized_devices <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="升级差价扣点设备数必须大于 0")
+
+    total_cost_dec = _money(total_cost)
+    if total_cost_dec <= 0:
+        return {
+            "total_cost": 0.0,
+            "charge_id": None,
+            "charge_snapshot_id": None,
+            "charged_consumed": 0.0,
+            "credit_consumed": 0.0,
+        }
+
+    wallet = await get_or_create_wallet(agent_id, db, for_update=True)
+    await _assert_wallet_can_operate(wallet, "consume")
+
+    charged = _money(wallet.charged_balance)
+    credit = _money(wallet.credit_balance)
+    frozen = _money(wallet.frozen_credit)
+    available_credit = credit - frozen
+    available_total = charged + available_credit
+
+    if total_cost_dec > available_total:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"代理点数不足：需扣 {total_cost_dec} 点，当前可用 {available_total} 点",
+        )
+
+    valid_from = _ensure_aware(start_at)
+    valid_until_aware = _ensure_aware(valid_until)
+    paid_hours = max(1, _ceil_hours(valid_from, valid_until_aware))
+    level_rule = BILLING_RULES.get(new_user_level, {})
+    billing_period = str(level_rule.get("period", "month"))
+    billing_period_hours = int(level_rule.get("period_hours", 720))
+    unit_price = (
+        _money(total_cost_dec / Decimal(max(authorized_devices, 1)))
+        if authorized_devices > 0
+        else Decimal("0.00")
+    )
+
+    document = await _create_document(
+        document_type="authorization_charge",
+        agent_id=agent_id,
+        user_id=user_id,
+        project_id=project_id,
+        authorization_id=authorization_id,
+        db=db,
+        total_amount=total_cost_dec,
+        reason="授权等级升级差价扣点",
+        created_by_agent_id=agent_id,
+    )
+
+    snapshot = AuthorizationChargeSnapshot(
+        document_id=document.id,
+        authorization_id=authorization_id,
+        agent_id=agent_id,
+        user_id=user_id,
+        project_id=project_id,
+        user_level=new_user_level,
+        authorized_devices=authorized_devices,
+        billing_period=billing_period,
+        billing_period_hours=billing_period_hours,
+        period_count=1,
+        paid_hours=paid_hours,
+        unit_price=unit_price,
+        original_cost=total_cost_dec,
+        charged_consumed=Decimal("0.00"),
+        credit_consumed=Decimal("0.00"),
+        valid_from=valid_from,
+        valid_until=valid_until_aware,
+        refund_status="none",
+        refunded_points=Decimal("0.00"),
+        refunded_charged=Decimal("0.00"),
+        refunded_credit=Decimal("0.00"),
+    )
+    db.add(snapshot)
+    await db.flush()
+
+    description = (
+        f"授权等级升级差价扣点：用户ID={user_id}，项目ID={project_id}，"
+        f"{LEVEL_NAMES.get(new_user_level, new_user_level)}，设备{authorized_devices}台，"
+        f"差价{_fmt_money(total_cost_dec)}点，到期{_fmt_dt(valid_until_aware)}"
+    )
+
+    remaining = total_cost_dec
+    charged_consumed = Decimal("0.00")
+    credit_consumed = Decimal("0.00")
+
+    if charged > 0 and remaining > 0:
+        consume_charged = min(charged, remaining)
+        before = charged
+        after = charged - consume_charged
+
+        wallet.charged_balance = after
+        remaining -= consume_charged
+        charged_consumed = consume_charged
+
+        await _append_ledger_entry(
+            db=db,
+            wallet=wallet,
+            document=document,
+            direction="out",
+            entry_type="consume",
+            balance_type="charged",
+            amount=consume_charged,
+            balance_before=before,
+            balance_after=after,
+            business_category="authorization_charge",
+            business_subtype="level_upgrade_diff_charged",
+            related_user_id=user_id,
+            related_project_id=project_id,
+            related_authorization_id=authorization_id,
+            related_charge_snapshot_id=snapshot.id,
+            description=description,
+            idempotency_key=f"authorization:{authorization_id}:{snapshot.id}:level_upgrade_charged",
+            source="agent",
+            operated_by_agent_id=agent_id,
+        )
+
+    if remaining > 0:
+        before = credit
+        after = credit - remaining
+
+        wallet.credit_balance = after
+        credit_consumed = remaining
+
+        await _append_ledger_entry(
+            db=db,
+            wallet=wallet,
+            document=document,
+            direction="out",
+            entry_type="consume",
+            balance_type="credit",
+            amount=remaining,
+            balance_before=before,
+            balance_after=after,
+            business_category="authorization_charge",
+            business_subtype="level_upgrade_diff_credit",
+            related_user_id=user_id,
+            related_project_id=project_id,
+            related_authorization_id=authorization_id,
+            related_charge_snapshot_id=snapshot.id,
+            description=description,
+            idempotency_key=f"authorization:{authorization_id}:{snapshot.id}:level_upgrade_credit",
+            source="agent",
+            operated_by_agent_id=agent_id,
+        )
+
+    snapshot.charged_consumed = _money(charged_consumed)
+    snapshot.credit_consumed = _money(credit_consumed)
+
+    wallet.total_consumed = _money(wallet.total_consumed) + total_cost_dec
+    wallet.last_consume_at = _now()
+
+    await db.flush()
+
+    return {
+        "total_cost": float(total_cost_dec),
+        "charge_id": snapshot.id,
+        "charge_snapshot_id": snapshot.id,
+        "charged_consumed": float(_money(charged_consumed)),
+        "credit_consumed": float(_money(credit_consumed)),
+    }
+
+
 # ─────────────────────────────────────────────────────────────
 # 删除用户返点
 # ─────────────────────────────────────────────────────────────

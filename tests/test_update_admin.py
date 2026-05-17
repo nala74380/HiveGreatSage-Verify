@@ -19,6 +19,7 @@ r"""
     V1.0.0 - 初始版本
 """
 
+import uuid
 import pytest
 from sqlalchemy import text
 
@@ -30,6 +31,10 @@ _TEST_RELEASE_NOTES = "test_upload"
 _TEST_LOGIN_SECRET = "UpdateAdminTestSecret2026"
 _TEST_USER_LEVEL = "normal"
 _TEST_AUTHORIZED_DEVICES = 20
+
+
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -201,7 +206,7 @@ class TestUploadVersion:
                 "user_level": _TEST_USER_LEVEL,
                 "authorized_devices": _TEST_AUTHORIZED_DEVICES,
             },
-            headers=admin_headers,
+            headers={**admin_headers, "Idempotency-Key": _idem("grant")},
         )
         assert r.status_code == 201, r.text
 

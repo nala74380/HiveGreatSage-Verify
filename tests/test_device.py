@@ -25,6 +25,10 @@ from app.models.main.models import DeviceBinding
 from tests.conftest import SECOND_GAME_PROJECT_UUID
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 def _heartbeat_payload(device_fp: str, *, status: str, game_data: dict, device_id: str = "A-001") -> dict:
     return {
         "device_fingerprint": device_fp,
@@ -54,7 +58,7 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
             "user_level": "normal",
             "authorized_devices": 20,
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
     assert r2.status_code == 201, f"授权失败: {r2.status_code} | {r2.text}"
 
@@ -106,7 +110,7 @@ async def _create_user_with_authorization(
             "user_level": "normal",
             "authorized_devices": authorized_devices,
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
     assert r2.status_code == 201, f"授权失败: {r2.status_code} | {r2.text}"
 
@@ -322,7 +326,7 @@ class TestProjectScopedBindings:
                 "user_level": "normal",
                 "authorized_devices": 1,
             },
-            headers=admin_headers,
+            headers={**admin_headers, "Idempotency-Key": _idem("grant")},
         )
 
         login_b = await _login_user(

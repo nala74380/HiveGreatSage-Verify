@@ -115,7 +115,13 @@
             <el-table v-loading="directUsersLoading" :data="directUsers" size="small" stripe empty-text="暂无直属用户">
               <el-table-column label="用户名" min-width="150">
                 <template #default="{ row }">
-                  <button class="link-button" type="button" @click="$router.push(`/users/${row.id}`)">{{ row.username }}</button>
+                  <button
+                    class="link-button"
+                    type="button"
+                    @click="$router.push({ path: '/users', query: { focus_user_id: row.id } })"
+                  >
+                    {{ row.username }}
+                  </button>
                   <div class="small-muted">ID: {{ row.id }}</div>
                 </template>
               </el-table-column>
@@ -158,7 +164,17 @@
               </el-table-column>
 
               <el-table-column label="创建时间" width="160"><template #default="{ row }">{{ row.created_at ? formatDatetime(row.created_at) : '—' }}</template></el-table-column>
-              <el-table-column label="操作" width="90" fixed="right"><template #default="{ row }"><el-button text size="small" @click="$router.push(`/users/${row.id}`)">详情</el-button></template></el-table-column>
+              <el-table-column label="操作" width="90" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    text
+                    size="small"
+                    @click="$router.push({ path: '/users', query: { focus_user_id: row.id } })"
+                  >
+                    详情
+                  </el-button>
+                </template>
+              </el-table-column>
             </el-table>
 
             <el-pagination v-model:current-page="directUsersPagination.page" v-model:page-size="directUsersPagination.pageSize" :total="directUsersPagination.total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" class="pagination" @size-change="loadDirectUsers" @current-change="loadDirectUsers" />

@@ -1,9 +1,9 @@
 r"""
 文件位置: app/services/auth_service.py
 文件名称: auth_service.py
-作者: 蜂巢·大圣 (Hive-GreatSage)
-日期/时间: 2026-05-07
-版本: V1.4.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+日期/时间: 2026-05-18
+版本: V1.6.0
 功能说明:
     认证服务层，包含全部认证业务逻辑：
       - login_user()           用户登录
@@ -11,7 +11,7 @@ r"""
       - revoke_all_devices()   踢出所有 User Token 会话
       - logout_user()          用户登出
 
-    本次整改边界:
+    当前设备口径:
       1. 用户登录必须过滤软删除用户。
       2. Refresh Token 刷新必须过滤软删除用户。
       3. 用户登录以 Authorization.valid_until 作为项目授权有效期判断。
@@ -20,8 +20,8 @@ r"""
       6. Access Token 中的 authorization_level 来自 Authorization.user_level。
       7. Access Token 项目字段统一为 project_code。
       8. Android 首次创建设备绑定时写入 audit_log。
-      9. 设备绑定审计不写设备指纹原文，只写 masked/hash。
-      10. LoginLog 不再写设备指纹原文，只写 device_fingerprint_hash。
+      9. 设备绑定审计当前直接记录设备原文字段。
+      10. LoginLog 当前直接写入 device_fingerprint 原文。
 
     当前字段口径:
       1. LoginResponse 返回 authorization_level / game_project_code。
@@ -29,7 +29,9 @@ r"""
       3. User.user_level / max_devices / expired_at 不再作为业务字段。
 
 改进历史:
-    V1.4.0 (2026-05-07) - LoginLog 写入 device_fingerprint_hash，不再写设备指纹原文。
+    V1.6.0 (2026-05-18) - 删除设备摘要写法，统一直接记录 device_fingerprint 原文字段。
+    V1.5.0 (2026-05-18) - 登录与设备绑定审计改为直接记录设备原文字段。
+    V1.5.0 (2026-05-18) - 登录与设备绑定审计改为直接记录设备原文字段。
     V1.3.0 (2026-05-07) - device_binding.bind 审计移除设备指纹原文。
     V1.2.0 (2026-05-07) - Android 首次创建设备绑定接入 audit_log。
     V1.1.0 (2026-05-02) - 登录与刷新过滤软删除用户；刷新改用 Authorization.user_level。
@@ -80,43 +82,17 @@ from app.schemas.auth import (
 from app.services.audit_service import create_audit_log
 
 
-# ─────────────────────────────────────────────────────────────
-# 公开接口
-# ─────────────────────────────────────────────────────────────
-
 async def login_user(
     body: LoginRequest,
     client_ip: str,
     db: AsyncSession,
     redis: aioredis.Redis,
 ) -> LoginResponse:
-    """
-    用户登录。
-
-    当前验证链：
-      Step 1  用户名存在，且用户未软删除
-      Step 2  密码匹配
-      Step 3  账号状态 active
-      Step 4  project_uuid 对应的游戏项目存在且激活
-      Step 5  该用户对该项目有 active 授权记录
-      Step 6  授权未到期
-      Step 7  Android 设备绑定检查
-      Step 8  签发 AT + RT
-      Step 9  写成功登录日志
-      Step 10 返回登录响应
-
-    失败时写登录日志（独立 Session，不受主事务回滚影响）。
-    D5 限流由 router 层在调用前执行。
-
-    重要边界：
-      授权有效期统一以 Authorization.valid_until 为准。
-    """
     fail_reason: str | None = None
     user: User | None = None
     game_project: GameProject | None = None
 
     try:
-        # Step 1 & 2：用户名 + 密码 + 软删除过滤
         result = await db.execute(
             select(User).where(
                 User.username == body.username,
@@ -132,7 +108,6 @@ async def login_user(
                 detail="用户名或密码错误",
             )
 
-        # Step 3：账号状态
         if user.status != "active":
             fail_reason = "fail_suspended"
             raise HTTPException(
@@ -142,7 +117,6 @@ async def login_user(
 
         now = datetime.now(timezone.utc)
 
-        # Step 4：游戏项目存在且激活
         result = await db.execute(
             select(GameProject).where(
                 GameProject.project_uuid == body.project_uuid,
@@ -157,7 +131,6 @@ async def login_user(
                 detail="游戏项目不存在或已下线",
             )
 
-        # Step 5：授权记录存在
         auth = await _get_active_authorization(
             db=db,
             user_id=user.id,
@@ -170,7 +143,6 @@ async def login_user(
                 detail="无此游戏的授权",
             )
 
-        # Step 6：授权未到期
         if _is_authorization_expired(auth, now):
             fail_reason = "fail_auth_expired"
             raise HTTPException(
@@ -178,11 +150,6 @@ async def login_user(
                 detail="游戏授权已过期",
             )
 
-        # Step 7：设备绑定检查
-        # PC 中控（client_type="pc"）登录不创建设备绑定，不占用安卓设备名额。
-        # Android 脚本按“用户 × 项目 × 设备”维度绑定。
-        # 设备上限来自当前项目授权 Authorization.authorized_devices：
-        #   0 表示不限设备数；>0 表示当前项目最多可绑定 N 台 active Android 设备。
         if body.client_type == "android":
             result = await db.execute(
                 select(DeviceBinding).where(
@@ -251,7 +218,6 @@ async def login_user(
                     ip_address=client_ip,
                 )
 
-        # Step 8：签发 Token
         access_token, jti = create_access_token(
             user_id=user.id,
             authorization_level=auth.user_level,
@@ -273,7 +239,6 @@ async def login_user(
             ttl_seconds=rt_ttl,
         )
 
-        # Step 9：写成功日志（在主事务内，随 commit 一起落库）
         db.add(
             _build_login_log(
                 user_id=user.id,
@@ -286,7 +251,6 @@ async def login_user(
             )
         )
 
-        # Step 10：返回
         return LoginResponse(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -317,20 +281,6 @@ async def refresh_access_token(
     db: AsyncSession,
     redis: aioredis.Redis,
 ) -> TokenResponse:
-    """
-    使用 Refresh Token 换取新的 Access Token。
-
-    当前规则：
-      1. 通过 RT 反查索引 O(1) 定位 RT 数据，不做 SCAN。
-      2. 用户必须存在、未软删除、状态 active。
-      3. RT 中的 game_project_code 必须能找到 active GameProject。
-      4. 用户必须仍拥有该项目 active Authorization。
-      5. Authorization.valid_until 未过期。
-      6. 新 Access Token 的 authorization_level 来自 Authorization.user_level。
-
-    重要整改：
-      Refresh Token 刷新不得再读取 User.user_level。
-    """
     rt_data = await get_refresh_token_by_value(redis, body.refresh_token)
     if rt_data is None:
         raise HTTPException(
@@ -418,7 +368,6 @@ async def refresh_access_token(
     new_refresh_token = create_refresh_token()
     rt_ttl = get_refresh_token_ttl_seconds()
 
-    # RT 严格轮换：旧 RT 立即删除，防止并发刷新产生多个有效 RT。
     await delete_refresh_token_v2(
         redis=redis,
         user_id=user.id,
@@ -449,22 +398,6 @@ async def revoke_all_devices(
     db: AsyncSession,
     redis: aioredis.Redis,
 ) -> MessageResponse:
-    """
-    踢出所有 User Token 会话。
-
-    操作：
-      1. 吊销当前 AT（加黑名单，TTL = 剩余有效期）
-      2. 用 SCAN 删除该用户在 Redis 中的所有 RT
-         Key 模式：refresh:{user_id}:*
-      3. 因为 RT 反查索引（rt_lookup:{hash}）TTL 与主 Key 一致，
-         主 Key 删除后反查索引会在自然过期时自动消失，
-         不额外删除反查索引（避免 O(n) SCAN rt_lookup:*）
-
-    安全说明：
-      token_version 已落地（v1.2.0+）。
-      本函数通过 user.token_version += 1 使所有旧 Access Token 下一次请求即 401，
-      同时删除所有 Refresh Token。黑名单记录当前 AT 作为额外防御层。
-    """
     try:
         payload = decode_access_token(access_token_str)
         jti: str = payload.get("jti", "")
@@ -508,12 +441,6 @@ async def logout_user(
     body: LogoutRequest,
     redis: aioredis.Redis,
 ) -> MessageResponse:
-    """
-    登出：将 AT 加入黑名单，并删除对应 RT 及其反查索引。
-
-    AT 已过期时跳过黑名单写入，但仍根据 refresh_token 删除 RT。
-    """
-    # 吊销 AT（如果仍在有效期内）
     try:
         payload = decode_access_token(access_token_str)
         jti: str = payload.get("jti", "")
@@ -522,9 +449,8 @@ async def logout_user(
         remaining = get_access_token_remaining_seconds(exp)
         await revoke_token(redis, jti, remaining)
     except JWTError:
-        pass  # AT 已过期，跳过黑名单
+        pass
 
-    # 删除 RT（无论 AT 是否过期）
     rt_data = await get_refresh_token_by_value(redis, body.refresh_token)
     if rt_data is not None:
         await delete_refresh_token_v2(
@@ -537,16 +463,11 @@ async def logout_user(
     return MessageResponse(message="登出成功")
 
 
-# ─────────────────────────────────────────────────────────────
-# 内部辅助函数
-# ─────────────────────────────────────────────────────────────
-
 async def _get_active_authorization(
     db: AsyncSession,
     user_id: int,
     game_project_id: int,
 ) -> Authorization | None:
-    """读取用户在指定项目下的 active 授权。"""
     result = await db.execute(
         select(Authorization).where(
             Authorization.user_id == user_id,
@@ -561,13 +482,6 @@ def _is_authorization_expired(
     auth: Authorization,
     now: datetime,
 ) -> bool:
-    """
-    判断授权是否过期。
-
-    兼容数据库返回 naive datetime 的情况：
-    PostgreSQL 存储带时区的 timestamp，但 ORM 加载时可能丢失 tzinfo。
-    对 naive datetime 统一视为 UTC，避免 TypeError。
-    """
     if auth.valid_until is None:
         return False
 
@@ -587,17 +501,9 @@ def _build_login_log(
     success: bool,
     fail_reason: str | None,
 ) -> LoginLog:
-    """
-    构造 LoginLog ORM 对象（不执行写入，由调用方决定 Session）。
-
-    安全口径:
-        - 不再写入 device_fingerprint 原文。
-        - 只写入 device_fingerprint_hash，供后台排障关联。
-    """
     return LoginLog(
         user_id=user_id,
         device_fingerprint=device_fingerprint,
-        device_fingerprint_hash=None,
         ip_address=ip_address,
         client_type=client_type,
         game_project_id=game_project_id,
@@ -615,12 +521,6 @@ async def _write_login_log(
     success: bool,
     fail_reason: str | None,
 ) -> None:
-    """
-    用独立 Session 写登录日志。
-
-    独立 Session 与主登录事务完全隔离：
-    主事务因校验失败而回滚时，失败日志仍能正常落库。
-    """
     log = _build_login_log(
         user_id=user_id,
         device_fingerprint=device_fingerprint,

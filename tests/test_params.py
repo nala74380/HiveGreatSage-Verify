@@ -27,6 +27,10 @@ from sqlalchemy import text
 from tests.conftest import GAME_PROJECT_CODE, GAME_DB_SKIP_MSG
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 # ── 辅助：创建用户并登录 ──────────────────────────────────────
 
 async def _create_user_and_login(
@@ -52,7 +56,7 @@ async def _create_user_and_login(
             "user_level": "normal",
             "authorized_devices": 20,
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
     assert r.status_code == 201, f"授权失败: {r.text}"
 

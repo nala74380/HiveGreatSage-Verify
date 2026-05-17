@@ -15,7 +15,7 @@ r"""
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_all_heartbeats_for_game
@@ -508,18 +508,103 @@ async def _get_admin_dashboard_online_and_projects(
         from app.core.redis_client import get_all_heartbeats_for_game
 
         online_count = 0
+        now = datetime.now(timezone.utc)
+        week_later = now + timedelta(days=7)
         active_projects = (await db.execute(
             select(GameProject).where(GameProject.is_active == True)
         )).scalars().all()
+        project_ids = [p.id for p in active_projects]
+
+        auth_stats_map: dict[int, dict] = {}
+        device_stats_map: dict[int, dict] = {}
+
+        if project_ids:
+            auth_stats_rows = (await db.execute(
+                select(
+                    Authorization.game_project_id.label("project_id"),
+                    func.count(Authorization.id).label("authorization_count"),
+                    func.count(func.distinct(Authorization.user_id)).label("user_count"),
+                    func.sum(
+                        case((Authorization.status == "active", 1), else_=0)
+                    ).label("active_authorization_count"),
+                    func.sum(
+                        case((Authorization.status == "suspended", 1), else_=0)
+                    ).label("suspended_authorization_count"),
+                    func.sum(
+                        case((Authorization.status == "expired", 1), else_=0)
+                    ).label("expired_authorization_count"),
+                    func.sum(
+                        case(
+                            (
+                                (Authorization.status == "active")
+                                & Authorization.valid_until.is_not(None)
+                                & (Authorization.valid_until > now)
+                                & (Authorization.valid_until <= week_later),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ).label("expiring_in_7d_count"),
+                )
+                .join(User, User.id == Authorization.user_id)
+                .where(
+                    Authorization.game_project_id.in_(project_ids),
+                    User.is_deleted == False,  # noqa: E712
+                )
+                .group_by(Authorization.game_project_id)
+            )).all()
+            for row in auth_stats_rows:
+                auth_stats_map[int(row.project_id)] = {
+                    "authorization_count": int(row.authorization_count or 0),
+                    "user_count": int(row.user_count or 0),
+                    "active_authorization_count": int(row.active_authorization_count or 0),
+                    "suspended_authorization_count": int(row.suspended_authorization_count or 0),
+                    "expired_authorization_count": int(row.expired_authorization_count or 0),
+                    "expiring_in_7d_count": int(row.expiring_in_7d_count or 0),
+                }
+
+            device_stats_rows = (await db.execute(
+                select(
+                    DeviceBinding.game_project_id.label("project_id"),
+                    func.count(DeviceBinding.id).label("total_bound_devices"),
+                    func.sum(
+                        case((DeviceBinding.last_seen_at.is_not(None), 1), else_=0)
+                    ).label("activated_devices"),
+                )
+                .join(User, User.id == DeviceBinding.user_id)
+                .where(
+                    DeviceBinding.game_project_id.in_(project_ids),
+                    DeviceBinding.status == "active",
+                    User.is_deleted == False,  # noqa: E712
+                )
+                .group_by(DeviceBinding.game_project_id)
+            )).all()
+            for row in device_stats_rows:
+                device_stats_map[int(row.project_id)] = {
+                    "total_bound_devices": int(row.total_bound_devices or 0),
+                    "activated_devices": int(row.activated_devices or 0),
+                }
+
         active_projects_data = []
         for project in active_projects:
             heartbeats = await get_all_heartbeats_for_game(redis, project.id)
             project_online_count = len(heartbeats)
             online_count += project_online_count
+            auth_stats = auth_stats_map.get(project.id, {})
+            device_stats = device_stats_map.get(project.id, {})
             active_projects_data.append({
+                "project_id": project.id,
                 "code": project.code_name,
                 "display": project.display_name,
                 "online_count": project_online_count,
+                "user_count": int(auth_stats.get("user_count") or 0),
+                "authorization_count": int(auth_stats.get("authorization_count") or 0),
+                "active_authorization_count": int(auth_stats.get("active_authorization_count") or 0),
+                "suspended_authorization_count": int(auth_stats.get("suspended_authorization_count") or 0),
+                "expired_authorization_count": int(auth_stats.get("expired_authorization_count") or 0),
+                "expiring_in_7d_count": int(auth_stats.get("expiring_in_7d_count") or 0),
+                "total_bound_devices": int(device_stats.get("total_bound_devices") or 0),
+                "activated_devices": int(device_stats.get("activated_devices") or 0),
             })
         return online_count, active_projects_data
     except Exception:

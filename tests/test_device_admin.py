@@ -21,6 +21,10 @@ from httpx import AsyncClient
 from tests.conftest import GAME_PROJECT_CODE
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 async def _create_and_login(
     client: AsyncClient,
     admin_headers: dict,
@@ -44,7 +48,7 @@ async def _create_and_login(
             "user_level": "normal",
             "authorized_devices": 20,
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
 
     r = await client.post("/api/auth/login", json={

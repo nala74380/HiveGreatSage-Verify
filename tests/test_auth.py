@@ -37,6 +37,10 @@ PROJECT_UUID = "00000000-0000-0000-0000-000000000001"
 PROJECT_CODE = "game_001"
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 async def _create_test_user(
     client: AsyncClient,
     admin_headers: dict,
@@ -76,7 +80,7 @@ async def _create_test_user(
             "authorized_devices": authorized_devices,
             "valid_until": None,
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
     assert grant_auth_response.status_code == 201, (
         f"授权失败: {grant_auth_response.text}"

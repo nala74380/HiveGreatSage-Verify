@@ -10,7 +10,7 @@ r"""
       GET  /admin/api/dashboard    — 平台统计概览
 
 改进历史:
-    V1.4.0 (2026-05-07): 登录日志列表读取 device_fingerprint_hash，不再尝试从原文计算 hash。
+    V2.0.0 (2026-05-18): 登录日志当前直接返回 device_fingerprint 原文字段。
     V1.3.0 (2026-05-07): 用户设备列表与解绑审计中的设备指纹脱敏。
     V1.2.0 (2026-05-07): 管理员手动解绑设备接入 audit_log。
     V1.1.0 (2026-05-07): Admin 登录成功 / 失败接入 audit_log。
@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin
 from app.core.redis_client import get_redis
-from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint
 from app.database import get_main_db
 from app.models.main.accounting import AccountingLedgerEntry, AccountingWallet
 from app.models.main.models import Admin, Agent, Authorization, DeviceBinding, GameProject, LoginLog, User

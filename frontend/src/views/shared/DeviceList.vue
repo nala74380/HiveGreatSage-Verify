@@ -164,7 +164,7 @@
           <template #default="{ row }">
             <router-link
               v-if="row.user_id"
-              :to="`/users/${row.user_id}`"
+              :to="{ path: '/users', query: { focus_user_id: row.user_id } }"
               class="link"
               @click.stop
             >
@@ -439,7 +439,6 @@ const sourceLabel = (source) => {
 
 const deviceDisplay = (row) => row?.device_id || row?.connection_label || row?.device_fingerprint || '—'
 const projectCode = (row) => row?.game_project_code || row?.project_code || '—'
-const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
 
 const loadDevices = async () => {
   loading.value = true

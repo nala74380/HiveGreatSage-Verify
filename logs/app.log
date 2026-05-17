@@ -48,3 +48,44 @@
 2026-05-18 01:45:18.797 | INFO     | app.routers.admin:get_user_devices:226 - [get_user_devices] user_id=531, 查询到 2 条 DeviceBinding
 2026-05-18 02:24:17.109 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
 2026-05-18 02:24:17.117 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 03:14:22.380 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 03:14:22.382 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 03:14:22.466 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 03:14:22.492 | INFO     | app.routers.admin:get_user_devices:225 - [get_user_devices] user_id=531, 查询到 2 条 DeviceBinding
+2026-05-18 04:33:04.998 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 04:33:05.006 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 04:33:06.847 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 04:33:06.848 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 04:33:06.932 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 04:33:08.641 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 04:33:08.642 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 04:33:08.730 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 04:42:45.080 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 04:42:45.093 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 04:42:48.482 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 04:42:48.482 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 04:42:48.573 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 04:43:13.755 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 04:43:13.755 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 04:43:16.466 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 04:43:16.470 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 04:43:16.721 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 04:48:14.262 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 04:48:14.280 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 04:48:15.988 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 04:48:15.988 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 04:48:16.074 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 04:49:51.476 | INFO     | app.routers.admin:get_user_devices:225 - [get_user_devices] user_id=682, 查询到 1 条 DeviceBinding
+2026-05-18 05:26:04.883 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 05:26:04.898 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 05:26:07.529 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 05:26:07.529 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 05:26:07.617 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 05:26:09.121 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 05:26:09.122 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 05:26:09.211 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 05:36:08.050 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 05:36:08.069 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 05:36:09.527 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 05:36:09.528 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 05:36:09.642 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化

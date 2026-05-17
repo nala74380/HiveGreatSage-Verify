@@ -120,7 +120,7 @@
               <el-button
                 text
                 class="username-link"
-                @click="router.push(`/users/${row.id}`)"
+                @click="openEditDialog(row)"
               >
                 {{ row.username }}
               </el-button>
@@ -236,12 +236,8 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
-            <el-button text size="small" @click="router.push(`/users/${row.id}`)">
-              详情
-            </el-button>
-
             <el-button text size="small" type="primary" @click="openEditDialog(row)">
               编辑
             </el-button>
@@ -593,7 +589,7 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="操作" width="340" fixed="right">
+            <el-table-column label="操作" width="280" fixed="right">
               <template #default="{ row }">
                 <el-button text size="small" :disabled="row.status !== 'active'" @click="openAuthUpgradeDialog(row)">
                   新增设备
@@ -603,9 +599,6 @@
                 </el-button>
                 <el-button text size="small" :disabled="row.status !== 'active'" @click="openAuthLevelDialog(row)">
                   升级
-                </el-button>
-                <el-button v-if="auth.isAdmin" text size="small" @click="openAuthEditDialog(row)">
-                  管理调整
                 </el-button>
 
                 <el-button
@@ -668,6 +661,7 @@
                 filterable
                 placeholder="选择项目"
                 style="width: 100%"
+                @change="resetGrantPreview"
               >
                 <el-option
                   v-for="p in unauthorizedProjects"
@@ -680,7 +674,7 @@
             </el-form-item>
 
             <el-form-item label="项目等级">
-              <el-select v-model="editDialog.grantForm.user_level" style="width: 180px">
+              <el-select v-model="editDialog.grantForm.user_level" style="width: 180px" @change="resetGrantPreview">
                 <el-option label="试用" value="trial" />
                 <el-option label="普通" value="normal" />
                 <el-option label="VIP" value="vip" />
@@ -697,6 +691,7 @@
                   :step="10"
                   controls-position="right"
                   style="width: 170px"
+                  @change="resetGrantPreview"
                 />
 
                 <span
@@ -708,16 +703,16 @@
               </div>
 
               <div class="quick-btns">
-                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 20">20</el-button>
-                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 50">50</el-button>
-                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 100">100</el-button>
-                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 500">500</el-button>
+                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 20; resetGrantPreview()">20</el-button>
+                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 50; resetGrantPreview()">50</el-button>
+                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 100; resetGrantPreview()">100</el-button>
+                <el-button size="small" @click="editDialog.grantForm.authorized_devices = 500; resetGrantPreview()">500</el-button>
                 <el-button
                   v-if="auth.isAdmin"
                   size="small"
                   type="info"
                   plain
-                  @click="editDialog.grantForm.authorized_devices = 0"
+                  @click="editDialog.grantForm.authorized_devices = 0; resetGrantPreview()"
                 >
                   无限
                 </el-button>
@@ -736,7 +731,7 @@
                     size="small"
                     type="info"
                     plain
-                    @click="editDialog.grantForm.valid_until = null"
+                    @click="editDialog.grantForm.valid_until = null; resetGrantPreview()"
                   >
                     永久
                   </el-button>
@@ -747,6 +742,7 @@
                   type="datetime"
                   :placeholder="auth.isAdmin ? '不填为永久有效' : '代理必须设置到期时间'"
                   style="width: 100%"
+                  @change="resetGrantPreview"
                 />
               </div>
 
@@ -765,6 +761,18 @@
                   <strong>{{ editDialog.grantPreview.paid_hours }} 小时</strong>
                   <span>可用余额</span>
                   <strong>{{ fmtMoney(editDialog.grantPreview.available_total) }} 点</strong>
+                  <span>充值消耗</span>
+                  <strong>{{ fmtMoney(editDialog.grantPreview.charged_consumed || 0) }} 点</strong>
+                  <span>授信消耗</span>
+                  <strong>{{ fmtMoney(editDialog.grantPreview.credit_consumed || 0) }} 点</strong>
+                  <span>操作后余额</span>
+                  <strong>
+                    {{
+                      editDialog.grantPreview.available_total_after == null
+                        ? '-'
+                        : `${fmtMoney(editDialog.grantPreview.available_total_after)} 点`
+                    }}
+                  </strong>
                 </div>
                 <el-alert
                   v-if="editDialog.grantPreview.enough_balance === false"
@@ -1148,103 +1156,6 @@
       </el-tabs>
     </el-drawer>
 
-    <!-- 编辑项目授权 -->
-    <el-dialog
-      v-model="authEditDialog.visible"
-      title="编辑项目授权"
-      width="620px"
-      destroy-on-close
-    >
-      <el-form :model="authEditDialog.form" label-width="120px">
-        <el-form-item label="项目">
-          <span class="readonly-val">{{ authProjectName(authEditDialog.row) }}</span>
-        </el-form-item>
-
-        <el-form-item label="项目等级">
-          <el-select v-model="authEditDialog.form.user_level" style="width: 180px">
-            <el-option label="试用" value="trial" />
-            <el-option label="普通" value="normal" />
-            <el-option label="VIP" value="vip" />
-            <el-option label="SVIP" value="svip" />
-            <el-option v-if="auth.isAdmin" label="测试" value="tester" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="授权设备数量">
-          <div class="device-limit-wrap">
-            <el-input-number
-              v-model="authEditDialog.form.authorized_devices"
-              :min="auth.isAgent ? 1 : 0"
-              :step="10"
-              controls-position="right"
-              style="width: 170px"
-            />
-
-            <span
-              v-if="auth.isAdmin && Number(authEditDialog.form.authorized_devices || 0) === 0"
-              class="hint-text"
-            >
-              无限设备
-            </span>
-          </div>
-        </el-form-item>
-
-        <el-form-item label="项目到期时间">
-          <div class="expiry-picker-wrap">
-            <div class="quick-btns">
-              <el-button size="small" @click="setAuthEditExpiry(7)">+7天</el-button>
-              <el-button size="small" @click="setAuthEditExpiry(30)">+30天</el-button>
-              <el-button size="small" @click="setAuthEditExpiry(90)">+90天</el-button>
-              <el-button size="small" @click="setAuthEditExpiry(365)">+365天</el-button>
-              <el-button
-                v-if="auth.isAdmin"
-                size="small"
-                type="info"
-                plain
-                @click="authEditDialog.form.valid_until = null"
-              >
-                永久
-              </el-button>
-            </div>
-
-            <el-date-picker
-              v-model="authEditDialog.form.valid_until"
-              type="datetime"
-              :placeholder="auth.isAdmin ? '不填为永久有效' : '代理必须设置到期时间'"
-              style="width: 100%"
-            />
-          </div>
-        </el-form-item>
-
-        <el-form-item label="状态">
-          <el-select v-model="authEditDialog.form.status" style="width: 180px">
-            <el-option label="有效" value="active" />
-            <el-option label="已停用" value="suspended" />
-            <el-option label="已过期" value="expired" />
-          </el-select>
-        </el-form-item>
-
-        <el-alert
-          title="当前编辑会更新用户在该项目下的授权等级、设备数量、项目到期时间和状态。"
-          type="info"
-          show-icon
-          :closable="false"
-          class="small-alert"
-        />
-      </el-form>
-
-      <template #footer>
-        <el-button @click="authEditDialog.visible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="authEditDialog.loading"
-          @click="saveAuthEdit"
-        >
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog
       v-model="authUpgradeDialog.visible"
       title="新增授权设备"
@@ -1292,6 +1203,16 @@
             <strong>{{ fmtMoney(authUpgradeDialog.preview.consumed_points) }} 点</strong>
             <span>新到期</span>
             <strong>{{ authUpgradeDialog.preview.new_expiry ? formatDate(authUpgradeDialog.preview.new_expiry) : '-' }}</strong>
+            <template v-if="authUpgradeDialog.preview.available_total != null">
+              <span>可用余额</span>
+              <strong>{{ fmtMoney(authUpgradeDialog.preview.available_total) }} 点</strong>
+              <span>充值消耗</span>
+              <strong>{{ fmtMoney(authUpgradeDialog.preview.charged_consumed || 0) }} 点</strong>
+              <span>授信消耗</span>
+              <strong>{{ fmtMoney(authUpgradeDialog.preview.credit_consumed || 0) }} 点</strong>
+              <span>操作后余额</span>
+              <strong>{{ fmtMoney(authUpgradeDialog.preview.available_total_after || 0) }} 点</strong>
+            </template>
             <template v-if="authUpgradeDialog.form.mode === 'topup_align'">
               <span>新设备扣点</span>
               <strong>{{ fmtMoney(authUpgradeDialog.preview.new_devices_cost || 0) }} 点</strong>
@@ -1378,6 +1299,12 @@
             <strong>{{ fmtMoney(authRenewDialog.preview.total_cost) }} 点</strong>
             <span>可用余额</span>
             <strong>{{ fmtMoney(authRenewDialog.preview.available_total) }} 点</strong>
+            <span>充值消耗</span>
+            <strong>{{ fmtMoney(authRenewDialog.preview.charged_consumed || 0) }} 点</strong>
+            <span>授信消耗</span>
+            <strong>{{ fmtMoney(authRenewDialog.preview.credit_consumed || 0) }} 点</strong>
+            <span>操作后余额</span>
+            <strong>{{ fmtMoney(authRenewDialog.preview.available_total_after || 0) }} 点</strong>
           </div>
           <el-alert
             v-if="authRenewDialog.preview.enough_balance === false"
@@ -1445,6 +1372,12 @@
             <strong>{{ fmtMoney(authLevelDialog.preview.difference_cost) }} 点</strong>
             <span>可用余额</span>
             <strong>{{ fmtMoney(authLevelDialog.preview.available_total) }} 点</strong>
+            <span>充值消耗</span>
+            <strong>{{ fmtMoney(authLevelDialog.preview.charged_consumed || 0) }} 点</strong>
+            <span>授信消耗</span>
+            <strong>{{ fmtMoney(authLevelDialog.preview.credit_consumed || 0) }} 点</strong>
+            <span>操作后余额</span>
+            <strong>{{ fmtMoney(authLevelDialog.preview.available_total_after || 0) }} 点</strong>
           </div>
           <el-alert
             v-if="authLevelDialog.preview.enough_balance === false"
@@ -1496,7 +1429,7 @@
  */
 
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -1518,6 +1451,7 @@ import {
 } from '@/utils/format'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 
 const tableRef = ref(null)
@@ -1559,6 +1493,8 @@ const editDialog = reactive({
   grantLoading: false,
   grantPreviewLoading: false,
   grantPreview: null,
+  grantPreviewPayload: '',
+  grantIdempotencyKey: '',
   generatedPassword: '',
   form: {
     status: 'active',
@@ -1595,24 +1531,13 @@ const editDialog = reactive({
   },
 })
 
-const authEditDialog = reactive({
-  visible: false,
-  loading: false,
-  row: null,
-  form: {
-    user_level: 'normal',
-    authorized_devices: 20,
-    valid_until: null,
-    status: 'active',
-  },
-})
-
 const authUpgradeDialog = reactive({
   visible: false,
   loading: false,
   previewLoading: false,
   row: null,
   preview: null,
+  idempotencyKey: '',
   form: {
     additional_devices: 1,
     mode: 'append',
@@ -1625,6 +1550,7 @@ const authRenewDialog = reactive({
   previewLoading: false,
   row: null,
   preview: null,
+  idempotencyKey: '',
   form: {
     valid_until: null,
   },
@@ -1636,6 +1562,7 @@ const authLevelDialog = reactive({
   previewLoading: false,
   row: null,
   preview: null,
+  idempotencyKey: '',
   form: {
     user_level: 'vip',
   },
@@ -1680,6 +1607,10 @@ function buildGrantForm(projectId = null) {
     authorized_devices: 20,
     valid_until: null,
   }
+}
+
+function newIdempotencyKey(prefix = 'ui') {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
 }
 
 function projectName(project) {
@@ -1901,10 +1832,7 @@ function setCreateAuthExpiry(days) {
 
 function setGrantAuthExpiry(days) {
   setDateAfterDays(editDialog.grantForm, 'valid_until', days)
-}
-
-function setAuthEditExpiry(days) {
-  setDateAfterDays(authEditDialog.form, 'valid_until', days)
+  resetGrantPreview()
 }
 
 function setAuthRenewExpiry(days) {
@@ -1916,16 +1844,25 @@ function setAuthRenewExpiry(days) {
   resetAuthRenewPreview()
 }
 
+function resetGrantPreview() {
+  editDialog.grantPreview = null
+  editDialog.grantPreviewPayload = ''
+  editDialog.grantIdempotencyKey = ''
+}
+
 function resetAuthUpgradePreview() {
   authUpgradeDialog.preview = null
+  authUpgradeDialog.idempotencyKey = ''
 }
 
 function resetAuthRenewPreview() {
   authRenewDialog.preview = null
+  authRenewDialog.idempotencyKey = ''
 }
 
 function resetAuthLevelPreview() {
   authLevelDialog.preview = null
+  authLevelDialog.idempotencyKey = ''
 }
 
 async function loadLookups() {
@@ -2084,7 +2021,7 @@ async function openEditDialog(row) {
   }
   editDialog.generatedPassword = ''
   editDialog.grantForm = buildGrantForm()
-  editDialog.grantPreview = null
+  resetGrantPreview()
   editDialog.finance.charges = []
   editDialog.finance.chargePage = 1
   editDialog.finance.chargeTotal = 0
@@ -2269,7 +2206,7 @@ async function copyPassword() {
 
 function quickGrantAuth(project) {
   editDialog.grantForm = buildGrantForm(project.id)
-  editDialog.grantPreview = null
+  resetGrantPreview()
   editDialog.activeTab = 'auths'
 }
 
@@ -2298,8 +2235,11 @@ async function previewGrantAuthCost() {
   editDialog.grantPreviewLoading = true
 
   try {
-    const res = await userApi.previewGrantAuth(editDialog.row.id, buildGrantPayload())
+    const payload = buildGrantPayload()
+    const res = await userApi.previewGrantAuth(editDialog.row.id, payload)
     editDialog.grantPreview = res.data
+    editDialog.grantPreviewPayload = JSON.stringify(payload)
+    editDialog.grantIdempotencyKey = newIdempotencyKey('grant')
   } finally {
     editDialog.grantPreviewLoading = false
   }
@@ -2318,14 +2258,28 @@ async function quickGrantDo() {
     return
   }
 
+  const payload = buildGrantPayload()
+  if (auth.isAgent && !editDialog.grantPreview) {
+    ElMessage.warning('请先预览扣点')
+    return
+  }
+  if (auth.isAgent && editDialog.grantPreviewPayload !== JSON.stringify(payload)) {
+    ElMessage.warning('授权参数已变更，请重新预览扣点')
+    return
+  }
+
   editDialog.grantLoading = true
 
   try {
-    await userApi.grantAuth(editDialog.row.id, buildGrantPayload())
+    await userApi.grantAuth(
+      editDialog.row.id,
+      payload,
+      editDialog.grantIdempotencyKey || newIdempotencyKey('grant')
+    )
 
     ElMessage.success('项目授权成功')
     editDialog.grantForm = buildGrantForm()
-    editDialog.grantPreview = null
+    resetGrantPreview()
 
     await Promise.all([
       loadEditAuths(),
@@ -2347,7 +2301,7 @@ function openAuthUpgradeDialog(row) {
     additional_devices: 1,
     mode: 'append',
   }
-  authUpgradeDialog.preview = null
+  resetAuthUpgradePreview()
   authUpgradeDialog.visible = true
 }
 
@@ -2361,7 +2315,7 @@ function openAuthRenewDialog(row) {
   authRenewDialog.form = {
     valid_until: row.valid_until ? new Date(row.valid_until) : null,
   }
-  authRenewDialog.preview = null
+  resetAuthRenewPreview()
   authRenewDialog.visible = true
 }
 
@@ -2376,19 +2330,8 @@ function openAuthLevelDialog(row) {
   authLevelDialog.form = {
     user_level: nextLevel,
   }
-  authLevelDialog.preview = null
+  resetAuthLevelPreview()
   authLevelDialog.visible = true
-}
-
-function openAuthEditDialog(row) {
-  authEditDialog.row = row
-  authEditDialog.form = {
-    user_level: row.user_level || 'normal',
-    authorized_devices: row.authorized_devices ?? 20,
-    valid_until: row.valid_until ? new Date(row.valid_until) : null,
-    status: row.status || 'active',
-  }
-  authEditDialog.visible = true
 }
 
 async function previewAuthUpgrade() {
@@ -2408,6 +2351,7 @@ async function previewAuthUpgrade() {
       authUpgradeDialog.form.mode
     )
     authUpgradeDialog.preview = res.data
+    authUpgradeDialog.idempotencyKey = newIdempotencyKey('add-devices')
   } finally {
     authUpgradeDialog.previewLoading = false
   }
@@ -2423,14 +2367,19 @@ async function submitAuthUpgrade() {
   authUpgradeDialog.loading = true
 
   try {
-    await userApi.upgradeAuth(editDialog.row.id, authUpgradeDialog.row.id, {
-      additional_devices: authUpgradeDialog.form.additional_devices,
-      mode: authUpgradeDialog.form.mode,
-    })
+    await userApi.upgradeAuth(
+      editDialog.row.id,
+      authUpgradeDialog.row.id,
+      {
+        additional_devices: authUpgradeDialog.form.additional_devices,
+        mode: authUpgradeDialog.form.mode,
+      },
+      authUpgradeDialog.idempotencyKey || newIdempotencyKey('add-devices')
+    )
 
     ElMessage.success('授权设备数已新增')
     authUpgradeDialog.visible = false
-    authUpgradeDialog.preview = null
+    resetAuthUpgradePreview()
 
     await Promise.all([
       loadEditAuths(),
@@ -2455,6 +2404,7 @@ async function previewAuthRenew() {
       valid_until: isoOrNull(authRenewDialog.form.valid_until),
     })
     authRenewDialog.preview = res.data
+    authRenewDialog.idempotencyKey = newIdempotencyKey('renew')
   } finally {
     authRenewDialog.previewLoading = false
   }
@@ -2470,13 +2420,18 @@ async function submitAuthRenew() {
   authRenewDialog.loading = true
 
   try {
-    await userApi.renewAuth(editDialog.row.id, authRenewDialog.row.id, {
-      valid_until: isoOrNull(authRenewDialog.form.valid_until),
-    })
+    await userApi.renewAuth(
+      editDialog.row.id,
+      authRenewDialog.row.id,
+      {
+        valid_until: isoOrNull(authRenewDialog.form.valid_until),
+      },
+      authRenewDialog.idempotencyKey || newIdempotencyKey('renew')
+    )
 
     ElMessage.success('项目授权已续费')
     authRenewDialog.visible = false
-    authRenewDialog.preview = null
+    resetAuthRenewPreview()
 
     await Promise.all([
       loadEditAuths(),
@@ -2501,6 +2456,7 @@ async function previewAuthLevelUpgrade() {
       user_level: authLevelDialog.form.user_level,
     })
     authLevelDialog.preview = res.data
+    authLevelDialog.idempotencyKey = newIdempotencyKey('level-upgrade')
   } finally {
     authLevelDialog.previewLoading = false
   }
@@ -2516,13 +2472,18 @@ async function submitAuthLevelUpgrade() {
   authLevelDialog.loading = true
 
   try {
-    await userApi.levelUpgradeAuth(editDialog.row.id, authLevelDialog.row.id, {
-      user_level: authLevelDialog.form.user_level,
-    })
+    await userApi.levelUpgradeAuth(
+      editDialog.row.id,
+      authLevelDialog.row.id,
+      {
+        user_level: authLevelDialog.form.user_level,
+      },
+      authLevelDialog.idempotencyKey || newIdempotencyKey('level-upgrade')
+    )
 
     ElMessage.success('项目授权等级已升级')
     authLevelDialog.visible = false
-    authLevelDialog.preview = null
+    resetAuthLevelPreview()
 
     await Promise.all([
       loadEditAuths(),
@@ -2530,36 +2491,6 @@ async function submitAuthLevelUpgrade() {
     ])
   } finally {
     authLevelDialog.loading = false
-  }
-}
-
-async function saveAuthEdit() {
-  if (!editDialog.row?.id || !authEditDialog.row?.id) return
-
-  if (auth.isAgent && !authEditDialog.form.valid_until) {
-    ElMessage.warning('代理修改项目授权时必须设置项目到期时间')
-    return
-  }
-
-  authEditDialog.loading = true
-
-  try {
-    await userApi.updateAuth(editDialog.row.id, authEditDialog.row.id, {
-      user_level: authEditDialog.form.user_level,
-      authorized_devices: authEditDialog.form.authorized_devices,
-      valid_until: isoOrNull(authEditDialog.form.valid_until),
-      status: authEditDialog.form.status,
-    })
-
-    ElMessage.success('项目授权已更新')
-    authEditDialog.visible = false
-
-    await Promise.all([
-      loadEditAuths(),
-      loadUsers(),
-    ])
-  } finally {
-    authEditDialog.loading = false
   }
 }
 
@@ -2604,9 +2535,38 @@ async function deleteUser(row) {
   await loadUsers()
 }
 
+async function openFromRouteFocusUser() {
+  const raw = route.query?.focus_user_id
+  const focusUserId = Number(raw)
+  if (!Number.isInteger(focusUserId) || focusUserId <= 0) return
+
+  const clearFocusQuery = async () => {
+    const nextQuery = { ...route.query }
+    delete nextQuery.focus_user_id
+    await router.replace({ path: '/users', query: nextQuery })
+  }
+
+  const hit = users.value.find(item => Number(item.id) === focusUserId)
+  if (hit) {
+    await openEditDialog(hit)
+    await clearFocusQuery()
+    return
+  }
+
+  try {
+    const res = await userApi.detail(focusUserId)
+    await openEditDialog(normalizeUserRow(res.data || {}))
+  } catch {
+    ElMessage.warning('未找到目标用户')
+  } finally {
+    await clearFocusQuery()
+  }
+}
+
 onMounted(async () => {
   await loadLookups()
   await loadUsers()
+  await openFromRouteFocusUser()
 })
 </script>
 

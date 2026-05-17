@@ -2,8 +2,8 @@ r"""
 文件位置: app/routers/device_admin.py
 名称: 管理后台设备监控路由
 作者: 蜂巢·大圣 (HiveGreatSage)
-时间: 2026-05-07
-版本: V2.5.0
+时间: 2026-05-18
+版本: V2.6.0
 功能说明:
     管理后台设备监控路由。
 
@@ -26,21 +26,21 @@ r"""
     项目维度设备监控:
       GET /admin/api/devices/{game_project_code}
 
-设计边界:
-    1. /admin/api/devices/* 是 Admin / Agent 后台设备监控接口。
-    2. /api/device/* 是 PC 中控 / 安卓脚本 User Token 终端接口。
-    3. 后台设备监控不应调用 User Token 专用接口。
-    4. 普通列表接口不得默认全量扫描 Redis 后再分页。
-    5. Admin 可查看全平台设备。
-    6. Agent 可查看自己及下级代理创建用户的设备。
+    设计边界:
+      1. /admin/api/devices/* 是 Admin / Agent 后台设备监控接口。
+      2. /api/device/* 是 PC 中控 / 安卓脚本 User Token 终端接口。
+      3. 后台设备监控不应调用 User Token 专用接口。
+      4. 普通列表接口不得默认全量扫描 Redis 后再分页。
+      5. Admin 可查看全平台设备。
+      6. Agent 可查看自己及下级代理创建用户的设备。
 
-当前口径:
-    - 项目编码对外统一使用 game_project_code。
-    - 在线状态优先来自 Redis runtime key，DB last_seen_at 作为补充。
-    - IMSI 后台默认不返回原文，只返回 imsi_masked / imsi_hash。
-    - 后台设备列表不返回设备指纹原文，只返回 masked/hash。
+    当前口径:
+      - 项目编码对外统一使用 game_project_code。
+      - 在线状态优先来自 Redis runtime key，DB last_seen_at 作为补充。
+      - 后台设备链直接返回设备原文字段与连接标识字段。
 
 改进历史:
+    V2.6.0 (2026-05-18) - 删除旧脱敏 / 摘要口径，统一直出设备原文字段。
     V2.5.0 (2026-05-07): 全局设备监控移除 device_id / device_fingerprint 原文输出。
     V2.4.0 (2026-05-07): 后台设备列表增加敏感字段脱敏与 hash 字段；IMSI 不再返回原文。
 """
@@ -59,9 +59,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_redis, is_token_revoked
 from app.core.security import decode_admin_token, decode_agent_token
-from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint, mask_imsi
-from app.core.crypto import decrypt_field
-from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids
 from app.database import get_main_db
 from app.models.main.models import Admin, Agent, Authorization, DeviceBinding, GameProject, User
 from app.services.device_admin_service import (
@@ -72,7 +69,6 @@ from app.services.device_admin_service import (
 router = APIRouter()
 _http_bearer = HTTPBearer()
 
-# 在线判定阈值：与 device_service._OFFLINE_THRESHOLD_SECONDS (120s) 及 Redis _HEARTBEAT_TTL 保持一致。
 _ONLINE_THRESHOLD = timedelta(seconds=120)
 
 
@@ -81,7 +77,6 @@ async def _get_admin_or_agent(
     redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_main_db),
 ) -> tuple[Admin | None, Agent | None]:
-    """解析 Admin 或 Agent Token。两者恰好有一个不为 None，否则返回 401。同时校验 Redis 黑名单。"""
     token = credentials.credentials
 
     async def _check_blacklist(payload: dict) -> None:
@@ -143,13 +138,10 @@ async def _get_admin_or_agent(
 
 
 def _normalize_datetime(value: datetime | None) -> datetime | None:
-    """确保 datetime 带 timezone。"""
     if value is None:
         return None
-
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
-
     return value
 
 
@@ -166,11 +158,6 @@ async def _read_runtime_from_redis(
     user_id: int,
     device_fingerprint: str,
 ) -> dict | None:
-    """
-    读取单台设备 Redis runtime。
-
-    普通分页列表只对当前页设备执行 GET，避免默认全量 SCAN。
-    """
     key = f"device:runtime:{game_id}:{user_id}:{device_fingerprint}"
     raw = await redis.get(key)
     if not raw:
@@ -188,12 +175,6 @@ async def _build_redis_online_map(
     pattern: str = "device:runtime:*",
     max_scan: int | None = None,
 ) -> dict[tuple[int, int, str], dict]:
-    """
-    显式高成本 Redis 汇总扫描。
-
-    仅 summary / search 这类明确高成本接口允许调用。
-    普通列表接口不得调用此函数。
-    """
     online_map: dict[tuple[int, int, str], dict] = {}
     scanned = 0
 
@@ -208,7 +189,6 @@ async def _build_redis_online_map(
         except Exception:
             continue
 
-        # Key 格式：device:runtime:{game_id}:{user_id}:{device_fp}
         parts = key.split(":")
         if len(parts) >= 5:
             try:
@@ -235,7 +215,6 @@ async def _build_base_query(
     project_id: int | None = None,
     project_code: str | None = None,
 ):
-    """构建后台设备基础 SQL 查询。仅包含数据库可过滤条件。"""
     _admin_caller, agent_caller = caller
 
     base_q = (
@@ -274,8 +253,9 @@ async def _build_base_query(
         base_q = base_q.where(
             (User.username.ilike(kw))
             | (DeviceBinding.device_fingerprint.ilike(kw))
+            | (DeviceBinding.device_id.ilike(kw))
+            | (DeviceBinding.connection_label.ilike(kw))
         )
-        # 设备原文字段可直接用于查询。
 
     return base_q
 
@@ -286,12 +266,6 @@ def _runtime_status_and_last_seen(
     redis_data: dict | None,
     now: datetime,
 ) -> tuple[bool, bool, str, datetime | None, dict | None]:
-    """
-    根据 Redis + DB 双源计算在线状态、运行状态、最后活跃时间和 game_data。
-
-    Returns:
-        is_online, is_online_redis, status_val, last_seen, game_data
-    """
     is_online_redis = redis_data is not None
 
     last_seen_db = _normalize_datetime(binding.last_seen_at)
@@ -338,8 +312,6 @@ def _device_response(
         now=now,
     )
 
-    imsi_plain = decrypt_field(binding.imsi) if binding.imsi else None
-
     return {
         "binding_id": binding.id,
         "device_id": binding.device_id,
@@ -369,23 +341,13 @@ async def list_all_devices(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     user_id: int | None = Query(default=None, description="按用户 ID 过滤"),
-    keyword: str | None = Query(default=None, description="按用户名 / 设备指纹 / IMSI 模糊搜索"),
+    keyword: str | None = Query(default=None, description="按用户名 / 设备标识 / 连接标识模糊搜索"),
     project_id: int | None = Query(default=None, description="按项目 ID 过滤"),
     project_code: str | None = Query(default=None, description="按项目 code_name 过滤"),
     caller: tuple = Depends(_get_admin_or_agent),
     main_db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> dict:
-    """
-    全平台设备普通分页列表。
-
-    性能规则:
-      - SQL 层先分页。
-      - 只对当前页设备读取 Redis runtime。
-      - 不返回全局 online_count / offline_count / running_count。
-      - 全局统计请调用 /admin/api/devices/summary。
-      - online_only / status 等 Redis 依赖筛选请调用 /admin/api/devices/search。
-    """
     base_q = await _build_base_query(
         db=main_db,
         caller=caller,
@@ -456,7 +418,7 @@ async def list_all_devices(
 @router.get("/summary", summary="全平台设备统计摘要（Admin / Agent 后台）")
 async def device_summary(
     user_id: int | None = Query(default=None, description="按用户 ID 过滤"),
-    keyword: str | None = Query(default=None, description="按用户名 / 设备指纹 / IMSI 模糊搜索"),
+    keyword: str | None = Query(default=None, description="按用户名 / 设备标识 / 连接标识模糊搜索"),
     project_id: int | None = Query(default=None, description="按项目 ID 过滤"),
     project_code: str | None = Query(default=None, description="按项目 code_name 过滤"),
     max_scan: int = Query(default=20000, ge=100, le=100000, description="Redis 在线 key 最大扫描数量"),
@@ -464,14 +426,6 @@ async def device_summary(
     main_db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> dict:
-    """
-    全平台设备统计摘要。
-
-    注意:
-      - 这是显式统计接口，可执行 Redis 汇总扫描。
-      - 普通列表不会调用本接口逻辑。
-      - 大规模生产应进一步改为 Redis ZSET 在线索引或定时统计缓存。
-    """
     base_q = await _build_base_query(
         db=main_db,
         caller=caller,
@@ -526,7 +480,7 @@ async def search_all_devices(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     user_id: int | None = Query(default=None, description="按用户 ID 过滤"),
-    keyword: str | None = Query(default=None, description="按用户名 / 设备指纹 / IMSI 模糊搜索"),
+    keyword: str | None = Query(default=None, description="按用户名 / 设备标识 / 连接标识模糊搜索"),
     project_id: int | None = Query(default=None, description="按项目 ID 过滤"),
     project_code: str | None = Query(default=None, description="按项目 code_name 过滤"),
     device_status: str | None = Query(
@@ -540,17 +494,6 @@ async def search_all_devices(
     main_db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> dict:
-    """
-    高成本全局设备搜索。
-
-    用途:
-      - online_only=true
-      - status=running / idle / error / offline
-
-    限制:
-      - 不保证返回全量精确 total，仅返回已扫描候选集内的 matched_total。
-      - 大规模精确在线筛选应通过 Redis ZSET 在线索引重构。
-    """
     base_q = await _build_base_query(
         db=main_db,
         caller=caller,
@@ -633,15 +576,6 @@ async def list_devices_admin(
     main_db: AsyncSession = Depends(get_main_db),
     redis: aioredis.Redis = Depends(get_redis),
 ) -> dict:
-    """
-    按指定游戏项目查询设备，带 Redis 实时状态。
-
-    Admin Token:
-      全量。
-
-    Agent Token:
-      权限范围内。
-    """
     admin, agent = caller
 
     if admin is not None:

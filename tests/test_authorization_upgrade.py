@@ -18,6 +18,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 async def _create_user_with_authorization(client, admin_headers: dict, project_id: int) -> dict:
     username = f"upgrade_test_{uuid.uuid4().hex[:8]}"
     password = "TestPass@2026!"
@@ -38,7 +42,7 @@ async def _create_user_with_authorization(client, admin_headers: dict, project_i
             "authorized_devices": 1,
             "valid_until": None,
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
     assert auth_response.status_code == 201, auth_response.text
     auth = auth_response.json()
@@ -67,7 +71,7 @@ async def _create_user_with_expiring_authorization(client, admin_headers: dict, 
             "authorized_devices": 2,
             "valid_until": valid_until.isoformat(),
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
     assert auth_response.status_code == 201, auth_response.text
     auth = auth_response.json()
@@ -85,7 +89,7 @@ class TestAuthorizationUpgradePreview:
         item = await _create_user_with_authorization(client, admin_headers, project_id)
 
         response = await client.get(
-            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/upgrade/preview",
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/devices/add/preview",
             params={"additional_devices": 1, "mode": "append"},
         )
 
@@ -96,7 +100,7 @@ class TestAuthorizationUpgradePreview:
         item = await _create_user_with_authorization(client, admin_headers, project_id)
 
         response = await client.get(
-            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/upgrade/preview",
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/devices/add/preview",
             params={"additional_devices": 2, "mode": "append"},
             headers=admin_headers,
         )
@@ -108,13 +112,16 @@ class TestAuthorizationUpgradePreview:
         assert data["additional_devices"] == 2
         assert data["mode"] == "append"
         assert data["consumed_points"] == 0.0
+        assert "charged_consumed" in data
+        assert "credit_consumed" in data
+        assert "available_total_after" in data
 
     async def test_admin_can_preview_upgrade_topup_align(self, client, admin_headers, project_id):
         """管理员可预览 topup_align 模式，接口应返回 200。"""
         item = await _create_user_with_authorization(client, admin_headers, project_id)
 
         response = await client.get(
-            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/upgrade/preview",
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/devices/add/preview",
             params={"additional_devices": 1, "mode": "topup_align"},
             headers=admin_headers,
         )
@@ -153,11 +160,14 @@ class TestAuthorizationRenew:
         preview = preview_response.json()
         assert preview["authorized_devices"] == 2
         assert preview["will_charge"] is False
+        assert "charged_consumed" in preview
+        assert "credit_consumed" in preview
+        assert "available_total_after" in preview
 
         renew_response = await client.post(
             f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/renew",
             json={"valid_until": new_valid_until.isoformat()},
-            headers=admin_headers,
+            headers={**admin_headers, "Idempotency-Key": _idem("renew")},
         )
         assert renew_response.status_code == 200, renew_response.text
         data = renew_response.json()
@@ -189,11 +199,14 @@ class TestAuthorizationLevelUpgrade:
         assert preview["old_user_level"] == "normal"
         assert preview["new_user_level"] == "vip"
         assert preview["will_charge"] is False
+        assert "charged_consumed" in preview
+        assert "credit_consumed" in preview
+        assert "available_total_after" in preview
 
         upgrade_response = await client.post(
             f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/level-upgrade",
             json={"user_level": "vip"},
-            headers=admin_headers,
+            headers={**admin_headers, "Idempotency-Key": _idem("level-upgrade")},
         )
         assert upgrade_response.status_code == 200, upgrade_response.text
         data = upgrade_response.json()
@@ -208,9 +221,9 @@ class TestAuthorizationUpgradeTopupAlign:
         item = await _create_user_with_expiring_authorization(client, admin_headers, project_id)
 
         response = await client.post(
-            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/upgrade",
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/devices/add",
             json={"additional_devices": 1, "mode": "topup_align"},
-            headers=admin_headers,
+            headers={**admin_headers, "Idempotency-Key": _idem("add-devices")},
         )
 
         assert response.status_code == 200, response.text

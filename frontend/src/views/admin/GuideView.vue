@@ -418,7 +418,7 @@ const apiList = [
   { method: 'POST', path: '/api/users/', desc: '创建用户主体', auth: ['Admin', 'Agent'] },
   { method: 'GET', path: '/api/users/', desc: '用户列表，支持状态、等级、项目、创建代理过滤', auth: ['Admin', 'Agent'] },
   { method: 'POST', path: '/api/users/{id}/authorizations', desc: '给用户授予项目授权', auth: ['Admin', 'Agent'] },
-  { method: 'PATCH', path: '/api/users/{id}/authorizations/{auth_id}', desc: '修改项目授权，当前仅管理员可改', auth: ['Admin'] },
+  { method: 'POST', path: '/api/users/{id}/authorizations/{auth_id}/devices/add', desc: '授权新增设备（append/average/topup_align）', auth: ['Admin', 'Agent'] },
   { method: 'GET', path: '/api/device/list', desc: '当前用户当前项目下设备列表', auth: ['User'] },
   { method: 'POST', path: '/api/device/heartbeat', desc: 'Android 心跳上报，写入 Redis 并更新绑定时间', auth: ['User'] },
   { method: 'GET', path: '/api/update/check', desc: '检查当前项目当前客户端是否需要热更新', auth: ['User'] },

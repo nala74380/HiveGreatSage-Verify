@@ -23,6 +23,11 @@ import { adminUserApi } from './admin/user'
 
 export { adminUserApi }
 
+function buildIdempotencyHeaders(idempotencyKey) {
+  const key = idempotencyKey || `ui-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+  return { 'Idempotency-Key': key }
+}
+
 export const userApi = {
   // ── 用户基础 ──────────────────────────────────────────────
   create(data) {
@@ -51,16 +56,14 @@ export const userApi = {
   },
 
   // ── 用户项目授权 ──────────────────────────────────────────
-  grantAuth(userId, data) {
-    return http.post(`/api/users/${userId}/authorizations`, data)
+  grantAuth(userId, data, idempotencyKey) {
+    return http.post(`/api/users/${userId}/authorizations`, data, {
+      headers: buildIdempotencyHeaders(idempotencyKey),
+    })
   },
 
   previewGrantAuth(userId, data) {
     return http.post(`/api/users/${userId}/authorizations/preview`, data)
-  },
-
-  updateAuth(userId, authId, data) {
-    return http.patch(`/api/users/${userId}/authorizations/${authId}`, data)
   },
 
   revokeAuth(userId, authId) {
@@ -75,12 +78,14 @@ export const userApi = {
     return http.post(`/api/users/${userId}/authorizations/${authId}/enable`)
   },
 
-  upgradeAuth(userId, authId, data) {
-    return http.post(`/api/users/${userId}/authorizations/${authId}/upgrade`, data)
+  upgradeAuth(userId, authId, data, idempotencyKey) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/devices/add`, data, {
+      headers: buildIdempotencyHeaders(idempotencyKey),
+    })
   },
 
   upgradePreview(userId, authId, additionalDevices, mode) {
-    return http.get(`/api/users/${userId}/authorizations/${authId}/upgrade/preview`, {
+    return http.get(`/api/users/${userId}/authorizations/${authId}/devices/add/preview`, {
       params: { additional_devices: additionalDevices, mode },
     })
   },
@@ -89,16 +94,20 @@ export const userApi = {
     return http.post(`/api/users/${userId}/authorizations/${authId}/renew/preview`, data)
   },
 
-  renewAuth(userId, authId, data) {
-    return http.post(`/api/users/${userId}/authorizations/${authId}/renew`, data)
+  renewAuth(userId, authId, data, idempotencyKey) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/renew`, data, {
+      headers: buildIdempotencyHeaders(idempotencyKey),
+    })
   },
 
   levelUpgradePreview(userId, authId, data) {
     return http.post(`/api/users/${userId}/authorizations/${authId}/level-upgrade/preview`, data)
   },
 
-  levelUpgradeAuth(userId, authId, data) {
-    return http.post(`/api/users/${userId}/authorizations/${authId}/level-upgrade`, data)
+  levelUpgradeAuth(userId, authId, data, idempotencyKey) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/level-upgrade`, data, {
+      headers: buildIdempotencyHeaders(idempotencyKey),
+    })
   },
 
   // ── 创建者详情 ────────────────────────────────────────────

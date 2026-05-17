@@ -2,8 +2,8 @@ r"""
 文件位置: app/services/device_service.py
 文件名称: device_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-05-17
-版本: V1.2.0
+日期/时间: 2026-05-18
+版本: V1.3.0
 功能说明:
     设备数据服务层，包含三个业务逻辑：
       - process_heartbeat()  安卓脚本心跳上报（写 Redis）
@@ -16,6 +16,7 @@ r"""
       3. connection_type / connection_label = 连接标识。
 
 改进历史:
+    V1.3.0 (2026-05-18) - 移除旧脱敏日志调用；维持新设备标识主链。
     V1.2.0 (2026-05-17) - 删除 IMSI 上传链；心跳与查询链路新增 device_id / connection_type / connection_label。
     V1.1.0 (2026-05-07) - upload_imsi 响应移除 IMSI / 设备指纹原文回显。
     V1.0.1 - 设备绑定校验改为用户 × 项目 × 设备维度
@@ -35,7 +36,6 @@ from app.core.redis_client import (
     get_user_heartbeats,
     set_heartbeat,
 )
-from app.core.sensitive_data import mask_device_fingerprint
 from app.core.utils import get_game_project_by_code as _get_game_project
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime

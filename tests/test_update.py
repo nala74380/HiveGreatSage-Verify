@@ -28,6 +28,10 @@ from sqlalchemy import text
 from app.config import settings
 from tests.conftest import GAME_PROJECT_CODE
 
+
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
 # 测试版本数据
 TEST_VERSION_PC      = "9.9.9"
 TEST_VERSION_ANDROID = "9.9.9"
@@ -65,7 +69,7 @@ async def _create_user_and_login(
             "user_level": TEST_USER_LEVEL,
             "authorized_devices": TEST_AUTHORIZED_DEVICES,
         },
-        headers=admin_headers,
+        headers={**admin_headers, "Idempotency-Key": _idem("grant")},
     )
     assert r.status_code == 201, f"授权失败: {r.text}"
 

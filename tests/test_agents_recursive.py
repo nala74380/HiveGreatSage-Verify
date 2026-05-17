@@ -32,6 +32,10 @@ from httpx import AsyncClient
 from tests.conftest import ADMIN_USERNAME, ADMIN_PASSWORD
 
 
+def _idem(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
 # ── 辅助 ──────────────────────────────────────────────────────
 
 async def _admin_login(client: AsyncClient) -> str:
@@ -349,7 +353,7 @@ class TestRevokeAll:
                 "user_level": "normal",
                 "authorized_devices": 20,
             },
-            headers=admin_headers,
+            headers={**admin_headers, "Idempotency-Key": _idem("grant")},
         )
 
         r = await client.post("/api/auth/login", json={

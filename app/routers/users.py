@@ -21,10 +21,9 @@ r"""
       DELETE /api/users/{user_id}
       PATCH  /api/users/{user_id}/password
       POST   /api/users/{user_id}/authorizations
-      PATCH  /api/users/{user_id}/authorizations/{auth_id}
       DELETE /api/users/{user_id}/authorizations/{auth_id}
-      GET    /api/users/{user_id}/authorizations/{auth_id}/upgrade/preview
-      POST   /api/users/{user_id}/authorizations/{auth_id}/upgrade
+      GET    /api/users/{user_id}/authorizations/{auth_id}/devices/add/preview
+      POST   /api/users/{user_id}/authorizations/{auth_id}/devices/add
 
 鉴权:
     - Admin Token：操作所有用户。
@@ -36,8 +35,11 @@ r"""
     V1.2.1 (2026-04-29): 项目授权接口整理。
 """
 
+import asyncio
+import json
+
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy import select
@@ -57,7 +59,6 @@ from app.schemas.user import (
     AuthorizationRenewRequest,
     AuthorizationRenewResponse,
     AuthorizationResponse,
-    AuthorizationUpdateRequest,
     AuthorizationUpgradePreviewResponse,
     AuthorizationUpgradeRequest,
     AuthorizationUpgradeResponse,
@@ -86,7 +87,6 @@ from app.services.user_service import (
     revoke_authorization,
     suspend_authorization_with_freeze,
     soft_delete_user,
-    update_authorization,
     update_user,
     update_user_password,
     upgrade_authorization,
@@ -196,6 +196,75 @@ def _authorization_metadata(auth: AuthorizationResponse) -> dict:
         "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
         "status": auth.status,
     }
+
+
+_IDEMPOTENCY_RESULT_TTL_SECONDS = 24 * 60 * 60
+_IDEMPOTENCY_PROCESSING_TTL_SECONDS = 60
+_IDEMPOTENCY_WAIT_ROUNDS = 12
+_IDEMPOTENCY_WAIT_SECONDS = 0.2
+
+
+def _idempotency_cache_key(
+    *,
+    caller: tuple[Admin | None, Agent | None],
+    action: str,
+    user_id: int,
+    auth_id: int | None,
+    idempotency_key: str,
+) -> str:
+    admin, agent = caller
+    if admin is not None:
+        actor_scope = f"admin:{admin.id}"
+    elif agent is not None:
+        actor_scope = f"agent:{agent.id}"
+    else:
+        actor_scope = "system:0"
+    return (
+        f"idempotency:user_auth:{actor_scope}:"
+        f"{action}:user:{user_id}:auth:{auth_id or 0}:{idempotency_key}"
+    )
+
+
+async def _idempotency_get_result(redis: aioredis.Redis, cache_key: str) -> dict | None:
+    raw = await redis.get(f"{cache_key}:result")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+async def _idempotency_claim_processing(redis: aioredis.Redis, cache_key: str) -> bool:
+    return bool(
+        await redis.set(
+            f"{cache_key}:processing",
+            "1",
+            ex=_IDEMPOTENCY_PROCESSING_TTL_SECONDS,
+            nx=True,
+        )
+    )
+
+
+async def _idempotency_store_result(redis: aioredis.Redis, cache_key: str, payload: dict) -> None:
+    await redis.set(
+        f"{cache_key}:result",
+        json.dumps(payload, ensure_ascii=False),
+        ex=_IDEMPOTENCY_RESULT_TTL_SECONDS,
+    )
+
+
+async def _idempotency_release_processing(redis: aioredis.Redis, cache_key: str) -> None:
+    await redis.delete(f"{cache_key}:processing")
+
+
+async def _idempotency_wait_for_result(redis: aioredis.Redis, cache_key: str) -> dict | None:
+    for _ in range(_IDEMPOTENCY_WAIT_ROUNDS):
+        cached = await _idempotency_get_result(redis, cache_key)
+        if cached is not None:
+            return cached
+        await asyncio.sleep(_IDEMPOTENCY_WAIT_SECONDS)
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -438,70 +507,60 @@ async def grant_auth_preview_endpoint(
 async def grant_auth_endpoint(
     user_id: int,
     body: AuthorizationCreateRequest,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationResponse:
-    admin, agent = caller
-    result = await grant_authorization(
+    cache_key = _idempotency_cache_key(
+        caller=caller,
+        action="grant",
         user_id=user_id,
-        body=body,
-        db=db,
-        admin=admin,
-        agent=agent,
+        auth_id=None,
+        idempotency_key=idempotency_key,
     )
-    actor_type, actor_id = _actor(caller)
-    await create_audit_log(
-        db=db,
-        actor_type=actor_type,
-        actor_id=actor_id,
-        action="user_authorization.grant",
-        target_type="authorization",
-        target_id=result.id,
-        summary=f"为用户 {user_id} 授权项目 {result.game_project_id}",
-        metadata={
-            **_actor_metadata(caller),
-            **_authorization_metadata(result),
-        },
-    )
-    return result
+    cached = await _idempotency_get_result(redis, cache_key)
+    if cached is not None:
+        return AuthorizationResponse.model_validate(cached)
 
+    claimed = await _idempotency_claim_processing(redis, cache_key)
+    if not claimed:
+        pending_result = await _idempotency_wait_for_result(redis, cache_key)
+        if pending_result is not None:
+            return AuthorizationResponse.model_validate(pending_result)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="相同幂等键请求正在处理中，请稍后重试",
+        )
 
-@router.patch(
-    "/{user_id}/authorizations/{auth_id}",
-    response_model=AuthorizationResponse,
-)
-async def update_auth_endpoint(
-    user_id: int,
-    auth_id: int,
-    body: AuthorizationUpdateRequest,
-    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
-    db: AsyncSession = Depends(get_main_db),
-) -> AuthorizationResponse:
     admin, agent = caller
-    result = await update_authorization(
-        user_id=user_id,
-        auth_id=auth_id,
-        body=body,
-        db=db,
-        admin=admin,
-        agent=agent,
-    )
-    actor_type, actor_id = _actor(caller)
-    await create_audit_log(
-        db=db,
-        actor_type=actor_type,
-        actor_id=actor_id,
-        action="user_authorization.update",
-        target_type="authorization",
-        target_id=result.id,
-        summary=f"更新用户 {user_id} 授权 {auth_id}",
-        metadata={
-            **_actor_metadata(caller),
-            **_authorization_metadata(result),
-            "changed_fields": body.model_dump(exclude_unset=True),
-        },
-    )
-    return result
+    try:
+        result = await grant_authorization(
+            user_id=user_id,
+            body=body,
+            db=db,
+            admin=admin,
+            agent=agent,
+        )
+        actor_type, actor_id = _actor(caller)
+        await create_audit_log(
+            db=db,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action="user_authorization.grant",
+            target_type="authorization",
+            target_id=result.id,
+            summary=f"为用户 {user_id} 授权项目 {result.game_project_id}",
+            metadata={
+                **_actor_metadata(caller),
+                **_authorization_metadata(result),
+                "idempotency_key": idempotency_key,
+            },
+        )
+        await _idempotency_store_result(redis, cache_key, result.model_dump(mode="json"))
+        return result
+    finally:
+        await _idempotency_release_processing(redis, cache_key)
 
 
 @router.post(
@@ -647,43 +706,71 @@ async def renew_auth_endpoint(
     user_id: int,
     auth_id: int,
     body: AuthorizationRenewRequest,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationRenewResponse:
-    admin, agent = caller
-    result = await renew_authorization(
+    cache_key = _idempotency_cache_key(
+        caller=caller,
+        action="renew",
         user_id=user_id,
         auth_id=auth_id,
-        body=body,
-        db=db,
-        admin=admin,
-        agent=agent,
+        idempotency_key=idempotency_key,
     )
-    actor_type, actor_id = _actor(caller)
-    await create_audit_log(
-        db=db,
-        actor_type=actor_type,
-        actor_id=actor_id,
-        action="user_authorization.renew",
-        target_type="authorization",
-        target_id=auth_id,
-        summary=f"续费用户 {user_id} 授权 {auth_id}",
-        metadata={
-            **_actor_metadata(caller),
-            "user_id": user_id,
-            "authorization_id": auth_id,
-            "old_valid_until": result.old_valid_until.isoformat() if result.old_valid_until else None,
-            "new_valid_until": result.new_valid_until.isoformat(),
-            "consumed_points": result.consumed_points,
-        },
-    )
-    return result
+    cached = await _idempotency_get_result(redis, cache_key)
+    if cached is not None:
+        return AuthorizationRenewResponse.model_validate(cached)
+
+    claimed = await _idempotency_claim_processing(redis, cache_key)
+    if not claimed:
+        pending_result = await _idempotency_wait_for_result(redis, cache_key)
+        if pending_result is not None:
+            return AuthorizationRenewResponse.model_validate(pending_result)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="相同幂等键请求正在处理中，请稍后重试",
+        )
+
+    admin, agent = caller
+    try:
+        result = await renew_authorization(
+            user_id=user_id,
+            auth_id=auth_id,
+            body=body,
+            db=db,
+            admin=admin,
+            agent=agent,
+        )
+        actor_type, actor_id = _actor(caller)
+        await create_audit_log(
+            db=db,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action="user_authorization.renew",
+            target_type="authorization",
+            target_id=auth_id,
+            summary=f"续费用户 {user_id} 授权 {auth_id}",
+            metadata={
+                **_actor_metadata(caller),
+                "user_id": user_id,
+                "authorization_id": auth_id,
+                "old_valid_until": result.old_valid_until.isoformat() if result.old_valid_until else None,
+                "new_valid_until": result.new_valid_until.isoformat(),
+                "consumed_points": result.consumed_points,
+                "idempotency_key": idempotency_key,
+            },
+        )
+        await _idempotency_store_result(redis, cache_key, result.model_dump(mode="json"))
+        return result
+    finally:
+        await _idempotency_release_processing(redis, cache_key)
 
 
 @router.get(
-    "/{user_id}/authorizations/{auth_id}/upgrade/preview",
+    "/{user_id}/authorizations/{auth_id}/devices/add/preview",
     response_model=AuthorizationUpgradePreviewResponse,
-    summary="预览升级扣点",
+    summary="预览新增设备扣点",
 )
 async def upgrade_preview_endpoint(
     user_id: int,
@@ -738,49 +825,79 @@ async def level_upgrade_auth_endpoint(
     user_id: int,
     auth_id: int,
     body: AuthorizationLevelUpgradeRequest,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationLevelUpgradeResponse:
-    admin, agent = caller
-    result = await level_upgrade_authorization(
+    cache_key = _idempotency_cache_key(
+        caller=caller,
+        action="level_upgrade",
         user_id=user_id,
         auth_id=auth_id,
-        body=body,
-        db=db,
-        admin=admin,
-        agent=agent,
+        idempotency_key=idempotency_key,
     )
-    actor_type, actor_id = _actor(caller)
-    await create_audit_log(
-        db=db,
-        actor_type=actor_type,
-        actor_id=actor_id,
-        action="user_authorization.level_upgrade",
-        target_type="authorization",
-        target_id=auth_id,
-        summary=f"升级用户 {user_id} 授权 {auth_id} 等级",
-        metadata={
-            **_actor_metadata(caller),
-            "user_id": user_id,
-            "authorization_id": auth_id,
-            "old_user_level": result.old_user_level,
-            "new_user_level": result.new_user_level,
-            "consumed_points": result.consumed_points,
-        },
-    )
-    return result
+    cached = await _idempotency_get_result(redis, cache_key)
+    if cached is not None:
+        return AuthorizationLevelUpgradeResponse.model_validate(cached)
+
+    claimed = await _idempotency_claim_processing(redis, cache_key)
+    if not claimed:
+        pending_result = await _idempotency_wait_for_result(redis, cache_key)
+        if pending_result is not None:
+            return AuthorizationLevelUpgradeResponse.model_validate(pending_result)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="相同幂等键请求正在处理中，请稍后重试",
+        )
+
+    admin, agent = caller
+    try:
+        result = await level_upgrade_authorization(
+            user_id=user_id,
+            auth_id=auth_id,
+            body=body,
+            db=db,
+            admin=admin,
+            agent=agent,
+        )
+        actor_type, actor_id = _actor(caller)
+        await create_audit_log(
+            db=db,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action="user_authorization.level_upgrade",
+            target_type="authorization",
+            target_id=auth_id,
+            summary=f"升级用户 {user_id} 授权 {auth_id} 等级",
+            metadata={
+                **_actor_metadata(caller),
+                "user_id": user_id,
+                "authorization_id": auth_id,
+                "old_user_level": result.old_user_level,
+                "new_user_level": result.new_user_level,
+                "consumed_points": result.consumed_points,
+                "idempotency_key": idempotency_key,
+            },
+        )
+        await _idempotency_store_result(redis, cache_key, result.model_dump(mode="json"))
+        return result
+    finally:
+        await _idempotency_release_processing(redis, cache_key)
 
 
 @router.post(
-    "/{user_id}/authorizations/{auth_id}/upgrade",
+    "/{user_id}/authorizations/{auth_id}/devices/add",
     response_model=AuthorizationUpgradeResponse,
-    summary="升级授权设备数",
+    summary="新增授权设备",
 )
 async def upgrade_auth_endpoint(
     user_id: int,
     auth_id: int,
     body: AuthorizationUpgradeRequest,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    redis: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationUpgradeResponse:
     """
@@ -792,32 +909,58 @@ async def upgrade_auth_endpoint(
     Agent:
         按模式计算扣点后升级。
     """
-    admin, agent = caller
-    result = await upgrade_authorization(
+    cache_key = _idempotency_cache_key(
+        caller=caller,
+        action="add_devices",
         user_id=user_id,
         auth_id=auth_id,
-        body=body,
-        db=db,
-        admin=admin,
-        agent=agent,
+        idempotency_key=idempotency_key,
     )
-    actor_type, actor_id = _actor(caller)
-    await create_audit_log(
-        db=db,
-        actor_type=actor_type,
-        actor_id=actor_id,
-        action="user_authorization.upgrade",
-        target_type="authorization",
-        target_id=auth_id,
-        summary=f"升级用户 {user_id} 授权 {auth_id}",
-        metadata={
-            **_actor_metadata(caller),
-            "user_id": user_id,
-            "authorization_id": auth_id,
-            "additional_devices": body.additional_devices,
-            "mode": body.mode,
-            "new_devices": result.new_devices,
-            "consumed_points": result.consumed_points,
-        },
-    )
-    return result
+    cached = await _idempotency_get_result(redis, cache_key)
+    if cached is not None:
+        return AuthorizationUpgradeResponse.model_validate(cached)
+
+    claimed = await _idempotency_claim_processing(redis, cache_key)
+    if not claimed:
+        pending_result = await _idempotency_wait_for_result(redis, cache_key)
+        if pending_result is not None:
+            return AuthorizationUpgradeResponse.model_validate(pending_result)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="相同幂等键请求正在处理中，请稍后重试",
+        )
+
+    admin, agent = caller
+    try:
+        result = await upgrade_authorization(
+            user_id=user_id,
+            auth_id=auth_id,
+            body=body,
+            db=db,
+            admin=admin,
+            agent=agent,
+        )
+        actor_type, actor_id = _actor(caller)
+        await create_audit_log(
+            db=db,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action="user_authorization.add_devices",
+            target_type="authorization",
+            target_id=auth_id,
+            summary=f"新增用户 {user_id} 授权 {auth_id} 设备",
+            metadata={
+                **_actor_metadata(caller),
+                "user_id": user_id,
+                "authorization_id": auth_id,
+                "additional_devices": body.additional_devices,
+                "mode": body.mode,
+                "new_devices": result.new_devices,
+                "consumed_points": result.consumed_points,
+                "idempotency_key": idempotency_key,
+            },
+        )
+        await _idempotency_store_result(redis, cache_key, result.model_dump(mode="json"))
+        return result
+    finally:
+        await _idempotency_release_processing(redis, cache_key)
