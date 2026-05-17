@@ -61,7 +61,6 @@ from app.core.security import (
     get_refresh_token_ttl_seconds,
     verify_password,
 )
-from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint
 from app.database import _main_session_factory
 from app.models.main.models import (
     Authorization,
@@ -245,8 +244,7 @@ async def login_user(
                         "username": user.username,
                         "game_project_id": game_project.id,
                         "game_project_code": game_project.code_name,
-                        "device_fingerprint_masked": mask_device_fingerprint(body.device_fingerprint),
-                        "device_fingerprint_hash": hash_sensitive_value(body.device_fingerprint),
+                        "device_fingerprint": body.device_fingerprint,
                         "client_type": body.client_type,
                         "authorized_devices": int(auth.authorized_devices or 0),
                     },
@@ -598,8 +596,8 @@ def _build_login_log(
     """
     return LoginLog(
         user_id=user_id,
-        device_fingerprint=None,
-        device_fingerprint_hash=hash_sensitive_value(device_fingerprint),
+        device_fingerprint=device_fingerprint,
+        device_fingerprint_hash=None,
         ip_address=ip_address,
         client_type=client_type,
         game_project_id=game_project_id,

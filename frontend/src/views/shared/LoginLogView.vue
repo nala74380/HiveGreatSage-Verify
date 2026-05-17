@@ -4,7 +4,7 @@
       <div>
         <h2>登录日志</h2>
         <p class="page-desc">
-          登录日志用于查看用户端登录记录、客户端来源、IP 地址、设备 Hash 和失败原因。该页面只读，不允许删除。
+          登录日志用于查看用户端登录记录、客户端来源、IP 地址、设备标识和失败原因。该页面只读，不允许删除。
         </p>
       </div>
       <el-tag type="info" effect="plain" size="small">只读 · 不可删除</el-tag>
@@ -136,9 +136,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="设备 Hash" min-width="180" show-overflow-tooltip>
+        <el-table-column label="设备标识" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="mono text-muted">{{ shortHash(row.device_fingerprint_hash) }}</span>
+            <span class="mono text-muted">{{ row.device_fingerprint || '—' }}</span>
           </template>
         </el-table-column>
 
@@ -188,8 +188,7 @@
  *   查看用户端登录记录。
  *
  * 本版改进:
- *   1. 不再展示 device_fingerprint 原文。
- *   2. 展示 device_fingerprint_hash 短码，便于与审计日志 / 设备列表做关联排障。
+ *   1. 直接展示设备原文字段。
  */
 
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -252,7 +251,6 @@ const failReasonLabel = (reason) => {
   return failReasonMap[reason] || reason || '—'
 }
 
-const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
 
 // ── 日期快捷选项 ─────────────────────────────────────────────
 const dateShortcuts = [

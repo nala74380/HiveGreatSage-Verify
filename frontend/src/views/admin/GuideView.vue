@@ -421,7 +421,6 @@ const apiList = [
   { method: 'PATCH', path: '/api/users/{id}/authorizations/{auth_id}', desc: '修改项目授权，当前仅管理员可改', auth: ['Admin'] },
   { method: 'GET', path: '/api/device/list', desc: '当前用户当前项目下设备列表', auth: ['User'] },
   { method: 'POST', path: '/api/device/heartbeat', desc: 'Android 心跳上报，写入 Redis 并更新绑定时间', auth: ['User'] },
-  { method: 'POST', path: '/api/device/imsi', desc: '可选 IMSI 上报，设备必须已绑定', auth: ['User'] },
   { method: 'GET', path: '/api/update/check', desc: '检查当前项目当前客户端是否需要热更新', auth: ['User'] },
   { method: 'GET', path: '/api/update/download', desc: '获取当前项目当前客户端最新包下载地址', auth: ['User'] },
   { method: 'POST', path: '/admin/api/updates/{project_id}/{client_type}', desc: '管理员上传热更新包', auth: ['Admin'] },
@@ -433,7 +432,10 @@ const loginRequest = `{
   "username": "user_001",
   "password": "User@2026!",
   "project_uuid": "00000000-0000-0000-0000-000000000001",
-  "device_fingerprint": "android_device_hash_001",
+  "device_fingerprint": "android_device_001",
+  "device_id": "A-001",
+  "connection_type": "usb",
+  "connection_label": "SN:TEST1234",
   "client_type": "android"
 }`
 
@@ -464,6 +466,9 @@ class VerifyClient:
             "password": password,
             "project_uuid": PROJECT_UUID,
             "device_fingerprint": device_fingerprint,
+            "device_id": device_fingerprint,
+            "connection_type": "tcp",
+            "connection_label": BASE_URL,
             "client_type": "pc",
         }, timeout=10)
         resp.raise_for_status()
@@ -491,7 +496,7 @@ class VerifyClient:
         return resp.json()
 
 client = VerifyClient()
-login_info = client.login("user_001", "User@2026!", "pc_controller_hash")
+login_info = client.login("user_001", "User@2026!", "pc_controller_001")
 print(login_info["authorization_level"])
 print(client.get_devices())`
 
@@ -506,6 +511,9 @@ function login(username, password, deviceId) {
     password: password,
     project_uuid: PROJECT_UUID,
     device_fingerprint: deviceId,
+    device_id: "A-001",
+    connection_type: "usb",
+    connection_label: "SN:TEST1234",
     client_type: "android"
   }), { "Content-Type": "application/json" });
 
@@ -551,7 +559,10 @@ const heartbeatRequest = `POST /api/device/heartbeat
 Authorization: Bearer <user_access_token>
 
 {
-  "device_fingerprint": "android_device_hash_001",
+  "device_fingerprint": "android_device_001",
+  "device_id": "A-001",
+  "connection_type": "usb",
+  "connection_label": "SN:TEST1234",
   "status": "running",
   "game_data": {
     "current_task": "daily",

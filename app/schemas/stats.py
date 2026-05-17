@@ -29,7 +29,7 @@ class DeviceStatsByProject(BaseModel):
 
     # 设备维度
     total_bound:   int = Field(description="已绑定设备数（status=active 的 device_binding）")
-    activated:     int = Field(description="已激活设备数（device_binding.imsi 非空 或 activated 标记）")
+    activated:     int = Field(description="已激活设备数（当前按 last_seen_at 非空统计）")
     not_activated: int = Field(description="未激活设备数（total_bound - activated）")
     online_now:    int = Field(default=0, description="当前在线设备数（来自 Redis，可选）")
 

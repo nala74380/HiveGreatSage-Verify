@@ -28,3 +28,23 @@
 2026-05-18 00:52:35.644 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
 2026-05-18 00:52:35.650 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
 2026-05-18 00:52:35.745 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 01:02:34.397 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 01:02:34.414 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 01:02:35.862 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 01:02:35.862 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 01:02:35.947 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 01:02:37.425 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 01:02:37.425 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 01:02:37.511 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 01:12:36.388 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 01:12:36.393 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭
+2026-05-18 01:12:38.141 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 01:12:38.142 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 01:12:38.225 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 01:12:39.650 | INFO     | app.main:_setup_sentry:95 - Sentry DSN 未配置，跳过初始化
+2026-05-18 01:12:39.650 | INFO     | app.main:lifespan:143 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-18 01:12:39.741 | INFO     | app.main:lifespan:158 - 系统默认配置已初始化
+2026-05-18 01:44:07.086 | INFO     | app.routers.admin:get_user_devices:226 - [get_user_devices] user_id=531, 查询到 2 条 DeviceBinding
+2026-05-18 01:45:18.797 | INFO     | app.routers.admin:get_user_devices:226 - [get_user_devices] user_id=531, 查询到 2 条 DeviceBinding
+2026-05-18 02:24:17.109 | INFO     | app.main:lifespan:164 - 关闭数据库连接池...
+2026-05-18 02:24:17.117 | INFO     | app.main:lifespan:166 - HiveGreatSage-Verify 已关闭

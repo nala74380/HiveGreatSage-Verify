@@ -129,7 +129,7 @@
           <el-table-column label="设备标识" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="mono">{{ deviceDisplay(row) }}</div>
-              <div class="sub-text">Hash：{{ shortHash(row.device_id_hash) }}</div>
+              <div class="sub-text">绑定键：{{ row.device_fingerprint || '—' }}</div>
             </template>
           </el-table-column>
           <el-table-column label="绑定时间" width="155">
@@ -275,7 +275,7 @@
  *   用户详情页面。
  *
  * 本版改进:
- *   - 设备绑定列表不再展示设备指纹原文，改为 masked/hash。
+ *   - 设备绑定列表直接展示设备编号与内部绑定键。
  */
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -299,8 +299,7 @@ const deviceBindings = ref([])
 const bindingsLoading = ref(false)
 const availableProjects = ref([])
 
-const deviceDisplay = (row) => row?.device_id_masked || '—'
-const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
+const deviceDisplay = (row) => row?.device_id || row?.device_fingerprint || '—'
 
 const loadUser = async () => {
   pageLoading.value = true

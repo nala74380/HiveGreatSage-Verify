@@ -155,8 +155,8 @@
         <el-table-column label="设备标识" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="mono">{{ deviceDisplay(row) }}</div>
-            <div class="sub-text">Hash：{{ shortHash(deviceHash(row)) }}</div>
-            <div v-if="imsiDisplay(row) !== '—'" class="sub-text">IMSI：{{ imsiDisplay(row) }}</div>
+            <div v-if="row.connection_label" class="sub-text">连接：{{ row.connection_label }}</div>
+            <div class="sub-text">绑定键：{{ row.device_fingerprint || '—' }}</div>
           </template>
         </el-table-column>
 
@@ -270,8 +270,12 @@
             <span class="mono">{{ deviceDisplay(drawer.data) }}</span>
           </el-descriptions-item>
 
-          <el-descriptions-item label="设备 Hash">
-            <span class="mono">{{ deviceHash(drawer.data) || '—' }}</span>
+          <el-descriptions-item label="连接标识">
+            <span class="mono">{{ drawer.data.connection_label || '—' }}</span>
+          </el-descriptions-item>
+
+          <el-descriptions-item label="内部绑定键">
+            <span class="mono">{{ drawer.data.device_fingerprint || '—' }}</span>
           </el-descriptions-item>
 
           <el-descriptions-item label="用户">
@@ -304,14 +308,6 @@
             {{ formatDatetime(drawer.data.bound_at) }}
           </el-descriptions-item>
 
-          <el-descriptions-item label="IMSI">
-            <span class="mono">{{ imsiDisplay(drawer.data) }}</span>
-          </el-descriptions-item>
-
-          <el-descriptions-item label="IMSI Hash">
-            <span class="mono">{{ drawer.data.imsi_hash || '—' }}</span>
-          </el-descriptions-item>
-
           <el-descriptions-item label="数据来源">
             {{ sourceLabel(drawer.data.source) }}
           </el-descriptions-item>
@@ -335,9 +331,7 @@
  *   管理后台设备监控页面。
  *
  * 本版改进:
- *   1. 不再展示设备指纹 / IMSI 原文。
- *   2. 优先展示 device_id_masked / imsi_masked。
- *   3. 详情中展示 hash，便于排障关联。
+ *   1. 直接展示设备编号、连接标识与内部绑定键。
  */
 
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -443,9 +437,7 @@ const sourceLabel = (source) => {
   return map[source] || source || '—'
 }
 
-const deviceDisplay = (row) => row?.device_id_masked || '—'
-const deviceHash = (row) => row?.device_id_hash || ''
-const imsiDisplay = (row) => row?.imsi_masked || '—'
+const deviceDisplay = (row) => row?.device_id || row?.connection_label || row?.device_fingerprint || '—'
 const projectCode = (row) => row?.game_project_code || row?.project_code || '—'
 const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
 

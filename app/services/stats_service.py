@@ -85,7 +85,7 @@ async def get_user_project_stats(
             .where(
                 DeviceBinding.user_id == user_id,
                 DeviceBinding.status == "active",
-                DeviceBinding.imsi_hash.is_not(None),
+                DeviceBinding.last_seen_at.is_not(None),
                 DeviceBinding.game_project_id.in_(project_ids),
             )
             .group_by(DeviceBinding.game_project_id)
@@ -245,7 +245,7 @@ async def get_agent_project_summary(
         .where(
             DeviceBinding.user_id.in_(user_ids),
             DeviceBinding.status == "active",
-            DeviceBinding.imsi_hash.is_not(None),
+            DeviceBinding.last_seen_at.is_not(None),
         )
         .group_by(DeviceBinding.game_project_id)
     )

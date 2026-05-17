@@ -17,7 +17,7 @@ import uuid
 
 from httpx import AsyncClient
 
-from app.core.sensitive_data import hash_sensitive_value
+
 from tests.conftest import GAME_PROJECT_CODE
 
 
@@ -165,15 +165,15 @@ class TestAdminDeviceList:
         )
         data = r.json()
 
-        expected_hash = hash_sensitive_value(device_fp)
         our_device = next(
-            (d for d in data["devices"] if d.get("device_id_hash") == expected_hash),
+            (d for d in data["devices"] if d.get("device_fingerprint") == device_fp),
             None,
         )
         assert our_device is not None, "刚上报的设备未出现在监控列表中"
-        assert our_device["device_id"] is None
-        assert "device_id_masked" in our_device
-        assert "device_id_hash" in our_device
+        assert our_device["device_id"] == "A-001"
+        assert our_device["device_fingerprint"] == device_fp
+        assert our_device["connection_type"] == "usb"
+        assert our_device["connection_label"] == "SN:TEST1234"
         assert "user_id" in our_device
         assert "username" in our_device
         assert "status" in our_device

@@ -342,10 +342,10 @@ async def _get_device_runtime_from_db(
             return result.scalar_one_or_none()
     except Exception as exc:
         logger.warning(
-            "游戏库设备运行时查询失败 (%s, uid=%s, fp=%s): %s",
+            "游戏库设备运行时查询失败 (%s, uid=%s, device_fingerprint=%s): %s",
             game_project_code,
             user_id,
-            mask_device_fingerprint(device_fingerprint),
+            device_fingerprint,
             exc,
         )
         return None

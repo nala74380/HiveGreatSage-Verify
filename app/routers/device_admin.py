@@ -275,8 +275,7 @@ async def _build_base_query(
             (User.username.ilike(kw))
             | (DeviceBinding.device_fingerprint.ilike(kw))
         )
-        # IMSI 已加密存储，全文搜索不可行。
-        # 按 IMSI 精确反查见 /admin/api/devices/imsi-lookup 接口。
+        # 设备原文字段可直接用于查询。
 
     return base_q
 
@@ -343,9 +342,10 @@ def _device_response(
 
     return {
         "binding_id": binding.id,
-        "device_id": None,
-        "device_id_masked": mask_device_fingerprint(binding.device_fingerprint),
-        "device_id_hash": hash_sensitive_value(binding.device_fingerprint),
+        "device_id": binding.device_id,
+        "device_fingerprint": binding.device_fingerprint,
+        "connection_type": binding.connection_type,
+        "connection_label": binding.connection_label,
         "user_id": binding.user_id,
         "username": user.username,
         "user_status": user.status,
@@ -358,9 +358,6 @@ def _device_response(
         "last_seen": last_seen.isoformat() if last_seen else None,
         "last_seen_at": last_seen.isoformat() if last_seen else None,
         "bound_at": binding.bound_at.isoformat() if binding.bound_at else None,
-        "imsi": None,                                         # 永不返回 IMSI 原文
-        "imsi_masked": mask_imsi(imsi_plain),                 # 脱敏展示
-        "imsi_hash": binding.imsi_hash,                       # 直接取库内 hash（HMAC-SHA256）
         "game_data": game_data,
         "is_online": is_online,
         "source": "redis" if is_online_redis else "database",

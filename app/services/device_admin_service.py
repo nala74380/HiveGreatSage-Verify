@@ -1,9 +1,9 @@
 r"""
 文件位置: app/services/device_admin_service.py
 名称: 管理后台设备监控服务层
-作者: 蜂巢·大圣 (Hive-GreatSage)
-时间: 2026-05-07
-版本: V1.2.0
+作者: 蜂巢·大圣 (HiveGreatSage)
+时间: 2026-05-18
+版本: V1.3.0
 功能说明:
     T026 — 管理后台设备监控，支持 Admin / Agent 两种权限视角。
 
@@ -18,17 +18,13 @@ r"""
         再查这些代理创建的用户，再查对应设备
       - 支持同样的过滤参数
 
-    在线状态判断策略（与 device_service.py 保持一致）：
-      1. Redis SCAN device:runtime:{game_id}:* 获取全部在线设备 ID
-      2. 查游戏库 device_runtime 表补充离线设备记录
-      3. 合并后用主库 user 表关联用户名
-
-敏感字段口径:
-    - 后台项目维度设备列表不返回 device_id 原文。
-    - 只返回 device_id_masked / device_id_hash 供展示与排障关联。
-    - 原文仅在服务内部用于 Redis key、游戏库查询和业务匹配。
+    当前设备标识口径：
+      - device_fingerprint = 内部稳定绑定键
+      - device_id = 用户自定义设备编号
+      - connection_type / connection_label = 连接标识
 
 改进历史:
+    V1.3.0 - 删除旧脱敏 / 摘要字段口径，统一返回设备原文字段。
     V1.2.0 - 项目维度设备列表移除 device_id 原文输出
     V1.1.0 - 项目维度设备列表增加 device_id masked/hash 字段
     V1.0.0 - 初始版本（T026）
@@ -42,7 +38,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis_client import get_all_heartbeats_for_game
-from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint
 from app.core.utils import get_agent_scope_ids as _get_agent_scope_ids, get_game_project_by_code as _get_game_project_or_404
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime
@@ -61,19 +56,6 @@ async def get_admin_device_list(
     status_filter: str | None = None,
     online_only: bool = False,
 ) -> dict:
-    """
-    管理员查看指定游戏项目下所有设备（Admin Token 专用）。
-
-    返回字典结构：
-      {
-        "devices": [...],
-        "total": int,
-        "online_count": int,
-        "page": int,
-        "page_size": int,
-        "game_project_code": str,
-      }
-    """
     game_project = await _get_game_project_or_404(main_db, game_project_code)
     return await _build_device_list(
         game_project=game_project,
@@ -99,11 +81,6 @@ async def get_agent_device_list(
     status_filter: str | None = None,
     online_only: bool = False,
 ) -> dict:
-    """
-    代理查看自己权限范围内的设备（Agent Token 专用）。
-
-    权限范围（D007）：代理本身 + 所有下级代理创建的用户的设备。
-    """
     game_project = await _get_game_project_or_404(main_db, game_project_code)
 
     scope_agent_ids = await _get_agent_scope_ids(main_db, agent.id)
@@ -132,17 +109,10 @@ async def get_agent_device_list(
     )
 
 
-# ─────────────────────────────────────────────────────────────
-# 内部辅助函数
-# ─────────────────────────────────────────────────────────────
-
-
-def _device_identity_fields(device_id: str | None) -> dict:
-    """生成设备标识的脱敏字段，不返回原文。"""
+def _device_identity_fields(device_fingerprint: str, device_id: str | None = None) -> dict:
     return {
-        "device_id": None,
-        "device_id_masked": mask_device_fingerprint(device_id),
-        "device_id_hash": hash_sensitive_value(device_id),
+        "device_id": device_id,
+        "device_fingerprint": device_fingerprint,
     }
 
 
@@ -157,20 +127,9 @@ async def _build_device_list(
     page: int,
     page_size: int,
 ) -> dict:
-    """
-    构建设备列表（在线设备来自 Redis，离线设备来自游戏库）。
-
-    allowed_user_ids=None 表示不限制（管理员视角）。
-
-    性能说明:
-      - 仅对当前项目 SCAN Redis，不跨项目遍历。
-      - 游戏库离线设备查询带 SQL 层过滤。
-      - 分页在 Python 层完成（因 status/online 过滤依赖 Redis）。
-    """
     game_id = game_project.id
     game_code = game_project.code_name
 
-    # Step 1: 一次性 SCAN 当前项目的 Redis 在线设备
     redis_heartbeats = await get_all_heartbeats_for_game(redis, game_id)
     online_map: dict[str, dict] = {}
     for hb in redis_heartbeats:
@@ -183,7 +142,6 @@ async def _build_device_list(
             continue
         online_map[hb["device_fp"]] = hb["data"]
 
-    # Step 2: 游戏库离线设备（仅在不过滤 online_only 时查询）
     offline_records: list[dict] = []
     if not online_only:
         offline_records = await _fetch_offline_from_db(
@@ -194,13 +152,14 @@ async def _build_device_list(
             status_filter=status_filter,
         )
 
-    # Step 3: 合并设备列表
     all_devices: list[dict] = []
 
     for device_fp, data in online_map.items():
         last_seen_ts = data.get("last_seen", 0)
         all_devices.append({
-            **_device_identity_fields(device_fp),
+            **_device_identity_fields(device_fp, data.get("device_id")),
+            "connection_type": data.get("connection_type"),
+            "connection_label": data.get("connection_label"),
             "user_id": data.get("user_id"),
             "status": data.get("status"),
             "last_seen": datetime.fromtimestamp(last_seen_ts, tz=timezone.utc).isoformat()
@@ -211,9 +170,11 @@ async def _build_device_list(
         })
 
     for rec in offline_records:
-        device_id = rec["device_id"]
+        device_fingerprint = rec["device_fingerprint"]
         all_devices.append({
-            **_device_identity_fields(device_id),
+            **_device_identity_fields(device_fingerprint, rec.get("device_id")),
+            "connection_type": rec.get("connection_type"),
+            "connection_label": rec.get("connection_label"),
             "user_id": rec["user_id"],
             "status": rec.get("status") or "offline",
             "last_seen": rec["last_seen"].isoformat() if rec["last_seen"] else None,
@@ -222,7 +183,6 @@ async def _build_device_list(
             "source": "database",
         })
 
-    # Step 4: 批量关联用户名（一次查询，避免 N+1）
     all_user_ids = {d["user_id"] for d in all_devices if d["user_id"]}
     username_map: dict[int, str] = {}
     if all_user_ids:
@@ -234,7 +194,6 @@ async def _build_device_list(
     for device in all_devices:
         device["username"] = username_map.get(device["user_id"], "unknown")
 
-    # Step 5: 分页
     total = len(all_devices)
     online_count = sum(1 for d in all_devices if d["is_online"])
     offset = (page - 1) * page_size
@@ -257,7 +216,6 @@ async def _fetch_offline_from_db(
     user_id_filter: int | None,
     status_filter: str | None,
 ) -> list[dict]:
-    """从游戏库查询离线设备（不在 Redis 中的）。"""
     try:
         _get_game_engine(game_code)
         async with _game_session_factories[game_code]() as session:
@@ -275,14 +233,17 @@ async def _fetch_offline_from_db(
 
         return [
             {
+                "device_fingerprint": r.device_fingerprint,
                 "device_id": r.device_id,
+                "connection_type": r.connection_type,
+                "connection_label": r.connection_label,
                 "user_id": r.user_id,
                 "status": r.status,
                 "last_seen": r.last_seen,
                 "game_data": r.game_data,
             }
             for r in records
-            if r.device_id not in exclude_device_ids
+            if r.device_fingerprint not in exclude_device_ids
         ]
     except Exception as e:
         logger.warning("游戏库离线设备查询失败（优雅降级）: %s", e)
