@@ -24,6 +24,20 @@ export const adminDeviceApi = {
     })
   },
 
+  summary(params = {}) {
+    return http.get('/admin/api/devices/summary', {
+      params,
+      _skipAuthRedirect: true,
+    })
+  },
+
+  search(params = {}) {
+    return http.get('/admin/api/devices/search', {
+      params,
+      _skipAuthRedirect: true,
+    })
+  },
+
   listByProject(gameProjectCode, params = {}) {
     return http.get(`/admin/api/devices/${gameProjectCode}`, {
       params,

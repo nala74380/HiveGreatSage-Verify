@@ -73,7 +73,7 @@ class AuthorizationUpdateRequest(BaseModel):
 
 class AuthorizationUpgradeRequest(BaseModel):
     additional_devices: int = Field(..., gt=0, description="新增设备数")
-    mode: str = Field(default="append", pattern="^(append|average)$")
+    mode: str = Field(default="append", pattern="^(append|average|topup_align)$")
 
     model_config = {"extra": "forbid"}
 
@@ -87,6 +87,10 @@ class AuthorizationUpgradePreviewResponse(BaseModel):
     new_expiry: datetime | None = None
     unit_price: float
     period_hours: int
+    new_devices_cost: float | None = None
+    old_devices_topup_cost: float | None = None
+    old_remaining_hours: int | None = None
+    topup_delta_hours: int | None = None
 
 
 class AuthorizationUpgradeResponse(BaseModel):
@@ -96,6 +100,10 @@ class AuthorizationUpgradeResponse(BaseModel):
     old_devices: int
     new_devices: int
     new_expiry: datetime | None = None
+    new_devices_cost: float | None = None
+    old_devices_topup_cost: float | None = None
+    old_remaining_hours: int | None = None
+    topup_delta_hours: int | None = None
 
 
 class AuthorizationRenewRequest(BaseModel):

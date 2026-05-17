@@ -115,7 +115,8 @@ const submitUpload = async () => {
   if (!await formRef.value?.validate().catch(() => false)) return
   if (!form.file) { ElMessage.warning('请选择文件'); return }
 
-  // 客户端文件校验
+  // 管理端 upload 链路：POST /admin/api/updates/{project_id}/{client_type}
+  // 仅负责上传并发布新版本包，不负责 latest / history 展示。
   const name = form.file.name.toLowerCase()
   const allowed = ALLOWED_EXTS[props.clientType] || []
   if (!allowed.some(ext => name.endsWith(ext))) {

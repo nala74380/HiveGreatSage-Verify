@@ -91,6 +91,100 @@ async def update_agent_level_policy(
     return _policy_to_response(policy)
 
 
+async def get_agent_business_profile_summary(
+    *,
+    agent_id: int,
+    db: AsyncSession,
+) -> dict:
+    """
+    读取代理业务画像摘要，不创建缺失画像，避免只读接口产生写入副作用。
+
+    缺失画像时返回 Lv.1 默认展示值。
+    """
+    result = await db.execute(
+        select(AgentBusinessProfile).where(AgentBusinessProfile.agent_id == agent_id)
+    )
+    profile = result.scalar_one_or_none()
+
+    if profile is None:
+        return {
+            "agent_id": agent_id,
+            "tier_level": 1,
+            "tier_name": "Lv.1 新手代理",
+            "risk_status": "normal",
+            "remark": None,
+            "credit_limit": 0.0,
+            "max_credit_limit": 0.0,
+            "credit_limit_override": None,
+            "max_credit_limit_override": None,
+            "can_create_sub_agents": False,
+            "max_sub_agents": 0,
+            "can_create_sub_agents_override": None,
+            "max_sub_agents_override": None,
+            "can_auto_open_project": False,
+            "auto_open_project_limit": 0,
+            "review_priority": 0,
+        }
+
+    policy_result = await db.execute(
+        select(AgentLevelPolicy).where(AgentLevelPolicy.level == profile.tier_level)
+    )
+    policy = policy_result.scalar_one_or_none()
+
+    tier_name = policy.level_name if policy else f"Lv.{profile.tier_level}"
+
+    credit_limit = (
+        _as_float(profile.credit_limit_override)
+        if profile.credit_limit_override is not None
+        else _as_float(policy.default_credit_limit if policy else 0)
+    )
+
+    max_credit_limit = (
+        _as_float(profile.max_credit_limit_override)
+        if profile.max_credit_limit_override is not None
+        else _as_float(policy.max_credit_limit if policy else 0)
+    )
+
+    can_create_sub_agents = (
+        bool(profile.can_create_sub_agents_override)
+        if profile.can_create_sub_agents_override is not None
+        else bool(policy.can_create_sub_agents if policy else False)
+    )
+
+    max_sub_agents = (
+        int(profile.max_sub_agents_override)
+        if profile.max_sub_agents_override is not None
+        else int(policy.max_sub_agents if policy else 0)
+    )
+
+    return {
+        "agent_id": agent_id,
+        "tier_level": profile.tier_level,
+        "tier_name": tier_name,
+        "risk_status": profile.risk_status,
+        "remark": profile.remark,
+        "credit_limit": credit_limit,
+        "max_credit_limit": max_credit_limit,
+        "credit_limit_override": (
+            _as_float(profile.credit_limit_override)
+            if profile.credit_limit_override is not None
+            else None
+        ),
+        "max_credit_limit_override": (
+            _as_float(profile.max_credit_limit_override)
+            if profile.max_credit_limit_override is not None
+            else None
+        ),
+        "can_create_sub_agents": can_create_sub_agents,
+        "max_sub_agents": max_sub_agents,
+        "can_create_sub_agents_override": profile.can_create_sub_agents_override,
+        "max_sub_agents_override": profile.max_sub_agents_override,
+        "can_auto_open_project": bool(policy.can_auto_open_project if policy else False),
+        "auto_open_project_limit": int(policy.auto_open_project_limit if policy else 0),
+        "review_priority": int(policy.review_priority if policy else 0),
+    }
+
+
 async def get_agent_business_profile(
     *,
     agent_id: int,

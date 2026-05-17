@@ -2,25 +2,22 @@ r"""
 文件位置: app/schemas/device.py
 文件名称: device.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-05-07
-版本: V1.1.0
+日期/时间: 2026-05-17
+版本: V1.2.0
 功能说明:
     设备数据相关的 Pydantic v2 请求/响应模型。
-    覆盖四个接口：
+    覆盖三个接口：
       - POST /api/device/heartbeat  : 安卓脚本上报心跳
       - GET  /api/device/list       : PC 中控拉取设备列表
       - GET  /api/device/data       : PC 中控拉取单台设备详情
-      - POST /api/device/imsi       : 安卓脚本上传 IMSI
 
-    game_data 字段使用 dict，各游戏自定义内容（不在此层校验具体字段）。
-
-安全口径:
-    - device_fingerprint 是终端请求契约字段，不代表后台可展示原文。
-    - IMSI 上传响应不回显 IMSI 原文，只返回 masked/hash。
-    - PC 中控设备列表仍保留 device_id 原文作为后续 /api/device/data 查询参数，
-      该接口属于 User Token 终端闭环，不等同后台展示 API。
+    当前设备标识口径：
+      1. device_fingerprint = 设备内部稳定绑定键。
+      2. device_id = 用户自定义设备编号（业务展示字段）。
+      3. connection_type / connection_label = 连接标识。
 
 改进历史:
+    V1.2.0 (2026-05-17) - 删除 IMSI 上传契约；新增 device_id / connection_type / connection_label 字段。
     V1.1.0 (2026-05-07) - ImsiUploadResponse 移除 device_fingerprint / imsi 原文回显。
     V1.0.0 - 初始版本
 """
@@ -30,15 +27,33 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-# ── 心跳上报 ──────────────────────────────────────────────────
-
 class HeartbeatRequest(BaseModel):
     device_fingerprint: str = Field(
         ...,
         min_length=4,
         max_length=256,
-        description="终端生成的稳定设备标识 hash，与登录时的 device_fingerprint 一致；禁止上传 IMEI/IMSI/硬件序列号明文",
+        description="设备内部稳定绑定键，与登录时的 device_fingerprint 一致",
         examples=["a1b2c3d4e5f6"],
+    )
+    device_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="用户自定义设备编号（业务展示字段）",
+        examples=["A-001"],
+    )
+    connection_type: str | None = Field(
+        default=None,
+        description="连接类型：usb / tcp / unknown",
+        examples=["usb"],
+        pattern="^(usb|tcp|unknown)$",
+    )
+    connection_label: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="连接标识展示串：USB 显示 SN，TCP 显示 IP:端口",
+        examples=["SN:ABCD1234"],
     )
     status: str = Field(
         ...,
@@ -58,10 +73,11 @@ class HeartbeatResponse(BaseModel):
     message: str = "ok"
 
 
-# ── 设备列表 ──────────────────────────────────────────────────
-
 class DeviceStatus(BaseModel):
-    device_id: str = Field(description="终端设备标识；User Token 终端闭环内用于继续查询 /api/device/data")
+    device_fingerprint: str = Field(description="设备内部稳定绑定键")
+    device_id: str | None = Field(default=None, description="用户自定义设备编号")
+    connection_type: str | None = Field(default=None, description="连接类型：usb / tcp / unknown")
+    connection_label: str | None = Field(default=None, description="连接标识展示串")
     user_id: int
     status: str | None = Field(description="running / idle / error / offline")
     last_seen: datetime | None = Field(description="最后一次心跳时间")
@@ -78,10 +94,11 @@ class DeviceListResponse(BaseModel):
     online_count: int
 
 
-# ── 单台设备详情 ──────────────────────────────────────────────
-
 class DeviceDataResponse(BaseModel):
-    device_id: str
+    device_fingerprint: str
+    device_id: str | None = None
+    connection_type: str | None = None
+    connection_label: str | None = None
     user_id: int
     status: str | None
     last_seen: datetime | None
@@ -91,30 +108,3 @@ class DeviceDataResponse(BaseModel):
         description="数据来源：redis（实时）/ database（落库数据）/ not_found",
         examples=["redis"],
     )
-
-
-# ── T027 IMSI 后续上传 ──────────────────────────────
-
-class ImsiUploadRequest(BaseModel):
-    """
-    登录成功后上传 IMSI 码（接入契约 §8）。
-    IMSI 不参与登录验证，仅作为辅助设备标识存储。
-    """
-    device_fingerprint: str = Field(
-        ...,
-        description="终端生成的稳定设备标识 hash，与登录时一致；禁止上传 IMEI/IMSI/硬件序列号明文",
-    )
-    imsi: str = Field(
-        ...,
-        min_length=1,
-        max_length=64,
-        description="设备 IMSI 码；仅用于服务端辅助记录，响应不会回显原文",
-    )
-
-
-class ImsiUploadResponse(BaseModel):
-    message: str
-    device_fingerprint_masked: str | None = None
-    device_fingerprint_hash: str | None = None
-    imsi_masked: str | None = None
-    imsi_hash: str | None = None

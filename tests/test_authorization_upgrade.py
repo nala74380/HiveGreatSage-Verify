@@ -109,6 +109,24 @@ class TestAuthorizationUpgradePreview:
         assert data["mode"] == "append"
         assert data["consumed_points"] == 0.0
 
+    async def test_admin_can_preview_upgrade_topup_align(self, client, admin_headers, project_id):
+        """管理员可预览 topup_align 模式，接口应返回 200。"""
+        item = await _create_user_with_authorization(client, admin_headers, project_id)
+
+        response = await client.get(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/upgrade/preview",
+            params={"additional_devices": 1, "mode": "topup_align"},
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["mode"] == "topup_align"
+        assert data["new_devices"] == 2
+        assert data["new_expiry"] is not None
+        assert "topup_delta_hours" in data
+        assert "old_remaining_hours" in data
+
 
 class TestAuthorizationRenew:
     async def test_preview_requires_admin_or_agent_token(self, client, admin_headers, project_id):
@@ -183,3 +201,22 @@ class TestAuthorizationLevelUpgrade:
         assert data["old_user_level"] == "normal"
         assert data["new_user_level"] == "vip"
         assert data["authorization"]["user_level"] == "vip"
+
+
+class TestAuthorizationUpgradeTopupAlign:
+    async def test_admin_can_upgrade_with_topup_align_without_charge(self, client, admin_headers, project_id):
+        item = await _create_user_with_expiring_authorization(client, admin_headers, project_id)
+
+        response = await client.post(
+            f"/api/users/{item['user_id']}/authorizations/{item['auth_id']}/upgrade",
+            json={"additional_devices": 1, "mode": "topup_align"},
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["mode"] == "topup_align"
+        assert data["old_devices"] == 2
+        assert data["new_devices"] == 3
+        assert data["consumed_points"] == 0.0
+        assert data["new_expiry"] is not None

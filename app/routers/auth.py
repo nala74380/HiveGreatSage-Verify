@@ -76,14 +76,13 @@ def _client_ip(request: Request) -> str:
 
 
 def _login_metadata(body: LoginRequest, *, client_ip: str, success: bool, reason: str | None = None) -> dict:
-    """生成用户登录审计元数据。严禁记录 password / token / device_fingerprint 原文。"""
+    """生成用户登录审计元数据。严禁记录 password / token / refresh_token。"""
     device_fingerprint = getattr(body, "device_fingerprint", None)
     return {
         "username": body.username,
         "client_ip": client_ip,
         "client_type": getattr(body, "client_type", None),
-        "device_fingerprint_masked": mask_device_fingerprint(device_fingerprint),
-        "device_fingerprint_hash": hash_sensitive_value(device_fingerprint),
+        "device_fingerprint": device_fingerprint,
         "game_project_code": getattr(body, "game_project_code", None) or getattr(body, "project_code", None),
         "success": success,
         "reason": reason,

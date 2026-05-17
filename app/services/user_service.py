@@ -30,9 +30,10 @@ r"""
 """
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_UP
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, literal, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
@@ -44,10 +45,9 @@ from app.models.main.models import (
     Authorization,
     DeviceBinding,
     GameProject,
+    ProjectPrice,
     User,
 )
-from app.models.main.agent_profile import AgentBusinessProfile
-from app.models.main.project_access import AgentLevelPolicy
 from app.models.main.accounting import (
     AccountingWallet,
     AuthorizationChargeSnapshot,
@@ -80,6 +80,7 @@ from app.services.accounting_service import (
     _ceil_hours,
     calculate_authorization_cost,
     consume_agent_authorization_points,
+    consume_agent_authorization_topup_points,
     refund_user_authorization_points_on_delete,
 )
 
@@ -135,9 +136,6 @@ async def list_users(
     level_filter: str | None,
     project_id_filter: int | None = None,
     creator_agent_id_filter: int | None = None,
-    creator_agent_tier_level_filter: int | None = None,
-    creator_agent_can_create_sub_agents_filter: bool | None = None,
-    creator_agent_risk_status_filter: str | None = None,
 ) -> UserListResponse:
     """
     查询用户列表。
@@ -147,9 +145,6 @@ async def list_users(
       - level：过滤 Authorization.user_level。
       - project_id：过滤 Authorization.game_project_id。
       - creator_agent_id：管理员查看指定代理创建的用户。
-      - creator_agent_tier_level：管理员按创建代理业务等级过滤。
-      - creator_agent_can_create_sub_agents：管理员按创建代理下级创建能力过滤。
-      - creator_agent_risk_status：管理员按创建代理风险状态过滤。
     """
     query = select(User).where(User.is_deleted == False)  # noqa: E712
 
@@ -158,50 +153,6 @@ async def list_users(
 
     if admin is not None and creator_agent_id_filter:
         query = query.where(User.created_by_agent_id == creator_agent_id_filter)
-
-    if admin is not None and (
-        creator_agent_tier_level_filter is not None
-        or creator_agent_can_create_sub_agents_filter is not None
-        or creator_agent_risk_status_filter is not None
-    ):
-        agent_filter_query = (
-            select(Agent.id)
-            .outerjoin(
-                AgentBusinessProfile,
-                AgentBusinessProfile.agent_id == Agent.id,
-            )
-            .outerjoin(
-                AgentLevelPolicy,
-                AgentLevelPolicy.level == func.coalesce(
-                    AgentBusinessProfile.tier_level,
-                    1,
-                ),
-            )
-        )
-
-        if creator_agent_tier_level_filter is not None:
-            agent_filter_query = agent_filter_query.where(
-                func.coalesce(AgentBusinessProfile.tier_level, 1)
-                == creator_agent_tier_level_filter
-            )
-
-        if creator_agent_risk_status_filter is not None:
-            agent_filter_query = agent_filter_query.where(
-                func.coalesce(AgentBusinessProfile.risk_status, "normal")
-                == creator_agent_risk_status_filter
-            )
-
-        if creator_agent_can_create_sub_agents_filter is not None:
-            effective_can_create = func.coalesce(
-                AgentBusinessProfile.can_create_sub_agents_override,
-                AgentLevelPolicy.can_create_sub_agents,
-                literal(False),
-            )
-            agent_filter_query = agent_filter_query.where(
-                effective_can_create == creator_agent_can_create_sub_agents_filter
-            )
-
-        query = query.where(User.created_by_agent_id.in_(agent_filter_query))
 
     if status_filter:
         query = query.where(User.status == status_filter)
@@ -1181,6 +1132,12 @@ async def preview_authorization_upgrade(
     level_rule = BILLING_RULES.get(auth.user_level, {})
     period_hours = int(level_rule.get("period_hours", 720))
     valid_until_for_cost = auth.valid_until
+    consumed_points = 0.0
+    unit_price = 0.0
+    new_devices_cost: float | None = None
+    old_devices_topup_cost: float | None = None
+    old_remaining_hours: int | None = None
+    topup_delta_hours: int | None = None
 
     if mode == "average":
         old_remaining = _ceil_hours(now, auth.valid_until) if auth.valid_until else 0
@@ -1188,21 +1145,66 @@ async def preview_authorization_upgrade(
         avg_hours = int((old_devices * old_remaining + new_devices_hours) / new_devices)
         valid_until_for_cost = now + timedelta(hours=avg_hours)
 
-    if agent is not None:
-        cost = await calculate_authorization_cost(
-            project_id=project.id,
-            user_level=auth.user_level,
-            authorized_devices=additional_devices,
-            start_at=now,
-            valid_until=valid_until_for_cost,
-            db=db,
-        )
-        consumed_points = float(cost.get("total_cost") or 0.0)
-        unit_price = float(cost.get("unit_price") or 0.0)
-        period_hours = int(cost.get("billing_period_hours") or period_hours)
+        if agent is not None:
+            cost = await calculate_authorization_cost(
+                project_id=project.id,
+                user_level=auth.user_level,
+                authorized_devices=additional_devices,
+                start_at=now,
+                valid_until=valid_until_for_cost,
+                db=db,
+            )
+            consumed_points = float(cost.get("total_cost") or 0.0)
+            unit_price = float(cost.get("unit_price") or 0.0)
+            period_hours = int(cost.get("billing_period_hours") or period_hours)
+
+    elif mode == "topup_align":
+        valid_until_for_cost = now + timedelta(hours=period_hours)
+        old_remaining_hours = _ceil_hours(now, auth.valid_until) if auth.valid_until else 0
+        topup_delta_hours = max(0, period_hours - old_remaining_hours)
+
+        if agent is not None:
+            new_cost = await calculate_authorization_cost(
+                project_id=project.id,
+                user_level=auth.user_level,
+                authorized_devices=additional_devices,
+                start_at=now,
+                valid_until=valid_until_for_cost,
+                db=db,
+            )
+            new_devices_cost = float(new_cost.get("total_cost") or 0.0)
+            unit_price = float(new_cost.get("unit_price") or 0.0)
+            period_hours = int(new_cost.get("billing_period_hours") or period_hours)
+
+            topup_cost_dec = Decimal("0.00")
+            if old_devices > 0 and topup_delta_hours > 0:
+                raw_topup = (
+                    Decimal(str(old_devices))
+                    * Decimal(str(unit_price))
+                    * Decimal(str(topup_delta_hours))
+                    / Decimal(str(period_hours))
+                )
+                topup_cost_dec = raw_topup.quantize(Decimal("0.01"), rounding=ROUND_UP)
+
+            old_devices_topup_cost = float(topup_cost_dec)
+            consumed_points = float(Decimal(str(new_devices_cost)) + topup_cost_dec)
+        else:
+            new_devices_cost = 0.0
+            old_devices_topup_cost = 0.0
+
     else:
-        consumed_points = 0.0
-        unit_price = 0.0
+        if agent is not None:
+            cost = await calculate_authorization_cost(
+                project_id=project.id,
+                user_level=auth.user_level,
+                authorized_devices=additional_devices,
+                start_at=now,
+                valid_until=valid_until_for_cost,
+                db=db,
+            )
+            consumed_points = float(cost.get("total_cost") or 0.0)
+            unit_price = float(cost.get("unit_price") or 0.0)
+            period_hours = int(cost.get("billing_period_hours") or period_hours)
 
     return AuthorizationUpgradePreviewResponse(
         old_devices=old_devices,
@@ -1213,6 +1215,10 @@ async def preview_authorization_upgrade(
         new_expiry=valid_until_for_cost,
         unit_price=unit_price,
         period_hours=period_hours,
+        new_devices_cost=new_devices_cost,
+        old_devices_topup_cost=old_devices_topup_cost,
+        old_remaining_hours=old_remaining_hours,
+        topup_delta_hours=topup_delta_hours,
     )
 
 
@@ -1255,6 +1261,10 @@ async def upgrade_authorization(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="授权已到期，请重新授权")
 
     consumed_points = 0.0
+    new_devices_cost: float | None = None
+    old_devices_topup_cost: float | None = None
+    old_remaining_hours: int | None = None
+    topup_delta_hours: int | None = None
 
     if body.mode == "average":
         # 平均模式：新到期 = 加权平均
@@ -1280,6 +1290,74 @@ async def upgrade_authorization(
                 authorized_devices=body.additional_devices,
                 start_at=now, valid_until=auth.valid_until, db=db,
             )
+    elif body.mode == "topup_align":
+        period_hours = int(BILLING_RULES.get(auth.user_level, {}).get("period_hours", 720))
+        target_valid_until = now + timedelta(hours=period_hours)
+        old_remaining = _ceil_hours(now, auth.valid_until) if auth.valid_until else 0
+        delta_hours = max(0, period_hours - old_remaining)
+        auth.valid_until = target_valid_until
+
+        old_remaining_hours = old_remaining
+        topup_delta_hours = delta_hours
+
+        if agent is not None:
+            new_cost = await calculate_authorization_cost(
+                project_id=project.id,
+                user_level=auth.user_level,
+                authorized_devices=body.additional_devices,
+                start_at=now,
+                valid_until=target_valid_until,
+                db=db,
+            )
+            new_devices_cost = float(new_cost.get("total_cost") or 0.0)
+            unit_price = float(new_cost.get("unit_price") or 0.0)
+            period_hours = int(new_cost.get("billing_period_hours") or period_hours)
+            billing_period = str(new_cost.get("billing_period") or BILLING_RULES.get(auth.user_level, {}).get("period", "month"))
+
+            await consume_agent_authorization_points(
+                agent_id=agent.id,
+                user_id=user.id,
+                project_id=project.id,
+                authorization_id=auth.id,
+                user_level=auth.user_level,
+                authorized_devices=body.additional_devices,
+                start_at=now,
+                valid_until=target_valid_until,
+                db=db,
+            )
+
+            topup_cost_dec = Decimal("0.00")
+            if old_devices > 0 and delta_hours > 0:
+                raw_topup = (
+                    Decimal(str(old_devices))
+                    * Decimal(str(unit_price))
+                    * Decimal(str(delta_hours))
+                    / Decimal(str(period_hours))
+                )
+                topup_cost_dec = raw_topup.quantize(Decimal("0.01"), rounding=ROUND_UP)
+
+                await consume_agent_authorization_topup_points(
+                    agent_id=agent.id,
+                    user_id=user.id,
+                    project_id=project.id,
+                    authorization_id=auth.id,
+                    user_level=auth.user_level,
+                    authorized_devices=old_devices,
+                    unit_price=unit_price,
+                    billing_period=billing_period,
+                    billing_period_hours=period_hours,
+                    paid_hours=delta_hours,
+                    total_cost=float(topup_cost_dec),
+                    start_at=now,
+                    valid_until=target_valid_until,
+                    db=db,
+                )
+
+            old_devices_topup_cost = float(topup_cost_dec)
+            consumed_points = float(Decimal(str(new_devices_cost)) + topup_cost_dec)
+        else:
+            new_devices_cost = 0.0
+            old_devices_topup_cost = 0.0
     else:
         # 追加模式：到期不变
         if agent is not None and auth.valid_until:
@@ -1289,7 +1367,6 @@ async def upgrade_authorization(
             period_hours = level_rule.get("period_hours", 720)
             periods = max(1, (remaining + period_hours - 1) // period_hours)
             # 取单价
-            from app.models.main.models import ProjectPrice
             price_result = await db.execute(
                 select(ProjectPrice).where(
                     ProjectPrice.project_id == project.id,
@@ -1301,7 +1378,6 @@ async def upgrade_authorization(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"项目未设置 {auth.user_level} 级别定价")
 
-            from decimal import Decimal
             unit_price = Decimal(str(price.points_per_device))
             total_cost = unit_price * Decimal(str(body.additional_devices)) * Decimal(str(periods))
             consumed_points = float(total_cost)
@@ -1323,6 +1399,10 @@ async def upgrade_authorization(
         old_devices=old_devices,
         new_devices=new_devices,
         new_expiry=auth.valid_until,
+        new_devices_cost=new_devices_cost,
+        old_devices_topup_cost=old_devices_topup_cost,
+        old_remaining_hours=old_remaining_hours,
+        topup_delta_hours=topup_delta_hours,
     )
 
 

@@ -194,11 +194,10 @@ class DeviceRuntime(GameBase):
         → Celery Beat 每 30 秒执行批量 UPSERT 到本表
         → PC 中控优先读 Redis，Redis 无数据时回落本表
 
-    device_id 对应 hive_platform.device_binding.device_fingerprint（无外键，跨库）。
-    user_id   对应 hive_platform.user.id（无外键，跨库）。
-
-    game_data 使用 JSONB，各游戏自定义字段，如：
-      {"map": "北境", "gold": 1024, "task": "日常采集", "error_count": 0}
+    当前设备标识口径：
+      1. device_fingerprint = 内部稳定绑定键，对应 hive_platform.device_binding.device_fingerprint。
+      2. device_id = 用户自定义设备编号。
+      3. connection_type / connection_label = 连接标识。
     """
     __tablename__ = "device_runtime"
     __table_args__ = (
@@ -206,12 +205,22 @@ class DeviceRuntime(GameBase):
         Index("idx_device_runtime_last_seen", "last_seen"),
     )
 
-    # 以设备指纹作为主键，天然唯一，适合 ON CONFLICT DO UPDATE 的 UPSERT 模式
-    device_id: Mapped[str] = mapped_column(
+    device_fingerprint: Mapped[str] = mapped_column(
         String(128), primary_key=True,
-        comment="设备唯一标识，对应 device_binding.device_fingerprint",
+        comment="设备内部稳定绑定键，对应 device_binding.device_fingerprint",
     )
-    # 跨库引用，无数据库外键约束
+    device_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+        comment="用户自定义设备编号（业务展示字段）",
+    )
+    connection_type: Mapped[str | None] = mapped_column(
+        String(16), nullable=True,
+        comment="连接类型：usb / tcp / unknown",
+    )
+    connection_label: Mapped[str | None] = mapped_column(
+        String(255), nullable=True,
+        comment="连接标识展示串：USB 显示 SN，TCP 显示 IP:端口",
+    )
     user_id: Mapped[int] = mapped_column(
         Integer, nullable=False,
         comment="来自 hive_platform.user.id，跨库无外键",
@@ -235,7 +244,7 @@ class DeviceRuntime(GameBase):
     )
 
     def __repr__(self) -> str:
-        return f"<DeviceRuntime device={self.device_id[:16]}... user={self.user_id}>"
+        return f"<DeviceRuntime device={self.device_fingerprint[:16]}... user={self.user_id}>"
 
 
 # 注意：热更新版本记录表 VersionRecord 已迁移到主库 app/models/main/models.py。

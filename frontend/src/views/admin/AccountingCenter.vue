@@ -652,43 +652,62 @@
                 empty-text="暂无授权冻结记录"
               >
                 <el-table-column prop="id" label="ID" width="80" />
-
-                <el-table-column label="代理 / 用户 / 项目" min-width="230">
+                <el-table-column label="代理" min-width="140">
                   <template #default="{ row }">
-                    <div class="main-text">{{ row.agent_username || `代理ID=${row.agent_id || '-'}` }}</div>
-                    <div class="sub-text">用户：{{ row.user_username || row.user_id }}</div>
-                    <div class="sub-text">项目：{{ row.project_name || row.project_id }}</div>
+                    {{ row.agent_username || `代理ID=${row.agent_id || '-'}` }}
                   </template>
                 </el-table-column>
 
-                <el-table-column label="冻结" min-width="190">
+                <el-table-column label="用户" min-width="130">
+                  <template #default="{ row }">
+                    {{ row.user_username || row.user_id }}
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="项目" min-width="150">
+                  <template #default="{ row }">
+                    {{ row.project_name || row.project_id }}
+                  </template>
+                </el-table-column>
+
+                <el-table-column prop="authorization_id" label="授权ID" width="100" />
+
+                <el-table-column label="冻结时间" width="170">
+                  <template #default="{ row }">
+                    {{ formatDatetime(row.frozen_at) }}
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="剩余小时" width="100">
+                  <template #default="{ row }">
+                    {{ row.remaining_hours ?? '-' }}
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="预估冻结点数" width="140">
+                  <template #default="{ row }">
+                    {{ fmtMoney(row.estimated_remaining_points) }}
+                  </template>
+                </el-table-column>
+
+                <el-table-column label="状态" width="130">
                   <template #default="{ row }">
                     <el-tag :type="freezeStatusTag(row.status)" effect="light">
                       {{ freezeStatusLabel(row.status) }}
                     </el-tag>
                     <div class="sub-text">{{ freezeTypeLabel(row.freeze_type) }}</div>
-                    <div class="sub-text">{{ formatDatetime(row.frozen_at) }}</div>
                   </template>
                 </el-table-column>
 
-                <el-table-column label="剩余权益" min-width="170">
+                <el-table-column label="释放时间" width="170">
                   <template #default="{ row }">
-                    <div>{{ row.remaining_hours ?? '-' }} 小时</div>
-                    <div class="sub-text">预估 {{ fmtMoney(row.estimated_remaining_points) }} 点</div>
+                    {{ formatDatetime(row.released_at) }}
                   </template>
                 </el-table-column>
 
-                <el-table-column label="有效期" min-width="220">
+                <el-table-column label="清算时间" width="170">
                   <template #default="{ row }">
-                    <div>原：{{ formatDatetime(row.original_valid_until) }}</div>
-                    <div class="sub-text">新：{{ formatDatetime(row.new_valid_until) }}</div>
-                  </template>
-                </el-table-column>
-
-                <el-table-column label="释放 / 清算" min-width="220">
-                  <template #default="{ row }">
-                    <div>释放：{{ formatDatetime(row.released_at) }}</div>
-                    <div class="sub-text">清算：{{ formatDatetime(row.refunded_at) }}</div>
+                    {{ formatDatetime(row.refunded_at) }}
                   </template>
                 </el-table-column>
               </el-table>

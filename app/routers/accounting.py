@@ -420,7 +420,7 @@ async def refunds(
     )
 
 
-@router.get("/freezes", summary="授权冻结权益记录")
+@router.get("/authorization-freezes", summary="授权冻结权益记录")
 async def freezes(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),

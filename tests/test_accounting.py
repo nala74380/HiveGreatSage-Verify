@@ -506,7 +506,7 @@ class TestAuthorizationFreeze:
         assert float(frozen_row["estimated_remaining_points"]) >= 0
 
         freezes = await client.get(
-            "/admin/api/accounting/freezes",
+            "/admin/api/accounting/authorization-freezes",
             params={"user_id": user_id, "freeze_status": "frozen"},
             headers=admin_headers,
         )

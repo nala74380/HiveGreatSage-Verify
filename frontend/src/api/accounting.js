@@ -67,7 +67,7 @@ export const accountingApi = {
   },
 
   freezes(params = {}) {
-    return http.get('/admin/api/accounting/freezes', { params })
+    return http.get('/admin/api/accounting/authorization-freezes', { params })
   },
 
   initReconciliationBaseline(params = {}) {

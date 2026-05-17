@@ -19,7 +19,7 @@
         size="small"
         class="role-tag"
       >
-        {{ auth.isAdmin ? '管理员' : `代理 Lv.${agentTierLevel ?? auth.userInfo?.hierarchy_depth ?? '?'}` }}
+        {{ auth.isAdmin ? '管理员' : (agentTierLevel != null ? `代理 Lv.${agentTierLevel}` : '代理') }}
       </el-tag>
 
       <el-dropdown @command="handleCommand" trigger="click">
@@ -63,9 +63,9 @@ onMounted(async () => {
   if (auth.isAgent) {
     try {
       const res = await agentApi.agentDashboard()
-      agentTierLevel.value = res.data?.agent?.tier_level ?? auth.userInfo?.hierarchy_depth
+      agentTierLevel.value = res.data?.agent?.tier_level ?? null
     } catch {
-      agentTierLevel.value = auth.userInfo?.hierarchy_depth
+      agentTierLevel.value = null
     }
   }
 })

@@ -254,6 +254,43 @@ class TestLogin:
 
         assert response.status_code == 403
 
+    async def test_login_fails_when_authorization_suspended(
+        self,
+        client,
+        admin_headers,
+        project_id,
+    ):
+        """授权被停用后，新登录必须失败。"""
+        user = await _create_test_user(client, admin_headers, project_id)
+
+        suspend_response = await client.post(
+            f"/api/users/{user['user_id']}/authorizations/{user['authorization_id']}/suspend",
+            headers=admin_headers,
+        )
+        assert suspend_response.status_code == 200, suspend_response.text
+
+        response = await _login_user(
+            client,
+            username=user["username"],
+            password=user["password"],
+            device_fingerprint="device_auth_suspended_login",
+        )
+        assert response.status_code == 403
+
+        enable_response = await client.post(
+            f"/api/users/{user['user_id']}/authorizations/{user['authorization_id']}/enable",
+            headers=admin_headers,
+        )
+        assert enable_response.status_code == 200, enable_response.text
+
+        response_after_enable = await _login_user(
+            client,
+            username=user["username"],
+            password=user["password"],
+            device_fingerprint="device_auth_resumed_login",
+        )
+        assert response_after_enable.status_code == 200, response_after_enable.text
+
     async def test_login_suspended_user(self, client, admin_headers, project_id):
         """已停用的用户应返回 403。"""
         user = await _create_test_user(client, admin_headers, project_id)
@@ -474,6 +511,47 @@ class TestRefreshAndMe:
         )
 
         assert response.status_code == 401
+
+    async def test_refresh_fails_when_authorization_suspended_and_recovers_after_enable(
+        self,
+        client,
+        admin_headers,
+        project_id,
+    ):
+        """停用授权后 refresh 失败；启用授权后 refresh 恢复成功。"""
+        tokens = await self._do_login(client, admin_headers, project_id)
+
+        suspend_response = await client.post(
+            f"/api/users/{tokens['user_id']}/authorizations/{tokens['authorization_id']}/suspend",
+            headers=admin_headers,
+        )
+        assert suspend_response.status_code == 200, suspend_response.text
+
+        refresh_blocked = await client.post(
+            "/api/auth/refresh",
+            json={
+                "refresh_token": tokens["refresh_token"],
+                "device_fingerprint": tokens["device_fingerprint"],
+                "client_type": tokens["client_type"],
+            },
+        )
+        assert refresh_blocked.status_code == 401
+
+        enable_response = await client.post(
+            f"/api/users/{tokens['user_id']}/authorizations/{tokens['authorization_id']}/enable",
+            headers=admin_headers,
+        )
+        assert enable_response.status_code == 200, enable_response.text
+
+        refresh_ok = await client.post(
+            "/api/auth/refresh",
+            json={
+                "refresh_token": tokens["refresh_token"],
+                "device_fingerprint": tokens["device_fingerprint"],
+                "client_type": tokens["client_type"],
+            },
+        )
+        assert refresh_ok.status_code == 200, refresh_ok.text
 
     async def test_logout_then_me_fails(self, client, admin_headers, project_id):
         """登出后当前 Access Token 应被吊销，/me 返回 401。"""

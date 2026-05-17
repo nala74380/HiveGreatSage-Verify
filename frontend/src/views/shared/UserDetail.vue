@@ -20,7 +20,6 @@
             </div>
           </div>
           <div class="user-actions">
-            <el-button @click="openEditDialog">编辑</el-button>
             <el-button
               :type="user.status === 'active' ? 'warning' : 'success'"
               plain
@@ -130,7 +129,7 @@
           <el-table-column label="设备标识" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="mono">{{ deviceDisplay(row) }}</div>
-              <div class="sub-text">Hash：{{ shortHash(row.device_fingerprint_hash) }}</div>
+              <div class="sub-text">Hash：{{ shortHash(row.device_id_hash) }}</div>
             </template>
           </el-table-column>
           <el-table-column label="绑定时间" width="155">
@@ -163,47 +162,6 @@
         </el-table>
       </el-card>
     </template>
-
-    <!-- 编辑用户对话框 -->
-    <el-dialog v-model="editDialog.visible" title="编辑用户" width="880px" destroy-on-close>
-      <el-form ref="editFormRef" :model="editDialog.form" label-width="105px" v-if="user">
-        <el-divider content-position="left">账号主体</el-divider>
-        <el-form-item label="用户名"><span class="readonly-val">{{ user.username }}</span></el-form-item>
-        <el-form-item label="创建信息">
-          <div>
-            <el-tag size="small" effect="plain" :type="user.created_by_type === 'agent' ? 'warning' : 'danger'">
-              {{ user.created_by_display }}
-            </el-tag>
-            <span class="sub-text" style="margin-left:8px">{{ formatDatetime(user.created_at) }}</span>
-          </div>
-        </el-form-item>
-        <el-form-item label="账号状态">
-          <el-select v-model="editDialog.form.status" size="small" style="width:150px">
-            <el-option label="正常" value="active" />
-            <el-option label="已停用" value="suspended" />
-          </el-select>
-        </el-form-item>
-        <el-alert type="info" show-icon :closable="false" class="small-alert" title="用户等级、设备数、到期时间请在项目授权里分别设置。" />
-
-        <el-divider content-position="left">
-          项目授权
-          <el-button size="small" type="primary" plain style="margin-left:12px" @click="editDialog.visible = false; openGrantDialog()">
-            + 授权新项目
-          </el-button>
-        </el-divider>
-        <el-table :data="user.authorizations" size="small" empty-text="暂无授权" stripe>
-          <el-table-column label="项目" min-width="120" prop="game_project_name" />
-          <el-table-column label="等级" width="75"><template #default="{ row: a }"><LevelTag :level="a.user_level" /></template></el-table-column>
-          <el-table-column label="设备" width="70" prop="authorized_devices" />
-          <el-table-column label="到期" min-width="120"><template #default="{ row: a }"><span v-if="!a.valid_until">永久</span><span v-else>{{ formatDate(a.valid_until) }}</span></template></el-table-column>
-          <el-table-column label="状态" width="70"><template #default="{ row: a }"><el-tag :type="a.status === 'active' ? 'success' : 'info'" size="small" effect="light">{{ a.status === 'active' ? '有效' : '已停用' }}</el-tag></template></el-table-column>
-        </el-table>
-      </el-form>
-      <template #footer>
-        <el-button @click="editDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="editDialog.loading" @click="submitEdit">保存</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 授权新项目对话框 -->
     <el-dialog v-model="grantDialog.visible" title="授权新项目" width="460px" destroy-on-close>
@@ -341,7 +299,7 @@ const deviceBindings = ref([])
 const bindingsLoading = ref(false)
 const availableProjects = ref([])
 
-const deviceDisplay = (row) => row?.device_fingerprint_masked || '—'
+const deviceDisplay = (row) => row?.device_id_masked || '—'
 const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
 
 const loadUser = async () => {
@@ -393,25 +351,6 @@ const toggleStatus = async () => {
   await userApi.update(userId, { status: newStatus })
   ElMessage.success('操作成功')
   loadUser()
-}
-
-const editDialog = reactive({ visible: false, loading: false, form: {} })
-
-const openEditDialog = () => {
-  editDialog.form = { status: user.value.status }
-  editDialog.visible = true
-}
-
-const submitEdit = async () => {
-  editDialog.loading = true
-  try {
-    await userApi.update(userId, editDialog.form)
-    ElMessage.success('更新成功')
-    editDialog.visible = false
-    loadUser()
-  } finally {
-    editDialog.loading = false
-  }
 }
 
 const grantFormRef = ref(null)

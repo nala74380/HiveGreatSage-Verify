@@ -34,6 +34,7 @@ from app.models.main.models import Admin, Agent, Authorization, DeviceBinding, G
 from app.schemas.agent import AdminLoginRequest, AdminLoginResponse
 from app.services.agent_service import admin_login
 from app.services.audit_service import create_audit_log
+from app.services.stats_service import get_admin_dashboard_summary
 
 router = APIRouter()
 
@@ -43,20 +44,14 @@ def _client_ip(request: Request) -> str:
 
 
 def _device_fingerprint_fields(value: str | None) -> dict:
-    """设备指纹展示字段。暂保留原文字段为空，避免继续外放原文。"""
     return {
-        "device_fingerprint": None,
-        "device_fingerprint_masked": mask_device_fingerprint(value),
-        "device_fingerprint_hash": hash_sensitive_value(value),
+        "device_id": value,
     }
 
 
 def _login_log_device_fields(log: LoginLog) -> dict:
-    """登录日志设备字段。新日志直接读取 device_fingerprint_hash，历史原文已清空。"""
     return {
-        "device_fingerprint": None,
-        "device_fingerprint_masked": mask_device_fingerprint(log.device_fingerprint),
-        "device_fingerprint_hash": log.device_fingerprint_hash,
+        "device_fingerprint": log.device_fingerprint,
     }
 
 
@@ -123,149 +118,11 @@ async def admin_dashboard(
     redis = Depends(get_redis),
 ) -> dict:
     """平台统计概览 — 单次请求返回全部仪表盘数据。"""
-    now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # ── 基础计数 ──────────────────────────────────────────
-    user_count = (await db.execute(
-        select(func.count(User.id)).where(User.is_deleted == False)
-    )).scalar_one()
-    agent_count = (await db.execute(select(func.count(Agent.id)))).scalar_one()
-    project_count = (await db.execute(
-        select(func.count(GameProject.id)).where(GameProject.is_active == True)
-    )).scalar_one()
-
-    # 今日新增用户
-    today_new = (await db.execute(
-        select(func.count(User.id)).where(
-            User.is_deleted == False,
-            User.created_at >= today_start,
-        )
-    )).scalar_one()
-
-    # ── 平台点数 ──────────────────────────────────────────
-    wallet_totals = (await db.execute(
-        select(
-            func.coalesce(func.sum(AccountingWallet.charged_balance), 0),
-            func.coalesce(func.sum(AccountingWallet.credit_balance), 0),
-            func.coalesce(func.sum(AccountingWallet.frozen_credit), 0),
-        )
-    )).one()
-    total_charged, total_credit, total_frozen = wallet_totals
-    total_points = float(total_charged or 0) + float(total_credit or 0) - float(total_frozen or 0)
-
-    # ── 今日账务 ──────────────────────────────────────────
-    today_ledger = (await db.execute(
-        select(
-            AccountingLedgerEntry.entry_type,
-            func.coalesce(func.sum(AccountingLedgerEntry.amount), 0),
-        )
-        .where(AccountingLedgerEntry.posted_at >= today_start)
-        .group_by(AccountingLedgerEntry.entry_type)
-    )).all()
-    today_accounting = {row[0]: float(row[1]) for row in today_ledger}
-
-    # 可返点快照数
-    refundable = (await db.execute(
-        select(func.count(AccountingWallet.id)).where(
-            AccountingWallet.available_total > 0,
-        )
-    )).scalar_one()
-
-    # ── 用户级别分布 ─────────────────────────────────────
-    level_rows = (await db.execute(
-        select(Authorization.user_level, func.count(func.distinct(Authorization.user_id)))
-        .where(Authorization.status == "active")
-        .group_by(Authorization.user_level)
-    )).all()
-    level_distribution = {row[0]: row[1] for row in level_rows}
-
-    # ── 最近注册用户 ─────────────────────────────────────
-    recent_result = await db.execute(
-        select(User).where(User.is_deleted == False).order_by(User.id.desc()).limit(8)
+    return await get_admin_dashboard_summary(
+        current_admin=current_admin,
+        db=db,
+        redis=redis,
     )
-    recent_users = [
-        {"id": u.id, "username": u.username, "status": u.status, "created_at": u.created_at.isoformat()}
-        for u in recent_result.scalars().all()
-    ]
-
-    # ── 即将到期授权 TOP 5 ──────────────────────────────
-    week_later = now + timedelta(days=7)
-    expiring_result = await db.execute(
-        select(Authorization, User, GameProject)
-        .join(User, Authorization.user_id == User.id)
-        .join(GameProject, Authorization.game_project_id == GameProject.id)
-        .where(
-            Authorization.status == "active",
-            Authorization.valid_until.is_not(None),
-            Authorization.valid_until > now,
-            Authorization.valid_until <= week_later,
-        )
-        .order_by(Authorization.valid_until.asc())
-        .limit(5)
-    )
-    expiring_auths = [
-        {
-            "auth_id": a.id,
-            "user_id": u.id,
-            "username": u.username,
-            "project": p.display_name,
-            "user_level": a.user_level,
-            "valid_until": a.valid_until.isoformat(),
-        }
-        for a, u, p in expiring_result.all()
-    ]
-
-    # ── 在线设备数 ───────────────────────────────────────
-    try:
-        from app.core.redis_client import get_all_heartbeats_for_game
-        online_count = 0
-        active_projects = (await db.execute(
-            select(GameProject).where(GameProject.is_active == True)
-        )).scalars().all()
-        for p in active_projects:
-            hbs = await get_all_heartbeats_for_game(redis, p.id)
-            online_count += len(hbs)
-    except Exception:
-        online_count = 0
-
-    # ── 系统健康 ─────────────────────────────────────────
-    try:
-        import asyncio
-        health = {"api": "ok", "database": "ok", "redis": "error", "celery": "unknown"}
-
-        # Redis
-        try:
-            pong = await redis.ping()
-            if pong:
-                health["redis"] = "ok"
-        except Exception:
-            pass
-
-        # Celery (Redis health key from heartbeat flush)
-        try:
-            last_flush = await redis.get("health:last_heartbeat_flush")
-            health["celery"] = "ok" if last_flush == "ok" else "no_recent_flush"
-        except Exception:
-            health["celery"] = "unknown"
-    except Exception:
-        health = {"api": "ok", "database": "ok", "redis": "error", "celery": "unknown"}
-
-    return {
-        "admin": current_admin.username,
-        "total_users": user_count,
-        "total_agents": agent_count,
-        "active_projects": project_count,
-        "today_new_users": today_new,
-        "total_points": round(total_points, 2),
-        "today_accounting": today_accounting,
-        "refundable_wallets": refundable,
-        "level_distribution": level_distribution,
-        "recent_users": recent_users,
-        "expiring_auths": expiring_auths,
-        "online_devices": online_count,
-        "system_health": health,
-    }
 
 
 @router.get("/login-logs/")
@@ -331,7 +188,7 @@ async def debug_device_bindings(
     _: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
 ) -> dict:
-    """诊断端点：直接查 DeviceBinding 表原始数据（不过滤 status），但不返回设备指纹原文。"""
+    """诊断端点：直接查 DeviceBinding 表原始数据。"""
     result = await db.execute(
         select(DeviceBinding).where(DeviceBinding.user_id == user_id)
     )
@@ -368,7 +225,7 @@ async def get_user_devices(
 
     logger.info(f"[get_user_devices] user_id={user_id}, 查询到 {len(bindings)} 条 DeviceBinding")
     for b in bindings:
-        logger.debug(f"  -> id={b.id} fp={mask_device_fingerprint(b.device_fingerprint)} status={b.status!r} last_seen={b.last_seen_at}")
+        logger.debug(f"  -> id={b.id} fp={b.device_fingerprint} status={b.status!r} last_seen={b.last_seen_at}")
 
     now = datetime.now(timezone.utc)
     online_threshold = timedelta(seconds=90)
@@ -428,8 +285,7 @@ async def unbind_device(
             "binding_id": binding.id,
             "user_id": user_id,
             "game_project_id": binding.game_project_id,
-            "device_fingerprint_masked": mask_device_fingerprint(binding.device_fingerprint),
-            "device_fingerprint_hash": hash_sensitive_value(binding.device_fingerprint),
+            "device_fingerprint": binding.device_fingerprint,
             "old_status": old_status,
             "new_status": binding.status,
             "last_seen_at": binding.last_seen_at.isoformat() if binding.last_seen_at else None,

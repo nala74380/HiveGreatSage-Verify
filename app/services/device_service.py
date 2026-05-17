@@ -2,35 +2,27 @@ r"""
 文件位置: app/services/device_service.py
 文件名称: device_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
-日期/时间: 2026-05-07
-版本: V1.1.0
+日期/时间: 2026-05-17
+版本: V1.2.0
 功能说明:
-    设备数据服务层，包含四个业务逻辑：
+    设备数据服务层，包含三个业务逻辑：
       - process_heartbeat()  安卓脚本心跳上报（写 Redis）
       - get_device_list()    PC 中控拉取设备列表（Redis + 游戏库回落）
       - get_device_data()    PC 中控拉取单台设备详情
-      - upload_imsi()        安卓脚本上传 IMSI
 
-    设计要点：
-      1. 心跳只写 Redis，不直接写 PostgreSQL；落库由 Celery 任务异步完成。
-      2. device_list 优先读 Redis（实时），Redis 无数据则回落到游戏库（历史）。
-      3. 游戏库会话通过 _get_game_engine / _game_session_factories 在服务层内部
-         创建，不通过 FastAPI 依赖注入（因为 code_name 在运行时才能确定）。
-      4. 所有跨库引用（user_id, device_id）在应用层校验，不依赖数据库外键。
-      5. IMSI 上传响应不回显 IMSI 或设备指纹原文，只返回 masked/hash。
-
-关联文档:
-    [[01-网络验证系统/Redis心跳落库策略]]
-    [[01-网络验证系统/架构设计]] 第七节 Redis 使用策略
+    当前设备标识口径：
+      1. device_fingerprint = 设备内部稳定绑定键。
+      2. device_id = 用户自定义设备编号（业务展示字段）。
+      3. connection_type / connection_label = 连接标识。
 
 改进历史:
+    V1.2.0 (2026-05-17) - 删除 IMSI 上传链；心跳与查询链路新增 device_id / connection_type / connection_label。
     V1.1.0 (2026-05-07) - upload_imsi 响应移除 IMSI / 设备指纹原文回显。
     V1.0.1 - 设备绑定校验改为用户 × 项目 × 设备维度
     V1.0.0 - 初始版本
 """
 
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as aioredis
@@ -38,36 +30,28 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.crypto import encrypt_field
 from app.core.redis_client import (
     get_heartbeat,
     get_user_heartbeats,
     set_heartbeat,
 )
-from app.core.sensitive_data import hash_sensitive_value, mask_device_fingerprint, mask_imsi
+from app.core.sensitive_data import mask_device_fingerprint
 from app.core.utils import get_game_project_by_code as _get_game_project
 from app.database import _get_game_engine, _game_session_factories
 from app.models.game.models import DeviceRuntime
 from app.models.main.models import Authorization, DeviceBinding, User
-
-logger = logging.getLogger(__name__)
 from app.schemas.device import (
     DeviceDataResponse,
     DeviceListResponse,
     DeviceStatus,
     HeartbeatRequest,
     HeartbeatResponse,
-    ImsiUploadRequest,
-    ImsiUploadResponse,
 )
 
-# 设备离线判定阈值，与 Redis 心跳 TTL (120s) 一致，避免在线状态抖动
+logger = logging.getLogger(__name__)
+
 _OFFLINE_THRESHOLD_SECONDS = 120
 
-
-# ─────────────────────────────────────────────────────────────
-# 公开接口
-# ─────────────────────────────────────────────────────────────
 
 async def process_heartbeat(
     body: HeartbeatRequest,
@@ -76,27 +60,30 @@ async def process_heartbeat(
     main_db: AsyncSession,
     redis: aioredis.Redis,
 ) -> HeartbeatResponse:
-    """
-    处理安卓脚本的心跳上报。
-
-    执行步骤：
-      1. 通过 code_name 查找游戏项目，取得 game_id
-      2. 校验上报的设备已绑定到当前用户 + 当前项目（防止跨项目伪造上报）
-      3. 将心跳数据写入 Redis（TTL=120s，超时自动判定为离线）
-      4. 立即返回 200，不等待落库
-    """
     game_project = await _get_game_project(main_db, game_project_code)
     await _assert_active_authorization(
         db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
     )
-    await _assert_device_bound(
+    binding = await _get_active_binding(
         db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
         device_fingerprint=body.device_fingerprint,
     )
+    if not binding:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="设备未绑定到当前项目，拒绝上报",
+        )
+
+    if body.device_id is not None:
+        binding.device_id = body.device_id
+    if body.connection_type is not None:
+        binding.connection_type = body.connection_type
+    if body.connection_label is not None:
+        binding.connection_label = body.connection_label
 
     now_ts = datetime.now(timezone.utc)
     payload = {
@@ -105,6 +92,9 @@ async def process_heartbeat(
         "game_data": body.game_data,
         "user_id": current_user.id,
         "game_id": game_project.id,
+        "device_id": binding.device_id,
+        "connection_type": binding.connection_type,
+        "connection_label": binding.connection_label,
     }
     await set_heartbeat(
         redis=redis,
@@ -122,14 +112,6 @@ async def get_device_list(
     main_db: AsyncSession,
     redis: aioredis.Redis,
 ) -> DeviceListResponse:
-    """
-    拉取当前用户在当前游戏项目下的所有设备状态。
-
-    数据源（三层兑退，D2 决策）：
-      第 1 层：Redis 心跳（实时，安卓每 30s 上报）
-      第 2 层：游戏库 device_runtime 表（历史落库数据）
-      第 3 层：主库 DeviceBinding 表（登录时就建立，即使还没发心跳也能显示）
-    """
     game_project = await _get_game_project(main_db, game_project_code)
     await _assert_active_authorization(
         db=main_db,
@@ -137,48 +119,47 @@ async def get_device_list(
         game_project_id=game_project.id,
     )
 
-    # 层 1：Redis 在线设备
     online_hbs = await get_user_heartbeats(redis, game_project.id, current_user.id)
-    online_device_ids: set[str] = set()
+    online_device_fingerprints: set[str] = set()
     devices: list[DeviceStatus] = []
 
     for hb in online_hbs:
         data = hb["data"]
         last_seen_ts = data.get("last_seen", 0)
         devices.append(DeviceStatus(
-            device_id=hb["device_fp"],
+            device_fingerprint=hb["device_fp"],
+            device_id=data.get("device_id"),
+            connection_type=data.get("connection_type"),
+            connection_label=data.get("connection_label"),
             user_id=current_user.id,
             status=data.get("status"),
             last_seen=datetime.fromtimestamp(last_seen_ts, tz=timezone.utc) if last_seen_ts else None,
             game_data=data.get("game_data"),
             is_online=True,
         ))
-        online_device_ids.add(hb["device_fp"])
+        online_device_fingerprints.add(hb["device_fp"])
 
-    # 层 2：游戏库离线设备
     offline_from_game_db = await _get_offline_devices_from_db(
         game_project_code=game_project_code,
         user_id=current_user.id,
-        exclude_device_ids=online_device_ids,
+        exclude_device_fingerprints=online_device_fingerprints,
     )
     for d in offline_from_game_db:
-        online_device_ids.add(d.device_id)   # 避免主库层重复
+        online_device_fingerprints.add(d.device_fingerprint)
     devices.extend(offline_from_game_db)
 
-    # 层 3：主库 DeviceBinding（登录时就创建，无心跳也展示）
-    # 只补充 Redis + 游戏库都没有的设备
     main_bindings = await _get_devices_from_main_db(
         main_db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
-        exclude_device_ids=online_device_ids,
+        exclude_device_fingerprints=online_device_fingerprints,
     )
     devices.extend(main_bindings)
 
     return DeviceListResponse(
         devices=devices,
         total=len(devices),
-        online_count=len(online_device_ids),
+        online_count=len(online_device_fingerprints),
     )
 
 
@@ -189,26 +170,24 @@ async def get_device_data(
     main_db: AsyncSession,
     redis: aioredis.Redis,
 ) -> DeviceDataResponse:
-    """
-    拉取单台设备的运行时数据详情。
-
-    优先读 Redis（实时），Redis 无数据时回落到游戏库（最后一次落库数据）。
-    若两处都没有数据，返回 source="not_found"。
-    """
     game_project = await _get_game_project(main_db, game_project_code)
     await _assert_active_authorization(
         db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
     )
-    await _assert_device_bound(
+    binding = await _get_active_binding(
         db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
         device_fingerprint=device_fingerprint,
     )
+    if not binding:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="设备未绑定到当前项目，拒绝上报",
+        )
 
-    # 先查 Redis
     cached = await get_heartbeat(
         redis=redis,
         game_id=game_project.id,
@@ -218,7 +197,10 @@ async def get_device_data(
     if cached:
         last_seen_ts = cached.get("last_seen", 0)
         return DeviceDataResponse(
-            device_id=device_fingerprint,
+            device_fingerprint=device_fingerprint,
+            device_id=cached.get("device_id", binding.device_id),
+            connection_type=cached.get("connection_type", binding.connection_type),
+            connection_label=cached.get("connection_label", binding.connection_label),
             user_id=current_user.id,
             status=cached.get("status"),
             last_seen=datetime.fromtimestamp(last_seen_ts, tz=timezone.utc) if last_seen_ts else None,
@@ -227,7 +209,6 @@ async def get_device_data(
             source="redis",
         )
 
-    # Redis 无数据，回落游戏库
     db_record = await _get_device_runtime_from_db(
         game_project_code=game_project_code,
         user_id=current_user.id,
@@ -235,7 +216,10 @@ async def get_device_data(
     )
     if db_record:
         return DeviceDataResponse(
+            device_fingerprint=db_record.device_fingerprint,
             device_id=db_record.device_id,
+            connection_type=db_record.connection_type,
+            connection_label=db_record.connection_label,
             user_id=db_record.user_id,
             status=db_record.status,
             last_seen=db_record.last_seen,
@@ -245,7 +229,10 @@ async def get_device_data(
         )
 
     return DeviceDataResponse(
-        device_id=device_fingerprint,
+        device_fingerprint=device_fingerprint,
+        device_id=binding.device_id,
+        connection_type=binding.connection_type,
+        connection_label=binding.connection_label,
         user_id=current_user.id,
         status=None,
         last_seen=None,
@@ -253,11 +240,6 @@ async def get_device_data(
         is_online=False,
         source="not_found",
     )
-
-
-# ─────────────────────────────────────────────────────────────
-# 内部辅助函数
-# ─────────────────────────────────────────────────────────────
 
 
 async def _assert_active_authorization(
@@ -290,16 +272,12 @@ async def _assert_active_authorization(
             )
 
 
-async def _assert_device_bound(
+async def _get_active_binding(
     db: AsyncSession,
     user_id: int,
     game_project_id: int,
     device_fingerprint: str,
-) -> None:
-    """
-    校验设备已绑定到当前用户和当前项目。
-    防止用户伪造其他设备或跨项目上报心跳。
-    """
+) -> DeviceBinding | None:
     result = await db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == user_id,
@@ -308,23 +286,16 @@ async def _assert_device_bound(
             DeviceBinding.status == "active",
         )
     )
-    if not result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="设备未绑定到当前项目，拒绝上报",
-        )
+    return result.scalar_one_or_none()
 
 
 async def _get_offline_devices_from_db(
     game_project_code: str,
     user_id: int,
-    exclude_device_ids: set[str],
+    exclude_device_fingerprints: set[str],
 ) -> list[DeviceStatus]:
-    """
-    从游戏库中查询当前用户的离线设备记录（已在 Redis 中的在线设备排除在外）。
-    """
     try:
-        _get_game_engine(game_project_code)  # 确保引擎已创建
+        _get_game_engine(game_project_code)
         async with _game_session_factories[game_project_code]() as session:
             result = await session.execute(
                 select(DeviceRuntime).where(
@@ -335,9 +306,12 @@ async def _get_offline_devices_from_db(
 
         offline = []
         for rec in records:
-            if rec.device_id not in exclude_device_ids:
+            if rec.device_fingerprint not in exclude_device_fingerprints:
                 offline.append(DeviceStatus(
+                    device_fingerprint=rec.device_fingerprint,
                     device_id=rec.device_id,
+                    connection_type=rec.connection_type,
+                    connection_label=rec.connection_label,
                     user_id=rec.user_id,
                     status=rec.status or "offline",
                     last_seen=rec.last_seen,
@@ -347,7 +321,6 @@ async def _get_offline_devices_from_db(
         return offline
 
     except Exception as exc:
-        # 游戏库尚未初始化或连接失败时，优雅降级：只返回 Redis 的在线数据
         logger.warning("游戏库离线设备查询失败 (%s): %s", game_project_code, exc)
         return []
 
@@ -357,20 +330,24 @@ async def _get_device_runtime_from_db(
     user_id: int,
     device_fingerprint: str,
 ) -> DeviceRuntime | None:
-    """从游戏库查询当前用户单台设备的历史运行数据。"""
     try:
         _get_game_engine(game_project_code)
         async with _game_session_factories[game_project_code]() as session:
             result = await session.execute(
                 select(DeviceRuntime).where(
                     DeviceRuntime.user_id == user_id,
-                    DeviceRuntime.device_id == device_fingerprint,
+                    DeviceRuntime.device_fingerprint == device_fingerprint,
                 )
             )
             return result.scalar_one_or_none()
     except Exception as exc:
-        logger.warning("游戏库设备运行时查询失败 (%s, uid=%s, fp=%s): %s",
-                       game_project_code, user_id, mask_device_fingerprint(device_fingerprint), exc)
+        logger.warning(
+            "游戏库设备运行时查询失败 (%s, uid=%s, fp=%s): %s",
+            game_project_code,
+            user_id,
+            mask_device_fingerprint(device_fingerprint),
+            exc,
+        )
         return None
 
 
@@ -378,14 +355,8 @@ async def _get_devices_from_main_db(
     main_db: AsyncSession,
     user_id: int,
     game_project_id: int,
-    exclude_device_ids: set[str],
+    exclude_device_fingerprints: set[str],
 ) -> list[DeviceStatus]:
-    """
-    第三层兜底：从主库 DeviceBinding 表查询用户的设备绑定记录。
-
-    登录时就会创建 DeviceBinding，所以即使还没有心跳，
-    也能展示已绑定的设备列表（状态显示为离线）。
-    """
     result = await main_db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == user_id,
@@ -399,9 +370,8 @@ async def _get_devices_from_main_db(
     offline_threshold = timedelta(seconds=_OFFLINE_THRESHOLD_SECONDS)
     devices = []
     for b in bindings:
-        if b.device_fingerprint in exclude_device_ids:
+        if b.device_fingerprint in exclude_device_fingerprints:
             continue
-        # 用 last_seen_at 判断心跳是否在线
         is_online = False
         if b.last_seen_at:
             lsa = b.last_seen_at
@@ -409,10 +379,13 @@ async def _get_devices_from_main_db(
                 lsa = lsa.replace(tzinfo=timezone.utc)
             is_online = (now - lsa) <= offline_threshold
         if is_online:
-            exclude_device_ids.add(b.device_fingerprint)  # 勿重计在线数
+            exclude_device_fingerprints.add(b.device_fingerprint)
 
         devices.append(DeviceStatus(
-            device_id=b.device_fingerprint,
+            device_fingerprint=b.device_fingerprint,
+            device_id=b.device_id,
+            connection_type=b.connection_type,
+            connection_label=b.connection_label,
             user_id=b.user_id,
             status="idle" if is_online else "offline",
             last_seen=b.last_seen_at,
@@ -420,53 +393,3 @@ async def _get_devices_from_main_db(
             is_online=is_online,
         ))
     return devices
-
-
-async def upload_imsi(
-    body: ImsiUploadRequest,
-    current_user: User,
-    game_project_code: str,
-    db: AsyncSession,
-) -> ImsiUploadResponse:
-    """
-    登录成功后上传设备 IMSI 码（T027，接入契约 §8）。
-
-    设备必须已绑定到当前用户和当前项目，不允许为未绑定设备上传 IMSI。
-    IMSI 不参与登录验证，仅作为辅助标识存储。
-
-    存储规则:
-      - imsi 列：Fernet 密文（可解密反查）
-      - imsi_hash 列：HMAC-SHA256 哈希（非明文关联排障与加密反查索引）
-    """
-    game_project = await _get_game_project(db, game_project_code)
-    await _assert_active_authorization(
-        db=db,
-        user_id=current_user.id,
-        game_project_id=game_project.id,
-    )
-    result = await db.execute(
-        select(DeviceBinding).where(
-            DeviceBinding.user_id == current_user.id,
-            DeviceBinding.game_project_id == game_project.id,
-            DeviceBinding.device_fingerprint == body.device_fingerprint,
-            DeviceBinding.status == "active",
-        )
-    )
-    binding = result.scalar_one_or_none()
-    if not binding:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="设备未绑定到当前项目，无法上传 IMSI",
-        )
-
-    binding.imsi = encrypt_field(body.imsi)
-    binding.imsi_hash = hash_sensitive_value(body.imsi)
-    await db.flush()
-
-    return ImsiUploadResponse(
-        message="IMSI 上传成功",
-        device_fingerprint_masked=mask_device_fingerprint(body.device_fingerprint),
-        device_fingerprint_hash=hash_sensitive_value(body.device_fingerprint),
-        imsi_masked=mask_imsi(body.imsi),
-        imsi_hash=hash_sensitive_value(body.imsi),
-    )

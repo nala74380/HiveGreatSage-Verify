@@ -287,6 +287,15 @@ const normalizeProjectList = (projects = []) =>
     display_name: projectDisplayName(p),
   }))
 
+const normalizeScopeAgentRow = (row) => ({
+  ...row,
+  business_profile: row.business_profile || null,
+  balance: row.balance || null,
+  authorized_projects: normalizeProjectList(
+    row.authorized_projects || row.project_auths || [],
+  ),
+})
+
 const riskStatusText = (status) => ({
   normal: '正常',
   watch: '观察',
@@ -401,12 +410,7 @@ const loadAgents = async () => {
         )
       }
 
-      agents.value = rows.map((row) => ({
-        ...row,
-        authorized_projects: normalizeProjectList(
-          row.authorized_projects || row.project_auths || [],
-        ),
-      }))
+      agents.value = rows.map(normalizeScopeAgentRow)
     }
   } finally {
     loading.value = false

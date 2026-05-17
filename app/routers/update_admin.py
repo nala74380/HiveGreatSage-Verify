@@ -47,8 +47,8 @@ from app.core.redis_client import get_redis
 from app.core.request_context import get_request_id
 from app.core.storage import get_storage
 from app.database import get_main_db
-from app.models.main.models import Admin, GameProject, VersionRecord
-from app.services.audit_service import create_audit_log
+from app.models.main.models import Admin, VersionRecord
+from app.services.update_service import publish_version_package
 
 router = APIRouter()
 
@@ -129,8 +129,6 @@ async def _write_upload_to_temp_file(file: UploadFile) -> tuple[Path, str, int]:
         raise
 
 
-# ── 上传发布 ──────────────────────────────────────────────────
-
 @router.post(
     "/{project_id}/{client_type}",
     status_code=201,
@@ -151,122 +149,17 @@ async def upload_version_endpoint(
     发布热更新包（管理员专用，multipart/form-data）。
     支持游戏项目和普通验证项目。
     """
-    project = await _get_project_or_404(project_id, db)
-
-    # 校验文件扩展名
-    if not file.filename:
-        raise HTTPException(status_code=422, detail="文件名不能为空")
-
-    original_filename = _safe_filename(file.filename)
-    ext = "." + original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
-    allowed_extensions = _ALLOWED_EXTENSIONS_BY_CLIENT[client_type]
-    if ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=422,
-            detail=f"不支持的 {client_type} 包格式 '{ext}'，允许：{', '.join(sorted(allowed_extensions))}",
-        )
-
-    request_id = get_request_id()
-    temp_path, checksum, file_size = await _write_upload_to_temp_file(file)
-    package_path = f"{project.code_name}/{client_type}/packages/{version}/{original_filename}"
-    storage = get_storage()
-    saved_path: str | None = None
-
-    try:
-        saved_path = await storage.save_file_from_path(source_path=temp_path, path=package_path)
-
-        # 幂等：先查同版本，再归档旧活跃版本。
-        existing_result = await db.execute(
-            select(VersionRecord).where(
-                VersionRecord.game_project_id == project_id,
-                VersionRecord.client_type == client_type,
-                VersionRecord.version == version,
-            )
-        )
-        existing = existing_result.scalar_one_or_none()
-        is_republish = existing is not None
-
-        await db.execute(
-            update(VersionRecord)
-            .where(
-                VersionRecord.game_project_id == project_id,
-                VersionRecord.client_type == client_type,
-                VersionRecord.is_active == True,
-            )
-            .values(is_active=False)
-        )
-
-        if existing:
-            existing.package_path = saved_path
-            existing.checksum_sha256 = checksum
-            existing.release_notes = release_notes
-            existing.force_update = force_update
-            existing.is_active = True
-            existing.released_at = datetime.now(timezone.utc)
-            existing.released_by_admin_id = current_admin.id
-            existing.original_filename = original_filename
-            existing.file_size = file_size
-            existing.request_id = request_id
-            await db.flush()
-            record = existing
-            msg = f"版本 {version} 已重新发布"
-        else:
-            record = VersionRecord(
-                game_project_id=project_id,
-                client_type=client_type,
-                version=version,
-                package_path=saved_path,
-                checksum_sha256=checksum,
-                release_notes=release_notes,
-                force_update=force_update,
-                is_active=True,
-                released_by_admin_id=current_admin.id,
-                original_filename=original_filename,
-                file_size=file_size,
-                request_id=request_id,
-            )
-            db.add(record)
-            await db.flush()
-            msg = f"版本 {version} 发布成功"
-
-        await create_audit_log(
-            db=db,
-            actor_type="admin",
-            actor_id=current_admin.id,
-            action="update.publish",
-            target_type="version_record",
-            target_id=record.id,
-            summary=f"发布热更新 {project.code_name}/{client_type} v{version}",
-            metadata={
-                "game_project_id": project.id,
-                "game_project_code": project.code_name,
-                "client_type": client_type,
-                "version": version,
-                "force_update": force_update,
-                "is_republish": is_republish,
-                "original_filename": original_filename,
-                "file_size": file_size,
-                "checksum_sha256": checksum,
-                "package_path": saved_path,
-            },
-            request_id=request_id,
-        )
-
-        # 主动清除 Redis 版本缓存（game 项目的客户端检查缓存）
-        cache_key = f"update:latest:{project.code_name}:{client_type}"
-        await redis.delete(cache_key)
-
-        return {**_record_to_dict(record, project.code_name), "message": msg}
-    except Exception:
-        if saved_path:
-            try:
-                await storage.delete_file(saved_path)
-            except Exception:
-                pass
-        raise
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+    return await publish_version_package(
+        project_id=project_id,
+        client_type=client_type,
+        version=version,
+        force_update=force_update,
+        release_notes=release_notes,
+        file=file,
+        current_admin=current_admin,
+        db=db,
+        redis=redis,
+    )
 
 
 # ── 查询 ──────────────────────────────────────────────────────

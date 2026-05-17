@@ -60,6 +60,8 @@ r"""
     已知问题: 无
 """
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,8 +73,9 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.redis_client import get_all_heartbeats_for_game
 from app.core.utils import get_agent_scope_ids
-from app.models.main.models import Admin, Agent, AgentProjectAuth, GameProject, User
+from app.models.main.models import Admin, Agent, AgentProjectAuth, Authorization, GameProject, User
 from app.schemas.agent import (
     AdminLoginRequest,
     AdminLoginResponse,
@@ -86,6 +89,13 @@ from app.schemas.agent import (
     AgentTreeNode,
     AgentUpdateRequest,
 )
+from app.schemas.agent_me import (
+    AgentMeParentResponse,
+    AgentMeProjectResponse,
+    AgentMeResponse,
+)
+from app.services.accounting_service import get_agent_balance
+from app.services.agent_profile_service import get_agent_business_profile_summary
 
 
 # ─────────────────────────────────────────────────────────────
@@ -261,6 +271,91 @@ async def get_agent(
     return await _agent_to_response(agent, db)
 
 
+async def get_agent_me_summary(
+    agent: Agent,
+    db: AsyncSession,
+) -> AgentMeResponse:
+    """查询代理资料与轻量业务能力摘要（/api/agents/me）。"""
+    user_stats = await _get_agent_user_stats(agent.id, db)
+    profile = await get_agent_business_profile_summary(agent_id=agent.id, db=db)
+    authorized_projects = await _get_agent_me_authorized_projects(agent.id, db)
+    parent_agent = await _get_agent_parent_summary(agent.parent_agent_id, db)
+
+    return AgentMeResponse(
+        id=agent.id,
+        username=agent.username,
+        hierarchy_depth=int(agent.hierarchy_depth),
+        status=agent.status,
+        created_at=agent.created_at,
+        updated_at=agent.updated_at,
+        commission_rate=float(agent.commission_rate) if agent.commission_rate is not None else None,
+        parent_agent=parent_agent,
+        users_total=user_stats["users_total"],
+        users_active=user_stats["users_active"],
+        users_suspended=user_stats["users_suspended"],
+        authorized_projects=authorized_projects,
+        tier_level=profile["tier_level"],
+        tier_name=profile["tier_name"],
+        risk_status=profile["risk_status"],
+        remark=profile.get("remark"),
+        credit_limit=profile["credit_limit"],
+        max_credit_limit=profile["max_credit_limit"],
+        credit_limit_override=profile.get("credit_limit_override"),
+        max_credit_limit_override=profile.get("max_credit_limit_override"),
+        can_create_sub_agents=profile["can_create_sub_agents"],
+        max_sub_agents=profile["max_sub_agents"],
+        can_create_sub_agents_override=profile.get("can_create_sub_agents_override"),
+        max_sub_agents_override=profile.get("max_sub_agents_override"),
+        can_auto_open_project=profile["can_auto_open_project"],
+        auto_open_project_limit=profile["auto_open_project_limit"],
+        review_priority=profile["review_priority"],
+    )
+
+
+async def get_agent_dashboard_summary(
+    agent: Agent,
+    db: AsyncSession,
+    redis,
+) -> dict:
+    """查询代理端工作台聚合摘要（/api/agents/me/dashboard）。"""
+    profile = await get_agent_business_profile_summary(agent_id=agent.id, db=db)
+    wallet = await get_agent_balance(agent.id, db)
+    user_stats = await _get_agent_user_stats(agent.id, db)
+    projects = await _get_agent_dashboard_projects(agent.id, db)
+    online_count = await _get_agent_dashboard_online_devices(
+        projects=projects,
+        agent_id=agent.id,
+        db=db,
+        redis=redis,
+    )
+    expiring_auths = await _get_agent_dashboard_expiring_auths(agent.id, db)
+    sub_agents, sub_expiring_auths = await _get_agent_dashboard_subtree_sections(
+        agent=agent,
+        profile=profile,
+        db=db,
+    )
+
+    return {
+        "agent": {
+            "username": agent.username,
+            "hierarchy_depth": int(agent.hierarchy_depth),
+            "tier_level": profile.get("tier_level", 1),
+            "tier_name": profile.get("tier_name", ""),
+            "risk_status": profile.get("risk_status", "normal"),
+        },
+        "wallet": wallet,
+        "users": {
+            "total": user_stats["users_total"],
+            "active": user_stats["users_active"],
+        },
+        "online_devices": online_count,
+        "projects": projects,
+        "expiring_auths": expiring_auths,
+        "sub_agents": sub_agents,
+        "sub_expiring_auths": sub_expiring_auths,
+    }
+
+
 async def update_agent(
     agent_id: int,
     body: AgentUpdateRequest,
@@ -423,6 +518,25 @@ async def list_agents_in_scope(
     )
 
 
+async def get_agent_scope_list_enriched(
+    *,
+    scope_agent_id: int,
+    db: AsyncSession,
+    page: int,
+    page_size: int,
+    status_filter: str | None = None,
+) -> dict:
+    """查询代理端权限范围超级列表，并补齐展示增强字段。"""
+    result = await list_agents_in_scope(
+        scope_agent_id=scope_agent_id,
+        db=db,
+        page=page,
+        page_size=page_size,
+        status_filter=status_filter,
+    )
+    return await _enrich_scope_agent_list(db=db, result=result)
+
+
 # ─────────────────────────────────────────────────────────────
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
@@ -488,6 +602,357 @@ async def _agent_to_response(
         users_count=users_count,
         authorized_projects=project_map.get(agent.id, []),
     )
+
+
+async def _get_agent_user_stats(
+    agent_id: int,
+    db: AsyncSession,
+) -> dict[str, int]:
+    users_total = (
+        await db.execute(
+            select(func.count(User.id)).where(
+                User.created_by_agent_id == agent_id
+            )
+        )
+    ).scalar_one()
+
+    users_active = (
+        await db.execute(
+            select(func.count(User.id)).where(
+                User.created_by_agent_id == agent_id,
+                User.status == "active",
+            )
+        )
+    ).scalar_one()
+
+    users_suspended = (
+        await db.execute(
+            select(func.count(User.id)).where(
+                User.created_by_agent_id == agent_id,
+                User.status == "suspended",
+            )
+        )
+    ).scalar_one()
+
+    return {
+        "users_total": int(users_total or 0),
+        "users_active": int(users_active or 0),
+        "users_suspended": int(users_suspended or 0),
+    }
+
+
+async def _get_agent_me_authorized_projects(
+    agent_id: int,
+    db: AsyncSession,
+) -> list[AgentMeProjectResponse]:
+    proj_result = await db.execute(
+        select(AgentProjectAuth, GameProject)
+        .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
+        .where(
+            AgentProjectAuth.agent_id == agent_id,
+            AgentProjectAuth.status == "active",
+            GameProject.is_active == True,  # noqa: E712
+        )
+        .order_by(GameProject.display_name)
+    )
+
+    now = datetime.now(tz=timezone.utc)
+    authorized_projects: list[AgentMeProjectResponse] = []
+
+    for auth, project in proj_result.all():
+        valid_until = auth.valid_until
+        if valid_until is not None and valid_until.tzinfo is None:
+            valid_until = valid_until.replace(tzinfo=timezone.utc)
+
+        authorized_projects.append(
+            AgentMeProjectResponse(
+                id=project.id,
+                display_name=project.display_name,
+                game_project_code=project.code_name,
+                project_type=project.project_type,
+                valid_until=valid_until,
+                is_expired=valid_until is not None and valid_until <= now,
+            )
+        )
+
+    return authorized_projects
+
+
+async def _get_agent_parent_summary(
+    parent_agent_id: int | None,
+    db: AsyncSession,
+) -> AgentMeParentResponse | None:
+    if not parent_agent_id:
+        return None
+
+    parent = await db.get(Agent, parent_agent_id)
+    if not parent:
+        return None
+
+    return AgentMeParentResponse(
+        id=parent.id,
+        username=parent.username,
+        hierarchy_depth=int(parent.hierarchy_depth),
+    )
+
+
+async def _get_agent_dashboard_projects(
+    agent_id: int,
+    db: AsyncSession,
+) -> list[dict]:
+    proj_result = await db.execute(
+        select(AgentProjectAuth, GameProject)
+        .join(GameProject, AgentProjectAuth.project_id == GameProject.id)
+        .where(
+            AgentProjectAuth.agent_id == agent_id,
+            AgentProjectAuth.status == "active",
+        )
+        .order_by(GameProject.display_name)
+    )
+
+    direct_user_ids_result = await db.execute(
+        select(User.id).where(User.created_by_agent_id == agent_id)
+    )
+    direct_user_ids = direct_user_ids_result.scalars().all()
+
+    projects: list[dict] = []
+    for _auth, project in proj_result.all():
+        user_count = (await db.execute(
+            select(func.count(Authorization.id)).where(
+                Authorization.game_project_id == project.id,
+                Authorization.status == "active",
+                Authorization.user_id.in_(direct_user_ids),
+            )
+        )).scalar_one()
+        projects.append({
+            "project_id": project.id,
+            "code": project.code_name,
+            "display": project.display_name,
+            "user_count": int(user_count or 0),
+            "online": 0,
+        })
+
+    return projects
+
+
+async def _get_agent_dashboard_online_devices(
+    *,
+    projects: list[dict],
+    agent_id: int,
+    db: AsyncSession,
+    redis,
+) -> int:
+    direct_user_ids_result = await db.execute(
+        select(User.id).where(User.created_by_agent_id == agent_id)
+    )
+    direct_user_ids = set(direct_user_ids_result.scalars().all())
+
+    online_count = 0
+    for project in projects:
+        heartbeats = await get_all_heartbeats_for_game(redis, project["project_id"])
+        project_online = sum(1 for hb in heartbeats if hb["user_id"] in direct_user_ids)
+        project["online"] = project_online
+        online_count += project_online
+
+    return online_count
+
+
+async def _get_agent_dashboard_expiring_auths(
+    agent_id: int,
+    db: AsyncSession,
+) -> list[dict]:
+    now = datetime.now(tz=timezone.utc)
+    week_later = now + timedelta(days=7)
+    expiring_result = await db.execute(
+        select(Authorization, User, GameProject)
+        .join(User, Authorization.user_id == User.id)
+        .join(GameProject, Authorization.game_project_id == GameProject.id)
+        .where(
+            Authorization.status == "active",
+            Authorization.valid_until.is_not(None),
+            Authorization.valid_until > now,
+            Authorization.valid_until <= week_later,
+            User.created_by_agent_id == agent_id,
+        )
+        .order_by(Authorization.valid_until.asc())
+        .limit(5)
+    )
+    return [
+        {
+            "user": user.username,
+            "level": auth.user_level,
+            "project": project.display_name,
+            "days": max(1, (auth.valid_until - now).days + 1),
+        }
+        for auth, user, project in expiring_result.all()
+    ]
+
+
+async def _get_agent_dashboard_subtree_sections(
+    *,
+    agent: Agent,
+    profile: dict,
+    db: AsyncSession,
+) -> tuple[dict, list[dict]]:
+    sub_agents = {"can_create": profile.get("can_create_sub_agents", False), "list": []}
+    sub_expiring: list[dict] = []
+
+    if not profile.get("can_create_sub_agents"):
+        return sub_agents, sub_expiring
+
+    scope_ids = await get_all_agent_ids_in_subtree(agent.id, db)
+    sub_scope_ids = [scope_id for scope_id in scope_ids if scope_id != agent.id]
+
+    if sub_scope_ids:
+        sub_result = await db.execute(
+            select(Agent).where(Agent.id.in_(sub_scope_ids)).order_by(Agent.hierarchy_depth, Agent.id)
+        )
+        for sub in sub_result.scalars().all():
+            sub_wallet = await get_agent_balance(sub.id, db)
+            sub_users_result = await db.execute(
+                select(func.count(User.id)).where(User.created_by_agent_id == sub.id)
+            )
+            sub_profile = await get_agent_business_profile_summary(agent_id=sub.id, db=db)
+            sub_agents["list"].append({
+                "id": sub.id,
+                "username": sub.username,
+                "hierarchy_depth": int(sub.hierarchy_depth),
+                "tier_level": sub_profile.get("tier_level", 1),
+                "tier_name": sub_profile.get("tier_name", "Lv.1"),
+                "users": int(sub_users_result.scalar_one() or 0),
+                "balance": sub_wallet.get("available_total", 0),
+                "is_direct": sub.parent_agent_id == agent.id,
+            })
+
+        now = datetime.now(tz=timezone.utc)
+        week_later = now + timedelta(days=7)
+        sub_exp_result = await db.execute(
+            select(Authorization, User, GameProject, Agent)
+            .join(User, Authorization.user_id == User.id)
+            .join(GameProject, Authorization.game_project_id == GameProject.id)
+            .join(Agent, User.created_by_agent_id == Agent.id)
+            .where(
+                Authorization.status == "active",
+                Authorization.valid_until.is_not(None),
+                Authorization.valid_until > now,
+                Authorization.valid_until <= week_later,
+                User.created_by_agent_id.in_(sub_scope_ids),
+            )
+            .order_by(Authorization.valid_until.asc())
+            .limit(5)
+        )
+        sub_expiring = [
+            {
+                "user": user.username,
+                "level": auth.user_level,
+                "project": project.display_name,
+                "agent": sub_agent.username,
+                "days": max(1, (auth.valid_until - now).days + 1),
+            }
+            for auth, user, project, sub_agent in sub_exp_result.all()
+        ]
+
+    return sub_agents, sub_expiring
+
+
+async def _enrich_scope_agent_list(
+    *,
+    db: AsyncSession,
+    result: AgentFlatListResponse,
+) -> dict:
+    """
+    为代理端超级列表补齐业务画像、余额、授权项目直属用户数。
+
+    返回 dict 而不是 AgentFlatListResponse，避免 response_model 过滤增强字段。
+    """
+    data = result.model_dump(mode="json")
+
+    for item in data.get("agents", []):
+        agent_id = int(item["id"])
+        item["business_profile"] = await get_agent_business_profile_summary(
+            agent_id=agent_id,
+            db=db,
+        )
+        item["balance"] = await get_agent_balance(agent_id, db)
+
+    data = await _fill_scope_authorized_project_user_counts(
+        db=db,
+        data=data,
+    )
+
+    return data
+
+
+async def _fill_scope_authorized_project_user_counts(
+    *,
+    db: AsyncSession,
+    data: dict,
+) -> dict:
+    """
+    回填代理端 scope/list 的 authorized_projects[].user_count。
+
+    统计口径：
+      - User.created_by_agent_id = 代理 ID
+      - User.is_deleted = False
+      - Authorization.status = active
+      - Authorization.game_project_id = 项目 ID
+    """
+    agents = data.get("agents") or []
+    agent_ids = [
+        int(item["id"])
+        for item in agents
+        if item.get("id") is not None
+    ]
+
+    if not agent_ids:
+        return data
+
+    count_result = await db.execute(
+        select(
+            User.created_by_agent_id,
+            Authorization.game_project_id,
+            func.count(Authorization.id),
+        )
+        .join(Authorization, Authorization.user_id == User.id)
+        .where(
+            User.created_by_agent_id.in_(agent_ids),
+            User.is_deleted == False,  # noqa: E712
+            Authorization.status == "active",
+        )
+        .group_by(User.created_by_agent_id, Authorization.game_project_id)
+    )
+
+    count_map = {
+        (int(agent_id), int(project_id)): int(count)
+        for agent_id, project_id, count in count_result.all()
+        if agent_id is not None and project_id is not None
+    }
+
+    for item in agents:
+        agent_id = item.get("id")
+        if agent_id is None:
+            continue
+
+        projects = item.get("authorized_projects") or []
+        item["authorized_projects"] = projects
+
+        for project in projects:
+            project_id = (
+                project.get("project_id")
+                or project.get("id")
+                or project.get("game_project_id")
+            )
+
+            if project_id is None:
+                project["user_count"] = 0
+                continue
+
+            project["user_count"] = count_map.get(
+                (int(agent_id), int(project_id)),
+                0,
+            )
+
+    return data
 
 
 async def _fetch_subtree_flat(

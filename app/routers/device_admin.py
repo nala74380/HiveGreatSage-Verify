@@ -344,9 +344,8 @@ def _device_response(
     return {
         "binding_id": binding.id,
         "device_id": None,
-        "device_fingerprint": None,
-        "device_fingerprint_masked": mask_device_fingerprint(binding.device_fingerprint),
-        "device_fingerprint_hash": hash_sensitive_value(binding.device_fingerprint),
+        "device_id_masked": mask_device_fingerprint(binding.device_fingerprint),
+        "device_id_hash": hash_sensitive_value(binding.device_fingerprint),
         "user_id": binding.user_id,
         "username": user.username,
         "user_status": user.status,

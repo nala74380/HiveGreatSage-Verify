@@ -266,22 +266,47 @@ const agentCards = computed(() => [
 const agentUsers = ref({ total: 0, active: 0 })
 const agentDeviceCount = ref(0)
 
+const normalizeAdminDashboard = (payload = {}) => ({
+  total_users: payload.total_users || 0,
+  total_agents: payload.total_agents || 0,
+  active_projects: payload.active_projects || 0,
+  today_new_users: payload.today_new_users || 0,
+  total_points: payload.total_points || 0,
+  online_devices: payload.online_devices || 0,
+  today_accounting: payload.today_accounting || {},
+  system_health: payload.system_health || {},
+  level_distribution: payload.level_distribution || {},
+  expiring_auths: payload.expiring_auths || [],
+  active_projects_data: payload.active_projects_data || [],
+})
+
+const normalizeAgentDashboard = (payload = {}) => ({
+  agent: payload.agent || {},
+  wallet: payload.wallet || {},
+  users: payload.users || { total: 0, active: 0 },
+  online_devices: payload.online_devices || 0,
+  projects: payload.projects || [],
+  expiring_auths: payload.expiring_auths || [],
+  sub_agents: payload.sub_agents || { can_create: false, list: [] },
+  sub_expiring_auths: payload.sub_expiring_auths || [],
+})
+
 const loadAllStats = async () => {
   try {
     if (auth.isAdmin) {
       const res = await agentApi.dashboard()
-      const d = res.data
+      const d = normalizeAdminDashboard(res.data)
 
       stats.value = { total_users: d.total_users, total_agents: d.total_agents, active_projects: d.active_projects }
       statsLoaded.value = true
-      todayNewUsers.value = d.today_new_users || 0
-      totalPoints.value = d.total_points || 0
-      onlineDevices.value = d.online_devices || 0
-      todayAccounting.value = d.today_accounting || {}
-      systemHealth.value = d.system_health || {}
+      todayNewUsers.value = d.today_new_users
+      totalPoints.value = d.total_points
+      onlineDevices.value = d.online_devices
+      todayAccounting.value = d.today_accounting
+      systemHealth.value = d.system_health
 
       levelLoading.value = true
-      const dist = d.level_distribution || {}
+      const dist = d.level_distribution
       const levels = ['trial', 'normal', 'vip', 'svip', 'tester']
       const counts = levels.map(l => dist[l] || 0)
       const total = counts.reduce((a, b) => a + b, 0)
@@ -292,25 +317,20 @@ const loadAllStats = async () => {
       }))
       levelLoading.value = false
 
-      expiringAuths.value = d.expiring_auths || []
-
-      if (d.active_projects_data) {
-        projectList.value = d.active_projects_data
-      } else {
-        projectList.value = []
-      }
+      expiringAuths.value = d.expiring_auths
+      projectList.value = d.active_projects_data
     } else {
       try {
         const r = await agentApi.agentDashboard()
-        const d = r.data
-        agentProfile.value = d.agent || {}
-        agentWallet.value = d.wallet || {}
-        agentUsers.value = d.users || { total: 0, active: 0 }
-        agentDeviceCount.value = d.online_devices || 0
-        agentProjects.value = d.projects || []
-        agentExpiring.value = d.expiring_auths || []
-        agentSub.value = d.sub_agents || { can_create: false, list: [] }
-        agentSubExpiring.value = d.sub_expiring_auths || []
+        const d = normalizeAgentDashboard(r.data)
+        agentProfile.value = d.agent
+        agentWallet.value = d.wallet
+        agentUsers.value = d.users
+        agentDeviceCount.value = d.online_devices
+        agentProjects.value = d.projects
+        agentExpiring.value = d.expiring_auths
+        agentSub.value = d.sub_agents
+        agentSubExpiring.value = d.sub_expiring_auths
         statsLoaded.value = true
       } catch {}
     }

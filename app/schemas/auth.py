@@ -34,8 +34,28 @@ class LoginRequest(BaseModel):
         ...,
         min_length=8,
         max_length=256,
-        description="设备唯一标识",
+        description="设备内部稳定绑定键",
         examples=["a1b2c3d4e5f6"],
+    )
+    device_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="用户自定义设备编号（业务展示字段）",
+        examples=["A-001"],
+    )
+    connection_type: str | None = Field(
+        default=None,
+        description="连接类型：usb / tcp / unknown",
+        examples=["usb"],
+        pattern="^(usb|tcp|unknown)$",
+    )
+    connection_label: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="连接标识展示串：USB 显示 SN，TCP 显示 IP:端口",
+        examples=["SN:ABCD1234"],
     )
     client_type: str = Field(
         ...,

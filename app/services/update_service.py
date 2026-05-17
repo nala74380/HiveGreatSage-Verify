@@ -30,23 +30,168 @@ r"""
     已知问题: 无
 """
 
+import hashlib
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Literal
 
-from fastapi import HTTPException, status
-from sqlalchemy import select
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.request_context import get_request_id
 from app.core.storage import get_storage
-from app.models.main.models import GameProject, VersionRecord
+from app.core.utils import get_project_or_404
+from app.models.main.models import Admin, GameProject, VersionRecord
 from app.schemas.update import (
     UpdateCheckResponse,
     UpdateDownloadResponse,
 )
+from app.services.audit_service import create_audit_log
 
 _CACHE_KEY = "update:latest:{game_project_code}:{client_type}"
 _CACHE_TTL = 300  # 5 分钟
+_ALLOWED_EXTENSIONS_BY_CLIENT = {
+    "android": {".lrj", ".apk"},
+    "pc": {".zip", ".exe"},
+}
+_MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
+_UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
+
+
+async def publish_version_package(
+    *,
+    project_id: int,
+    client_type: Literal["pc", "android"],
+    version: str,
+    force_update: bool,
+    release_notes: str | None,
+    file: UploadFile,
+    current_admin: Admin,
+    db: AsyncSession,
+    redis,
+) -> dict:
+    """管理员上传并发布热更新包。"""
+    project = await get_project_or_404(project_id, db)
+
+    if not file.filename:
+        raise HTTPException(status_code=422, detail="文件名不能为空")
+
+    original_filename = _safe_filename(file.filename)
+    ext = "." + original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
+    allowed_extensions = _ALLOWED_EXTENSIONS_BY_CLIENT[client_type]
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=422,
+            detail=f"不支持的 {client_type} 包格式 '{ext}'，允许：{', '.join(sorted(allowed_extensions))}",
+        )
+
+    request_id = get_request_id()
+    temp_path, checksum, file_size = await _write_upload_to_temp_file(file)
+    package_path = f"{project.code_name}/{client_type}/packages/{version}/{original_filename}"
+    storage = get_storage()
+    saved_path: str | None = None
+
+    try:
+        saved_path = await storage.save_file_from_path(source_path=temp_path, path=package_path)
+
+        existing_result = await db.execute(
+            select(VersionRecord).where(
+                VersionRecord.game_project_id == project_id,
+                VersionRecord.client_type == client_type,
+                VersionRecord.version == version,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        is_republish = existing is not None
+
+        await db.execute(
+            update(VersionRecord)
+            .where(
+                VersionRecord.game_project_id == project_id,
+                VersionRecord.client_type == client_type,
+                VersionRecord.is_active == True,
+            )
+            .values(is_active=False)
+        )
+
+        if existing:
+            existing.package_path = saved_path
+            existing.checksum_sha256 = checksum
+            existing.release_notes = release_notes
+            existing.force_update = force_update
+            existing.is_active = True
+            existing.released_at = datetime.now(timezone.utc)
+            existing.released_by_admin_id = current_admin.id
+            existing.original_filename = original_filename
+            existing.file_size = file_size
+            existing.request_id = request_id
+            await db.flush()
+            record = existing
+            message = f"版本 {version} 已重新发布"
+        else:
+            record = VersionRecord(
+                game_project_id=project_id,
+                client_type=client_type,
+                version=version,
+                package_path=saved_path,
+                checksum_sha256=checksum,
+                release_notes=release_notes,
+                force_update=force_update,
+                is_active=True,
+                released_by_admin_id=current_admin.id,
+                original_filename=original_filename,
+                file_size=file_size,
+                request_id=request_id,
+            )
+            db.add(record)
+            await db.flush()
+            message = f"版本 {version} 发布成功"
+
+        await create_audit_log(
+            db=db,
+            actor_type="admin",
+            actor_id=current_admin.id,
+            action="update.publish",
+            target_type="version_record",
+            target_id=record.id,
+            summary=f"发布热更新 {project.code_name}/{client_type} v{version}",
+            metadata={
+                "game_project_id": project.id,
+                "game_project_code": project.code_name,
+                "client_type": client_type,
+                "version": version,
+                "force_update": force_update,
+                "is_republish": is_republish,
+                "original_filename": original_filename,
+                "file_size": file_size,
+                "checksum_sha256": checksum,
+                "package_path": saved_path,
+            },
+            request_id=request_id,
+        )
+
+        cache_key = _CACHE_KEY.format(
+            game_project_code=project.code_name,
+            client_type=client_type,
+        )
+        await redis.delete(cache_key)
+
+        return {**_record_to_dict(record, project.code_name), "message": message}
+    except Exception:
+        if saved_path:
+            try:
+                await storage.delete_file(saved_path)
+            except Exception:
+                pass
+        raise
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -146,6 +291,72 @@ async def get_download_url(
 # ─────────────────────────────────────────────────────────────
 # 内部辅助函数
 # ─────────────────────────────────────────────────────────────
+
+def _record_to_dict(record: VersionRecord, project_code: str) -> dict:
+    return {
+        "id": record.id,
+        "version": record.version,
+        "client_type": record.client_type,
+        "force_update": record.force_update,
+        "release_notes": record.release_notes,
+        "checksum_sha256": record.checksum_sha256,
+        "package_path": record.package_path,
+        "released_at": record.released_at.isoformat() if record.released_at else None,
+        "released_by_admin_id": record.released_by_admin_id,
+        "original_filename": record.original_filename,
+        "file_size": record.file_size,
+        "request_id": record.request_id,
+        "is_active": record.is_active,
+        "game_project_code": project_code,
+    }
+
+
+def _safe_filename(filename: str) -> str:
+    """只保留上传文件名本身，避免路径穿越。"""
+    return Path(filename).name
+
+
+async def _write_upload_to_temp_file(file: UploadFile) -> tuple[Path, str, int]:
+    """
+    分块读取 UploadFile 到本地临时文件，同时计算 SHA-256。
+
+    Returns:
+        temp_path, checksum_sha256, total_size
+
+    Raises:
+        HTTPException: 文件为空或超过大小限制。
+    """
+    hasher = hashlib.sha256()
+    total_size = 0
+    fd, temp_name = tempfile.mkstemp(prefix="hgs_update_", suffix=".upload")
+    temp_path = Path(temp_name)
+
+    try:
+        with os.fdopen(fd, "wb") as tmp:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+                if total_size > _MAX_FILE_SIZE:
+                    raise HTTPException(status_code=413, detail="文件超出 500 MB 限制")
+
+                hasher.update(chunk)
+                tmp.write(chunk)
+
+            tmp.flush()
+            os.fsync(tmp.fileno())
+
+        if total_size <= 0:
+            raise HTTPException(status_code=422, detail="文件内容为空")
+
+        return temp_path, hasher.hexdigest(), total_size
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+
 
 async def _get_active_version(
     client_type: str,

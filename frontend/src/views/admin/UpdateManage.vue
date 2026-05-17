@@ -150,7 +150,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { adminProjectApi as projectApi } from '@/api/admin/project'
-import http from '@/api/http'
+import { adminUpdateApi } from '@/api/admin/update'
 import { formatDatetime } from '@/utils/format'
 import UploadVersionForm from '@/components/common/UploadVersionForm.vue'
 
@@ -163,7 +163,6 @@ const selectedProject = computed(() =>
 
 onMounted(async () => {
   try {
-    // 加载所有已启用项目（游戏 + 验证）
     const res = await projectApi.list({ page: 1, page_size: 200, is_active: true })
     allProjects.value = res.data.projects
     if (allProjects.value.length === 1) {
@@ -187,13 +186,9 @@ const loadVersions = async () => {
   if (!selectedProjectId.value) return
   versionsLoading.value = true
   try {
-    const id = selectedProjectId.value
-    const [pcRes, androidRes] = await Promise.allSettled([
-      http.get(`/admin/api/updates/${id}/pc/latest`),
-      http.get(`/admin/api/updates/${id}/android/latest`),
-    ])
-    versions.pc      = pcRes.status      === 'fulfilled' ? pcRes.value.data      : null
-    versions.android = androidRes.status === 'fulfilled' ? androidRes.value.data : null
+    const pair = await adminUpdateApi.latestPair(selectedProjectId.value)
+    versions.pc = pair.pc
+    versions.android = pair.android
   } finally {
     versionsLoading.value = false
     loadHistory()
@@ -208,10 +203,10 @@ const loadHistory = async () => {
   if (!selectedProjectId.value) return
   historyLoading.value = true
   try {
-    const res = await http.get(
-      `/admin/api/updates/${selectedProjectId.value}/${historyClientType.value}/history`
+    versionHistory.value = await adminUpdateApi.history(
+      selectedProjectId.value,
+      historyClientType.value,
     )
-    versionHistory.value = res.data.versions ?? []
   } catch {
     versionHistory.value = []
   } finally {

@@ -873,7 +873,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminProjectApi as projectApi } from '@/api/admin/project'
 import { adminBalanceApi as balanceApi } from '@/api/admin/balance'
 import { adminProjectAccessApi } from '@/api/admin/projectAccess'
-import http from '@/api/http'
+import { adminUpdateApi } from '@/api/admin/update'
 import { formatDatetime } from '@/utils/format'
 import UploadVersionForm from '@/components/common/UploadVersionForm.vue'
 
@@ -1340,13 +1340,9 @@ const loadVersions = async () => {
   versionsLoading.value = true
 
   try {
-    const [pcRes, androidRes] = await Promise.allSettled([
-      http.get(`/admin/api/updates/${projectId.value}/pc/latest`),
-      http.get(`/admin/api/updates/${projectId.value}/android/latest`),
-    ])
-
-    versions.pc = pcRes.status === 'fulfilled' ? pcRes.value.data : null
-    versions.android = androidRes.status === 'fulfilled' ? androidRes.value.data : null
+    const pair = await adminUpdateApi.latestPair(projectId.value)
+    versions.pc = pair.pc
+    versions.android = pair.android
   } finally {
     versionsLoading.value = false
     await loadHistory()
@@ -1359,10 +1355,10 @@ const loadHistory = async () => {
   historyLoading.value = true
 
   try {
-    const res = await http.get(
-      `/admin/api/updates/${projectId.value}/${historyClientType.value}/history`,
+    versionHistory.value = await adminUpdateApi.history(
+      projectId.value,
+      historyClientType.value,
     )
-    versionHistory.value = res.data.versions ?? []
   } catch {
     versionHistory.value = []
   } finally {

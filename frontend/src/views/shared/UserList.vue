@@ -17,7 +17,7 @@
     <el-card shadow="never" class="filter-card">
       <el-form inline :model="filter">
         <el-form-item label="状态">
-          <el-select v-model="filter.status" clearable placeholder="全部" style="width: 110px">
+          <el-select v-model="filter.status" clearable placeholder="全部" style="width: 110px" @change="searchUsers">
             <el-option label="正常" value="active" />
             <el-option label="已停用" value="suspended" />
             <el-option label="已过期" value="expired" />
@@ -25,7 +25,7 @@
         </el-form-item>
 
         <el-form-item label="项目授权等级">
-          <el-select v-model="filter.level" clearable placeholder="全部" style="width: 140px">
+          <el-select v-model="filter.level" clearable placeholder="全部" style="width: 140px" @change="searchUsers">
             <el-option label="试用" value="trial" />
             <el-option label="普通" value="normal" />
             <el-option label="VIP" value="vip" />
@@ -41,6 +41,7 @@
             filterable
             placeholder="全部项目"
             style="width: 190px"
+            @change="searchUsers"
           >
             <el-option
               v-for="p in allProjects"
@@ -58,6 +59,7 @@
             filterable
             placeholder="全部代理"
             style="width: 180px"
+            @change="searchUsers"
           >
             <el-option
               v-for="ag in allAgents"
@@ -68,48 +70,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item v-if="auth.isAdmin" label="代理业务等级">
-          <el-select
-            v-model="filter.creator_agent_tier_level"
-            clearable
-            placeholder="全部"
-            style="width: 130px"
-          >
-            <el-option label="Lv.1" :value="1" />
-            <el-option label="Lv.2" :value="2" />
-            <el-option label="Lv.3" :value="3" />
-            <el-option label="Lv.4" :value="4" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item v-if="auth.isAdmin" label="可创建下级">
-          <el-select
-            v-model="filter.creator_agent_can_create_sub_agents"
-            clearable
-            placeholder="全部"
-            style="width: 130px"
-          >
-            <el-option label="可以" :value="true" />
-            <el-option label="不可以" :value="false" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item v-if="auth.isAdmin" label="代理风险状态">
-          <el-select
-            v-model="filter.creator_agent_risk_status"
-            clearable
-            placeholder="全部"
-            style="width: 150px"
-          >
-            <el-option label="正常" value="normal" />
-            <el-option label="观察" value="watch" />
-            <el-option label="受限" value="restricted" />
-            <el-option label="冻结" value="frozen" />
-          </el-select>
-        </el-form-item>
-
         <el-form-item>
-          <el-button type="primary" @click="searchUsers">查询</el-button>
           <el-button @click="resetFilter">重置</el-button>
           <el-button :icon="Refresh" :loading="loading" @click="loadUsers">刷新</el-button>
         </el-form-item>
@@ -632,31 +593,46 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="操作" width="220" fixed="right">
+            <el-table-column label="操作" width="340" fixed="right">
               <template #default="{ row }">
-                <template v-if="auth.isAgent">
-                  <el-button text size="small" @click="openAuthUpgradeDialog(row)">
-                    新增设备
-                  </el-button>
-                  <el-button text size="small" @click="openAuthRenewDialog(row)">
-                    续费
-                  </el-button>
-                  <el-button text size="small" @click="openAuthLevelDialog(row)">
-                    升级
-                  </el-button>
-                </template>
-                <el-button v-else text size="small" @click="openAuthEditDialog(row)">
-                  编辑
+                <el-button text size="small" :disabled="row.status !== 'active'" @click="openAuthUpgradeDialog(row)">
+                  新增设备
+                </el-button>
+                <el-button text size="small" :disabled="row.status !== 'active'" @click="openAuthRenewDialog(row)">
+                  续费
+                </el-button>
+                <el-button text size="small" :disabled="row.status !== 'active'" @click="openAuthLevelDialog(row)">
+                  升级
+                </el-button>
+                <el-button v-if="auth.isAdmin" text size="small" @click="openAuthEditDialog(row)">
+                  管理调整
                 </el-button>
 
                 <el-button
+                  v-if="row.status === 'active'"
                   text
                   size="small"
                   type="danger"
-                  :disabled="row.status !== 'active'"
-                  @click="revokeUserAuth(row)"
+                  @click="suspendUserAuth(row)"
                 >
                   停用
+                </el-button>
+                <el-button
+                  v-else-if="row.status === 'suspended'"
+                  text
+                  size="small"
+                  type="success"
+                  @click="enableUserAuth(row)"
+                >
+                  启用
+                </el-button>
+                <el-button
+                  v-else
+                  text
+                  size="small"
+                  disabled
+                >
+                  已过期
                 </el-button>
               </template>
             </el-table-column>
@@ -1169,62 +1145,6 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane v-if="auth.isAdmin" label="代理治理" name="creator">
-          <el-alert
-            title="创建代理治理待接入：后续补齐代理业务等级、风险状态、创建下级能力、项目授权状态和钱包状态。"
-            type="info"
-            show-icon
-            :closable="false"
-            class="small-alert"
-          />
-
-          <div class="governance-panel">
-            <div class="governance-row">
-              <span class="governance-label">创建来源</span>
-              <el-tag
-                size="small"
-                effect="plain"
-                :type="editDialog.row?.created_by_type === 'agent' ? 'warning' : 'danger'"
-              >
-                {{ editDialog.row?.created_by_display || '未知' }}
-              </el-tag>
-            </div>
-
-            <div
-              v-if="editDialog.row?.created_by_type === 'agent' && editDialog.row?.created_by_agent_id"
-              class="governance-row"
-            >
-              <span class="governance-label">创建代理</span>
-              <el-button
-                type="primary"
-                plain
-                size="small"
-                @click="openCreatorDetail(editDialog.row.created_by_agent_id)"
-              >
-                查看代理详情
-              </el-button>
-            </div>
-
-            <div class="placeholder-grid">
-              <div class="placeholder-item">
-                <div class="placeholder-title">业务等级</div>
-                <div class="placeholder-text">待接入</div>
-              </div>
-              <div class="placeholder-item">
-                <div class="placeholder-title">风险状态</div>
-                <div class="placeholder-text">待接入</div>
-              </div>
-              <div class="placeholder-item">
-                <div class="placeholder-title">创建下级能力</div>
-                <div class="placeholder-text">待接入</div>
-              </div>
-              <div class="placeholder-item">
-                <div class="placeholder-title">钱包状态</div>
-                <div class="placeholder-text">待接入</div>
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1355,6 +1275,7 @@
           <el-radio-group v-model="authUpgradeDialog.form.mode" @change="resetAuthUpgradePreview">
             <el-radio-button label="append">追加</el-radio-button>
             <el-radio-button label="average">均摊</el-radio-button>
+            <el-radio-button label="topup_align">补时并批(扣点)</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
@@ -1371,11 +1292,21 @@
             <strong>{{ fmtMoney(authUpgradeDialog.preview.consumed_points) }} 点</strong>
             <span>新到期</span>
             <strong>{{ authUpgradeDialog.preview.new_expiry ? formatDate(authUpgradeDialog.preview.new_expiry) : '-' }}</strong>
+            <template v-if="authUpgradeDialog.form.mode === 'topup_align'">
+              <span>新设备扣点</span>
+              <strong>{{ fmtMoney(authUpgradeDialog.preview.new_devices_cost || 0) }} 点</strong>
+              <span>旧设备补时扣点</span>
+              <strong>{{ fmtMoney(authUpgradeDialog.preview.old_devices_topup_cost || 0) }} 点</strong>
+              <span>旧设备剩余</span>
+              <strong>{{ authUpgradeDialog.preview.old_remaining_hours ?? 0 }} 小时</strong>
+              <span>补时小时</span>
+              <strong>{{ authUpgradeDialog.preview.topup_delta_hours ?? 0 }} 小时</strong>
+            </template>
           </div>
         </div>
 
         <el-alert
-          title="代理新增设备必须先预览扣点，再确认提交；管理员仍使用授权编辑入口。"
+          title="代理新增设备必须先预览扣点，再确认提交；支持 追加 / 均摊 / 补时并批(扣点) 三种模式。"
           type="info"
           show-icon
           :closable="false"
@@ -1605,9 +1536,6 @@ const filter = reactive({
   level: null,
   project_id: null,
   creator_agent_id: null,
-  creator_agent_tier_level: null,
-  creator_agent_can_create_sub_agents: null,
-  creator_agent_risk_status: null,
 })
 
 const pagination = reactive({
@@ -2035,15 +1963,6 @@ async function loadUsers() {
     if (filter.level) params.level = filter.level
     if (filter.project_id) params.project_id = filter.project_id
     if (filter.creator_agent_id) params.creator_agent_id = filter.creator_agent_id
-    if (filter.creator_agent_tier_level) {
-      params.creator_agent_tier_level = filter.creator_agent_tier_level
-    }
-    if (filter.creator_agent_can_create_sub_agents !== null) {
-      params.creator_agent_can_create_sub_agents = filter.creator_agent_can_create_sub_agents
-    }
-    if (filter.creator_agent_risk_status) {
-      params.creator_agent_risk_status = filter.creator_agent_risk_status
-    }
 
     const res = await userApi.list(params)
 
@@ -2064,9 +1983,6 @@ function resetFilter() {
   filter.level = null
   filter.project_id = null
   filter.creator_agent_id = null
-  filter.creator_agent_tier_level = null
-  filter.creator_agent_can_create_sub_agents = null
-  filter.creator_agent_risk_status = null
   pagination.page = 1
   loadUsers()
 }
@@ -2647,11 +2563,23 @@ async function saveAuthEdit() {
   }
 }
 
-async function revokeUserAuth(row) {
+async function suspendUserAuth(row) {
   if (!editDialog.row?.id || !row?.id) return
 
   await userApi.suspendAuth(editDialog.row.id, row.id)
   ElMessage.success('项目授权已停用，剩余权益已冻结')
+
+  await Promise.all([
+    loadEditAuths(),
+    loadUsers(),
+  ])
+}
+
+async function enableUserAuth(row) {
+  if (!editDialog.row?.id || !row?.id) return
+
+  await userApi.enableAuth(editDialog.row.id, row.id)
+  ElMessage.success('项目授权已启用，冻结权益已释放')
 
   await Promise.all([
     loadEditAuths(),

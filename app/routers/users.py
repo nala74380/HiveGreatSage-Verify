@@ -239,9 +239,6 @@ async def list_users_endpoint(
     level_filter: str | None = Query(default=None, alias="level"),
     project_id: int | None = Query(default=None, description="按项目过滤"),
     creator_agent_id: int | None = Query(default=None, description="按创建代理过滤，仅管理员使用"),
-    creator_agent_tier_level: int | None = Query(default=None, ge=1, le=4, description="按创建代理业务等级过滤，仅管理员使用"),
-    creator_agent_can_create_sub_agents: bool | None = Query(default=None, description="按创建代理是否可创建下级过滤，仅管理员使用"),
-    creator_agent_risk_status: str | None = Query(default=None, pattern="^(normal|watch|restricted|frozen)$", description="按创建代理风险状态过滤，仅管理员使用"),
     caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> UserListResponse:
@@ -256,9 +253,6 @@ async def list_users_endpoint(
         level_filter=level_filter,
         project_id_filter=project_id,
         creator_agent_id_filter=creator_agent_id,
-        creator_agent_tier_level_filter=creator_agent_tier_level,
-        creator_agent_can_create_sub_agents_filter=creator_agent_can_create_sub_agents,
-        creator_agent_risk_status_filter=creator_agent_risk_status,
     )
 
 
@@ -695,7 +689,7 @@ async def upgrade_preview_endpoint(
     user_id: int,
     auth_id: int,
     additional_devices: int = Query(..., gt=0),
-    mode: str = Query(default="append", pattern="^(append|average)$"),
+    mode: str = Query(default="append", pattern="^(append|average|topup_align)$"),
     caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationUpgradePreviewResponse:
@@ -790,7 +784,7 @@ async def upgrade_auth_endpoint(
     db: AsyncSession = Depends(get_main_db),
 ) -> AuthorizationUpgradeResponse:
     """
-    升级授权设备数（追加/平均两种模式）。
+    升级授权设备数（追加/平均/补时并批三种模式）。
 
     Admin:
         直接修改，不扣点。

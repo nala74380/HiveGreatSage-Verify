@@ -550,7 +550,26 @@ class DeviceBinding(Base):
         comment="绑定所属项目",
     )
 
-    device_fingerprint: Mapped[str] = mapped_column(String(256), nullable=False)
+    device_fingerprint: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        comment="设备内部稳定绑定键；用于绑定唯一约束、心跳归属与运行时数据关联",
+    )
+    device_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="用户自定义设备编号（业务展示字段，不参与绑定唯一性判断）",
+    )
+    connection_type: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="设备连接类型：usb / tcp / unknown",
+    )
+    connection_label: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="连接标识展示串：USB 显示 SN，TCP 显示 IP:端口",
+    )
 
     bound_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -559,16 +578,6 @@ class DeviceBinding(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
-    )
-    imsi: Mapped[str | None] = mapped_column(
-        String(256),
-        nullable=True,
-        comment="设备 IMSI 码（Fernet 加密存储）；通过 imsi_hash 反查定位后解密读取",
-    )
-    imsi_hash: Mapped[str | None] = mapped_column(
-        String(64),
-        nullable=True,
-        comment="IMSI HMAC-SHA256 哈希；用于非明文关联排障与加密反查索引",
     )
     status: Mapped[str] = mapped_column(
         String(16),

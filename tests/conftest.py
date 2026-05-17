@@ -71,6 +71,8 @@ from app.core.security import hash_password, create_admin_token
 TEST_DB_URL       = settings.DATABASE_MAIN_URL
 GAME_PROJECT_UUID = "00000000-0000-0000-0000-000000000001"
 GAME_PROJECT_CODE = "game_001"
+SECOND_GAME_PROJECT_UUID = "00000000-0000-0000-0000-000000000002"
+SECOND_GAME_PROJECT_CODE = "game_002"
 ADMIN_USERNAME    = "test_admin"
 ADMIN_PASSWORD    = "TestAdmin@2026!"
 
@@ -182,7 +184,8 @@ async def seed_data(session_factory):
             admin_id = admin.id
 
         result = await session.execute(
-            text("SELECT id FROM game_project WHERE code_name = :c"), {"c": GAME_PROJECT_CODE},
+            text("SELECT id FROM game_project WHERE code_name = :c"),
+            {"c": GAME_PROJECT_CODE},
         )
         project_id = result.scalar()
         if not project_id:
@@ -197,12 +200,37 @@ async def seed_data(session_factory):
             await session.flush()
             project_id = project.id
 
+        result = await session.execute(
+            text("SELECT id FROM game_project WHERE code_name = :c"),
+            {"c": SECOND_GAME_PROJECT_CODE},
+        )
+        second_project_id = result.scalar()
+        if not second_project_id:
+            second_project = GameProject(
+                project_uuid=uuid_lib.UUID(SECOND_GAME_PROJECT_UUID),
+                code_name=SECOND_GAME_PROJECT_CODE,
+                display_name="测试游戏 002",
+                db_name="hive_game_002",
+                is_active=True,
+            )
+            session.add(second_project)
+            await session.flush()
+            second_project_id = second_project.id
+
         await session.execute(
             text("UPDATE game_project SET project_uuid = :uuid WHERE id = :id"),
             {"uuid": GAME_PROJECT_UUID, "id": project_id},
         )
+        await session.execute(
+            text("UPDATE game_project SET project_uuid = :uuid WHERE id = :id"),
+            {"uuid": SECOND_GAME_PROJECT_UUID, "id": second_project_id},
+        )
         await session.commit()
-        return {"admin_id": admin_id, "project_id": project_id}
+        return {
+            "admin_id": admin_id,
+            "project_id": project_id,
+            "second_project_id": second_project_id,
+        }
 
 
 # ── Function 级 fixture ───────────────────────────────────────
@@ -281,3 +309,8 @@ async def admin_headers(admin_token) -> dict:
 @pytest.fixture
 async def project_id(seed_data) -> int:
     return seed_data["project_id"]
+
+
+@pytest.fixture
+async def second_project_id(seed_data) -> int:
+    return seed_data["second_project_id"]

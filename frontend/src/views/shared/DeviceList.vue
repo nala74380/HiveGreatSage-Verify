@@ -50,28 +50,28 @@
       <el-col :span="6">
         <div class="stat-card total">
           <div class="stat-num">{{ summary.total }}</div>
-          <div class="stat-lbl">总设备数</div>
+          <div class="stat-lbl">当前筛选总设备数</div>
         </div>
       </el-col>
 
       <el-col :span="6">
         <div class="stat-card online">
           <div class="stat-num">{{ summary.online_count }}</div>
-          <div class="stat-lbl">在线设备</div>
+          <div class="stat-lbl">当前筛选在线设备数</div>
         </div>
       </el-col>
 
       <el-col :span="6">
         <div class="stat-card offline">
           <div class="stat-num">{{ summary.offline_count }}</div>
-          <div class="stat-lbl">离线设备</div>
+          <div class="stat-lbl">当前筛选离线设备数</div>
         </div>
       </el-col>
 
       <el-col :span="6">
         <div class="stat-card running">
           <div class="stat-num">{{ summary.running_count }}</div>
-          <div class="stat-lbl">运行中</div>
+          <div class="stat-lbl">当前筛选运行中设备数</div>
         </div>
       </el-col>
     </el-row>
@@ -82,7 +82,7 @@
           <el-input
             v-model="filter.keyword"
             clearable
-            placeholder="用户 / 设备标识 / IMSI"
+            placeholder="用户 / 设备标识"
             style="width:220px"
             @keyup.enter="search"
           />
@@ -336,7 +336,7 @@
  *
  * 本版改进:
  *   1. 不再展示设备指纹 / IMSI 原文。
- *   2. 优先展示 device_fingerprint_masked / device_id_masked / imsi_masked。
+ *   2. 优先展示 device_id_masked / imsi_masked。
  *   3. 详情中展示 hash，便于排障关联。
  */
 
@@ -443,8 +443,8 @@ const sourceLabel = (source) => {
   return map[source] || source || '—'
 }
 
-const deviceDisplay = (row) => row?.device_fingerprint_masked || row?.device_id_masked || '—'
-const deviceHash = (row) => row?.device_fingerprint_hash || row?.device_id_hash || ''
+const deviceDisplay = (row) => row?.device_id_masked || '—'
+const deviceHash = (row) => row?.device_id_hash || ''
 const imsiDisplay = (row) => row?.imsi_masked || '—'
 const projectCode = (row) => row?.game_project_code || row?.project_code || '—'
 const shortHash = (value) => value ? `${value.slice(0, 12)}…` : '—'
@@ -454,15 +454,29 @@ const loadDevices = async () => {
   error.value = null
 
   try {
-    const res = await adminDeviceApi.listAll(buildParams())
-    const data = res.data || {}
+    const params = buildParams()
+    const needsSearch = Boolean(filter.online_only || filter.status)
+
+    const [listRes, summaryRes] = await Promise.all([
+      needsSearch
+        ? adminDeviceApi.search(params)
+        : adminDeviceApi.listAll(params),
+      adminDeviceApi.summary({
+        user_id: params.user_id,
+        keyword: params.keyword,
+        project_code: params.project_code,
+      }),
+    ])
+
+    const data = listRes.data || {}
+    const summaryData = summaryRes.data || {}
 
     devices.value = data.devices || []
 
-    summary.total = data.total || 0
-    summary.online_count = data.online_count ?? data.page_online_count ?? 0
-    summary.offline_count = data.offline_count ?? data.page_offline_count ?? Math.max(0, summary.total - summary.online_count)
-    summary.running_count = data.running_count ?? data.page_running_count ?? devices.value.filter((item) => item.status === 'running').length
+    summary.total = summaryData.total ?? data.total ?? 0
+    summary.online_count = summaryData.online_count ?? data.page_online_count ?? 0
+    summary.offline_count = summaryData.offline_count ?? data.page_offline_count ?? Math.max(0, summary.total - summary.online_count)
+    summary.running_count = summaryData.running_count ?? data.page_running_count ?? devices.value.filter((item) => item.status === 'running').length
 
     pagination.total = data.total || data.matched_total || 0
   } catch (err) {

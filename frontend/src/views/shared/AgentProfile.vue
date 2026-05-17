@@ -240,9 +240,19 @@
  *   代理登录后的个人主页。
  *   展示代理基本信息、用户统计、余额概览、已授权项目、快捷操作。
  *
+ * 当前接口边界:
+ *   - GET /api/agents/me
+ *     用于代理资料与轻量业务能力摘要，
+ *     当前提供基本账号信息、父代理信息、直属用户统计、已授权项目和业务能力字段。
+ *
+ *   - GET /api/agents/my/balance
+ *     用于代理钱包余额摘要。
+ *
+ *   - 本页面当前通过以上两条接口组合展示，
+ *     不要求 /api/agents/me 返回钱包主数据。
+ *
  * 当前业务口径:
  *   - 用户数量只作为统计展示。
- *   - 用户数量仅作统计展示。
  *   - 代理商业能力由项目授权、项目准入、点数余额和授权扣点规则决定。
  *
  * 调试信息:
@@ -272,11 +282,13 @@ const fmt = (val) => {
   return Number.isInteger(n) ? String(n) : n.toFixed(2)
 }
 
+// 资料与能力摘要：来自 /api/agents/me
 const fetchProfile = async () => {
   const res = await agentApi.me()
   profile.value = res.data
 }
 
+// 钱包余额摘要：来自 /api/agents/my/balance
 const fetchBalance = async () => {
   const res = await agentBalanceApi.myBalance()
   balance.value = {
