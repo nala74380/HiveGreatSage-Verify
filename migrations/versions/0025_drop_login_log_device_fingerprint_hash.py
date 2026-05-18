@@ -1,6 +1,6 @@
 """drop login_log device_fingerprint_hash
 
-Revision ID: 0025_drop_login_log_device_fingerprint_hash
+Revision ID: 0025_loginlog_fp_cleanup
 Revises: 0024_device_identity_refactor
 Create Date: 2026-05-18
 """
@@ -8,7 +8,7 @@ Create Date: 2026-05-18
 from alembic import op
 
 
-revision = "0025_drop_login_log_device_fingerprint_hash"
+revision = "0025_loginlog_fp_cleanup"
 down_revision = "0024_device_identity_refactor"
 branch_labels = None
 depends_on = None
