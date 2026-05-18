@@ -78,11 +78,6 @@ async def process_heartbeat(
             detail="设备未绑定到当前项目，拒绝上报",
         )
 
-    if body.connection_type is not None:
-        binding.connection_type = body.connection_type
-    if body.connection_label is not None:
-        binding.connection_label = body.connection_label
-
     now_ts = datetime.now(timezone.utc)
     binding.last_seen_at = now_ts
     payload = {
