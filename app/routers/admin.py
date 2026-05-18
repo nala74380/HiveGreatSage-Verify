@@ -45,6 +45,7 @@ def _client_ip(request: Request) -> str:
 def _device_binding_identity_fields(binding: DeviceBinding) -> dict:
     return {
         "device_id": binding.device_id,
+        "batch_id": binding.batch_id,
     }
 
 

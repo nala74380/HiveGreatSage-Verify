@@ -43,6 +43,7 @@ from app.models.main.models import (
     Agent,
     AgentProjectAuth,
     Authorization,
+    AuthorizationBatch,
     DeviceBinding,
     GameProject,
     ProjectPrice,
@@ -56,6 +57,12 @@ from app.models.main.accounting import (
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationCostPreviewResponse,
+    AuthorizationBatchInfo,
+    AuthorizationBatchListResponse,
+    AuthorizationCommandAccountingItem,
+    AuthorizationCommandAccountingPreview,
+    AuthorizationCommandPreviewResponse,
+    AuthorizationCommandRequest,
     AuthorizationInfo,
     AuthorizationLevelUpgradePreviewResponse,
     AuthorizationLevelUpgradeRequest,
@@ -520,6 +527,7 @@ async def grant_authorization(
         db.add(auth)
 
     await db.flush()
+    await _reset_authorization_batches_to_single(auth, db)
 
     if agent is not None:
         consume_result = await consume_agent_authorization_points(
@@ -872,6 +880,464 @@ async def _build_agent_wallet_preview_snapshot(
     return _build_wallet_preview_snapshot(wallet, total_cost)
 
 
+def _ceil_money(value: Decimal | float | int) -> float:
+    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_UP))
+
+
+def _remaining_hours_until(valid_until: datetime | None, now: datetime) -> int | None:
+    if valid_until is None:
+        return None
+    return _ceil_hours(now, valid_until)
+
+
+async def _active_binding_count_for_batch(batch_id: int, db: AsyncSession) -> int:
+    result = await db.execute(
+        select(func.count(DeviceBinding.id)).where(
+            DeviceBinding.batch_id == batch_id,
+            DeviceBinding.status == "active",
+        )
+    )
+    return int(result.scalar_one() or 0)
+
+
+async def _active_binding_count_for_authorization(auth: Authorization, db: AsyncSession) -> int:
+    result = await db.execute(
+        select(func.count(DeviceBinding.id)).where(
+            DeviceBinding.user_id == auth.user_id,
+            DeviceBinding.game_project_id == auth.game_project_id,
+            DeviceBinding.status == "active",
+        )
+    )
+    return int(result.scalar_one() or 0)
+
+
+async def _authorization_batch_to_info(
+    batch: AuthorizationBatch,
+    db: AsyncSession,
+    now: datetime | None = None,
+) -> AuthorizationBatchInfo:
+    current = now or datetime.now(timezone.utc)
+    bound_devices = await _active_binding_count_for_batch(batch.id, db)
+    authorized_devices = int(batch.authorized_devices or 0)
+    available_devices = None if authorized_devices == 0 else max(authorized_devices - bound_devices, 0)
+    return AuthorizationBatchInfo(
+        id=batch.id,
+        authorization_id=batch.authorization_id,
+        user_id=batch.user_id,
+        game_project_id=batch.game_project_id,
+        user_level=batch.user_level,
+        authorized_devices=authorized_devices,
+        bound_devices=bound_devices,
+        available_devices=available_devices,
+        valid_from=batch.valid_from,
+        valid_until=batch.valid_until,
+        remaining_hours=_remaining_hours_until(batch.valid_until, current),
+        status=batch.status,
+        merged_into_batch_id=batch.merged_into_batch_id,
+    )
+
+
+async def _load_authorization_batches(
+    auth: Authorization,
+    db: AsyncSession,
+    *,
+    ensure_exists: bool = True,
+) -> list[AuthorizationBatch]:
+    result = await db.execute(
+        select(AuthorizationBatch)
+        .where(AuthorizationBatch.authorization_id == auth.id)
+        .order_by(AuthorizationBatch.valid_until.is_(None), AuthorizationBatch.valid_until, AuthorizationBatch.id)
+    )
+    batches = list(result.scalars().all())
+    if batches or not ensure_exists:
+        return batches
+
+    bound_devices = await _active_binding_count_for_authorization(auth, db)
+    batch = AuthorizationBatch(
+        authorization_id=auth.id,
+        user_id=auth.user_id,
+        game_project_id=auth.game_project_id,
+        user_level=auth.user_level,
+        authorized_devices=int(auth.authorized_devices or 0),
+        bound_devices=bound_devices,
+        valid_from=auth.valid_from or datetime.now(timezone.utc),
+        valid_until=auth.valid_until,
+        status=auth.status if auth.status in {"active", "suspended", "expired"} else "active",
+    )
+    db.add(batch)
+    await db.flush()
+    await db.execute(
+        DeviceBinding.__table__.update()
+        .where(
+            DeviceBinding.user_id == auth.user_id,
+            DeviceBinding.game_project_id == auth.game_project_id,
+            DeviceBinding.batch_id.is_(None),
+        )
+        .values(batch_id=batch.id)
+    )
+    return [batch]
+
+
+async def _reset_authorization_batches_to_single(
+    auth: Authorization,
+    db: AsyncSession,
+) -> AuthorizationBatch:
+    active_batches = await _load_authorization_batches(auth, db, ensure_exists=False)
+    for batch in active_batches:
+        if batch.status in {"active", "suspended", "expired"}:
+            batch.status = "merged"
+
+    bound_devices = await _active_binding_count_for_authorization(auth, db)
+    batch = AuthorizationBatch(
+        authorization_id=auth.id,
+        user_id=auth.user_id,
+        game_project_id=auth.game_project_id,
+        user_level=auth.user_level,
+        authorized_devices=int(auth.authorized_devices or 0),
+        bound_devices=bound_devices,
+        valid_from=auth.valid_from or datetime.now(timezone.utc),
+        valid_until=auth.valid_until,
+        status=auth.status if auth.status in {"active", "suspended", "expired"} else "active",
+    )
+    db.add(batch)
+    await db.flush()
+    await db.execute(
+        DeviceBinding.__table__.update()
+        .where(
+            DeviceBinding.user_id == auth.user_id,
+            DeviceBinding.game_project_id == auth.game_project_id,
+            DeviceBinding.status == "active",
+        )
+        .values(batch_id=batch.id)
+    )
+    return batch
+
+
+async def list_authorization_batches(
+    user_id: int,
+    auth_id: int,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationBatchListResponse:
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    batches = await _load_authorization_batches(auth, db)
+    now = datetime.now(timezone.utc)
+    return AuthorizationBatchListResponse(
+        authorization_id=auth.id,
+        user_id=user_id,
+        game_project_id=auth.game_project_id,
+        batches=[await _authorization_batch_to_info(batch, db, now) for batch in batches],
+    )
+
+
+async def _project_unit_price(
+    project_id: int,
+    user_level: str,
+    db: AsyncSession,
+) -> tuple[Decimal, int]:
+    price_result = await db.execute(
+        select(ProjectPrice).where(
+            ProjectPrice.project_id == project_id,
+            ProjectPrice.user_level == user_level,
+        )
+    )
+    price = price_result.scalar_one_or_none()
+    if not price:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"该项目尚未设置 {LEVEL_NAMES.get(user_level, user_level)} 级别定价",
+        )
+    period_hours = int(BILLING_RULES.get(user_level, {}).get("period_hours", 720))
+    return Decimal(str(price.points_per_device or 0)), period_hours
+
+
+def _batch_cost_item(
+    *,
+    item_type: str,
+    batch_id: int | None,
+    device_count: int,
+    paid_hours: int,
+    unit_price: Decimal,
+    period_hours: int,
+    description: str,
+) -> AuthorizationCommandAccountingItem:
+    raw = Decimal(str(device_count)) * unit_price * Decimal(str(paid_hours)) / Decimal(str(period_hours))
+    return AuthorizationCommandAccountingItem(
+        item_type=item_type,
+        batch_id=batch_id,
+        device_count=device_count,
+        paid_hours=paid_hours,
+        unit_price=float(unit_price),
+        period_hours=period_hours,
+        deduct_points=_ceil_money(raw),
+        description=description,
+    )
+
+
+async def preview_authorization_command(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationCommandRequest,
+    db: AsyncSession,
+    admin: Admin | None = None,
+    agent: Agent | None = None,
+) -> AuthorizationCommandPreviewResponse:
+    user = await _get_user_or_404(user_id, db)
+    _assert_can_access_user(user=user, admin=admin, agent=agent)
+    auth = await _get_authorization_or_404(user_id=user_id, auth_id=auth_id, db=db)
+    project = await _get_project_or_404(auth.game_project_id, db)
+    batches = await _load_authorization_batches(auth, db)
+    now = datetime.now(timezone.utc)
+    before = [await _authorization_batch_to_info(batch, db, now) for batch in batches]
+    active_batches = [batch for batch in batches if batch.status == "active"]
+    selected_ids = set(body.selected_batch_ids or [])
+    selected_batches = [
+        batch for batch in active_batches
+        if not selected_ids or batch.id in selected_ids
+    ]
+
+    if not selected_batches and body.action_type not in {"enable"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="没有可操作的有效批次")
+
+    warnings: list[str] = []
+    items: list[AuthorizationCommandAccountingItem] = []
+    after: list[AuthorizationBatchInfo] = before
+    human_summary = ""
+
+    if body.action_type == "add_devices":
+        additional_devices = int(body.additional_devices or 0)
+        if additional_devices <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新增设备数必须大于 0")
+        mode = body.mode or "append_new_batch"
+        unit_price, period_hours = await _project_unit_price(project.id, auth.user_level, db)
+        target_until = body.target_valid_until or auth.valid_until
+        if target_until is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新增设备必须设置目标到期时间")
+        new_paid_hours = _ceil_hours(now, target_until)
+        if new_paid_hours <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新增设备目标到期时间必须晚于当前时间")
+        items.append(_batch_cost_item(
+            item_type="add_devices",
+            batch_id=None,
+            device_count=additional_devices,
+            paid_hours=new_paid_hours,
+            unit_price=unit_price,
+            period_hours=period_hours,
+            description=f"新增 {additional_devices} 台设备到 {target_until.isoformat()}",
+        ))
+        total_devices = sum(int(batch.authorized_devices or 0) for batch in active_batches) + additional_devices
+        if mode == "average_merge":
+            old_device_hours = sum(
+                int(batch.authorized_devices or 0) * (_remaining_hours_until(batch.valid_until, now) or 0)
+                for batch in active_batches
+            )
+            average_hours = int((old_device_hours + additional_devices * new_paid_hours) / max(total_devices, 1))
+            merged_until = now + timedelta(hours=average_hours)
+            after = [
+                AuthorizationBatchInfo(
+                    id=0,
+                    authorization_id=auth.id,
+                    user_id=user.id,
+                    game_project_id=project.id,
+                    user_level=auth.user_level,
+                    authorized_devices=total_devices,
+                    bound_devices=sum(item.bound_devices for item in before if item.status == "active"),
+                    available_devices=None,
+                    valid_from=now,
+                    valid_until=merged_until,
+                    remaining_hours=average_hours,
+                    status="active",
+                )
+            ]
+            human_summary = f"新增 {additional_devices} 台设备，平均后并批，统一到期 {merged_until.date().isoformat()}"
+        elif mode == "topup_align_merge":
+            target_remaining = _ceil_hours(now, target_until)
+            for batch in active_batches:
+                remaining = _remaining_hours_until(batch.valid_until, now) or 0
+                delta = max(0, target_remaining - remaining)
+                if delta > 0:
+                    items.append(_batch_cost_item(
+                        item_type="topup_align",
+                        batch_id=batch.id,
+                        device_count=int(batch.authorized_devices or 0),
+                        paid_hours=delta,
+                        unit_price=unit_price,
+                        period_hours=period_hours,
+                        description=f"批次 {batch.id} 补时 {delta} 小时",
+                    ))
+            after = [
+                AuthorizationBatchInfo(
+                    id=0,
+                    authorization_id=auth.id,
+                    user_id=user.id,
+                    game_project_id=project.id,
+                    user_level=auth.user_level,
+                    authorized_devices=total_devices,
+                    bound_devices=sum(item.bound_devices for item in before if item.status == "active"),
+                    available_devices=None,
+                    valid_from=now,
+                    valid_until=target_until,
+                    remaining_hours=target_remaining,
+                    status="active",
+                )
+            ]
+            human_summary = f"新增 {additional_devices} 台设备，补时后并批，统一到期 {target_until.date().isoformat()}"
+        else:
+            after = before + [
+                AuthorizationBatchInfo(
+                    id=0,
+                    authorization_id=auth.id,
+                    user_id=user.id,
+                    game_project_id=project.id,
+                    user_level=auth.user_level,
+                    authorized_devices=additional_devices,
+                    bound_devices=0,
+                    available_devices=additional_devices,
+                    valid_from=now,
+                    valid_until=target_until,
+                    remaining_hours=new_paid_hours,
+                    status="active",
+                )
+            ]
+            human_summary = f"新增 {additional_devices} 台设备作为新批次，到期 {target_until.date().isoformat()}"
+
+    elif body.action_type == "renew":
+        target_until = body.target_valid_until
+        if target_until is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="续费必须设置目标到期时间")
+        mode = body.mode or "renew_keep_batches"
+        unit_price, period_hours = await _project_unit_price(project.id, auth.user_level, db)
+        target_remaining = _ceil_hours(now, target_until)
+        total_devices = sum(int(batch.authorized_devices or 0) for batch in selected_batches)
+        for batch in selected_batches:
+            base = max(now, _ensure_aware(batch.valid_until)) if batch.valid_until else now
+            paid_hours = _ceil_hours(base, target_until)
+            if paid_hours <= 0:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"批次 {batch.id} 的续费目标时间必须晚于当前到期时间")
+            items.append(_batch_cost_item(
+                item_type="renew",
+                batch_id=batch.id,
+                device_count=int(batch.authorized_devices or 0),
+                paid_hours=paid_hours,
+                unit_price=unit_price,
+                period_hours=period_hours,
+                description=f"批次 {batch.id} 续费 {paid_hours} 小时",
+            ))
+        if mode == "renew_average_merge":
+            old_device_hours = sum(
+                int(batch.authorized_devices or 0) * (_remaining_hours_until(batch.valid_until, now) or 0)
+                for batch in selected_batches
+            )
+            renew_device_hours = sum(item.device_count * item.paid_hours for item in items)
+            average_hours = int((old_device_hours + renew_device_hours) / max(total_devices, 1))
+            new_until = now + timedelta(hours=average_hours)
+            after = [
+                AuthorizationBatchInfo(
+                    id=0,
+                    authorization_id=auth.id,
+                    user_id=user.id,
+                    game_project_id=project.id,
+                    user_level=auth.user_level,
+                    authorized_devices=total_devices,
+                    bound_devices=sum(item.bound_devices for item in before if item.id in {b.id for b in selected_batches}),
+                    available_devices=None,
+                    valid_from=now,
+                    valid_until=new_until,
+                    remaining_hours=average_hours,
+                    status="active",
+                )
+            ]
+            human_summary = f"选中批次平均续费并批，统一到期 {new_until.date().isoformat()}"
+        elif mode == "renew_topup_align_merge":
+            after = [
+                AuthorizationBatchInfo(
+                    id=0,
+                    authorization_id=auth.id,
+                    user_id=user.id,
+                    game_project_id=project.id,
+                    user_level=auth.user_level,
+                    authorized_devices=total_devices,
+                    bound_devices=sum(item.bound_devices for item in before if item.id in {b.id for b in selected_batches}),
+                    available_devices=None,
+                    valid_from=now,
+                    valid_until=target_until,
+                    remaining_hours=target_remaining,
+                    status="active",
+                )
+            ]
+            human_summary = f"选中批次补时续费并批，统一到期 {target_until.date().isoformat()}"
+        else:
+            after = [
+                item.model_copy(update={
+                    "valid_until": target_until,
+                    "remaining_hours": target_remaining,
+                }) if item.id in {b.id for b in selected_batches} else item
+                for item in before
+            ]
+            human_summary = f"选中 {len(selected_batches)} 个批次分别续费到 {target_until.date().isoformat()}"
+
+    elif body.action_type == "level_upgrade":
+        if not body.user_level:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="升级必须设置目标等级")
+        old_price, old_period = await _project_unit_price(project.id, auth.user_level, db)
+        new_price, new_period = await _project_unit_price(project.id, body.user_level, db)
+        for batch in selected_batches:
+            remaining = _remaining_hours_until(batch.valid_until, now) or 0
+            old_value = Decimal(str(batch.authorized_devices or 0)) * old_price * Decimal(str(remaining)) / Decimal(str(old_period))
+            new_value = Decimal(str(batch.authorized_devices or 0)) * new_price * Decimal(str(remaining)) / Decimal(str(new_period))
+            diff = max(new_value - old_value, Decimal("0"))
+            items.append(AuthorizationCommandAccountingItem(
+                item_type="level_upgrade_diff",
+                batch_id=batch.id,
+                device_count=int(batch.authorized_devices or 0),
+                paid_hours=remaining,
+                unit_price=float(new_price - old_price),
+                period_hours=new_period,
+                deduct_points=_ceil_money(diff),
+                description=f"批次 {batch.id} 从 {LEVEL_NAMES.get(auth.user_level, auth.user_level)} 升级到 {LEVEL_NAMES.get(body.user_level, body.user_level)}",
+            ))
+        after = [
+            item.model_copy(update={"user_level": body.user_level}) if item.id in {b.id for b in selected_batches} else item
+            for item in before
+        ]
+        human_summary = f"选中 {len(selected_batches)} 个批次升级到 {LEVEL_NAMES.get(body.user_level, body.user_level)}，只扣剩余时间差价"
+    else:
+        warnings.append("该动作的批次化预览已建模，提交逻辑将在命令中心中接入")
+        human_summary = f"{body.action_type} 批次化预览"
+
+    total = _ceil_money(sum(Decimal(str(item.deduct_points)) for item in items))
+    wallet_snapshot = _empty_wallet_preview_snapshot()
+    if agent is not None:
+        wallet_snapshot = await _build_agent_wallet_preview_snapshot(
+            db=db,
+            agent_id=agent.id,
+            total_cost=total,
+        )
+    accounting = AuthorizationCommandAccountingPreview(
+        total_deduct_points=total,
+        items=items,
+        **{
+            "charged_consumed": wallet_snapshot.get("charged_consumed"),
+            "credit_consumed": wallet_snapshot.get("credit_consumed"),
+            "available_total": wallet_snapshot.get("available_total"),
+            "available_total_after": wallet_snapshot.get("available_total_after"),
+            "enough_balance": wallet_snapshot.get("enough_balance"),
+        },
+    )
+    return AuthorizationCommandPreviewResponse(
+        action_type=body.action_type,
+        authorization_id=auth.id,
+        before_batches=before,
+        after_batches=after,
+        accounting=accounting,
+        warnings=warnings,
+        human_summary=human_summary,
+    )
+
+
 async def preview_authorization_renew(
     user_id: int,
     auth_id: int,
@@ -979,6 +1445,7 @@ async def renew_authorization(
         )
 
     auth.valid_until = body.valid_until
+    await _reset_authorization_batches_to_single(auth, db)
     await db.flush()
 
     return AuthorizationRenewResponse(
@@ -1331,7 +1798,24 @@ async def upgrade_authorization(
                 start_at=now, valid_until=auth.valid_until, db=db,
             )
 
+    if body.mode == "append":
+        await _load_authorization_batches(auth, db)
+        batch = AuthorizationBatch(
+            authorization_id=auth.id,
+            user_id=auth.user_id,
+            game_project_id=auth.game_project_id,
+            user_level=auth.user_level,
+            authorized_devices=int(body.additional_devices or 0),
+            bound_devices=0,
+            valid_from=now,
+            valid_until=auth.valid_until,
+            status="active",
+        )
+        db.add(batch)
+
     auth.authorized_devices = new_devices
+    if body.mode in {"average", "topup_align"}:
+        await _reset_authorization_batches_to_single(auth, db)
     await db.flush()
 
     return AuthorizationUpgradeResponse(
@@ -1442,6 +1926,7 @@ async def level_upgrade_authorization(
         )
 
     auth.user_level = body.user_level
+    await _reset_authorization_batches_to_single(auth, db)
     await db.flush()
 
     return AuthorizationLevelUpgradeResponse(

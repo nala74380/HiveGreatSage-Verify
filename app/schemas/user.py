@@ -192,6 +192,71 @@ class AuthorizationLevelUpgradeResponse(BaseModel):
     new_user_level: str
 
 
+class AuthorizationBatchInfo(BaseModel):
+    id: int
+    authorization_id: int
+    user_id: int
+    game_project_id: int
+    user_level: str
+    authorized_devices: int
+    bound_devices: int
+    available_devices: int | None = None
+    valid_from: datetime
+    valid_until: datetime | None = None
+    remaining_hours: int | None = None
+    status: str
+    merged_into_batch_id: int | None = None
+
+
+class AuthorizationBatchListResponse(BaseModel):
+    authorization_id: int
+    user_id: int
+    game_project_id: int
+    batches: list[AuthorizationBatchInfo]
+
+
+class AuthorizationCommandRequest(BaseModel):
+    action_type: Literal["add_devices", "renew", "level_upgrade", "suspend", "enable", "merge_average", "topup_align_merge"]
+    mode: str | None = Field(default=None, description="批次处理方式，例如 append_new_batch / average_merge / topup_align_merge")
+    selected_batch_ids: list[int] | None = Field(default=None, description="参与动作的批次 ID")
+    additional_devices: int | None = Field(default=None, ge=1, description="新增设备数")
+    target_valid_until: datetime | None = Field(default=None, description="目标到期时间")
+    user_level: UserLevel | None = Field(default=None, description="目标等级")
+
+    model_config = {"extra": "forbid"}
+
+
+class AuthorizationCommandAccountingItem(BaseModel):
+    item_type: str
+    batch_id: int | None = None
+    device_count: int = 0
+    paid_hours: int = 0
+    unit_price: float = 0.0
+    period_hours: int = 0
+    deduct_points: float = 0.0
+    description: str
+
+
+class AuthorizationCommandAccountingPreview(BaseModel):
+    total_deduct_points: float = 0.0
+    charged_consumed: float | None = None
+    credit_consumed: float | None = None
+    available_total: float | None = None
+    available_total_after: float | None = None
+    enough_balance: bool | None = None
+    items: list[AuthorizationCommandAccountingItem] = Field(default_factory=list)
+
+
+class AuthorizationCommandPreviewResponse(BaseModel):
+    action_type: str
+    authorization_id: int
+    before_batches: list[AuthorizationBatchInfo]
+    after_batches: list[AuthorizationBatchInfo]
+    accounting: AuthorizationCommandAccountingPreview
+    warnings: list[str] = Field(default_factory=list)
+    human_summary: str
+
+
 # ── 响应模型 ──────────────────────────────────────────────────
 
 class AuthorizationInfo(BaseModel):

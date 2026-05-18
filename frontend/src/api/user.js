@@ -78,6 +78,14 @@ export const userApi = {
     return http.post(`/api/users/${userId}/authorizations/${authId}/enable`)
   },
 
+  authBatches(userId, authId) {
+    return http.get(`/api/users/${userId}/authorizations/${authId}/batches`)
+  },
+
+  commandPreview(userId, authId, data) {
+    return http.post(`/api/users/${userId}/authorizations/${authId}/commands/preview`, data)
+  },
+
   upgradeAuth(userId, authId, data, idempotencyKey) {
     return http.post(`/api/users/${userId}/authorizations/${authId}/devices/add`, data, {
       headers: buildIdempotencyHeaders(idempotencyKey),

@@ -71,6 +71,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     String,
@@ -515,12 +516,220 @@ class Authorization(Base):
         "GameProject",
         back_populates="authorizations",
     )
+    batches: Mapped[list["AuthorizationBatch"]] = relationship(
+        "AuthorizationBatch",
+        back_populates="authorization",
+        cascade="all, delete-orphan",
+    )
+    actions: Mapped[list["AuthorizationAction"]] = relationship(
+        "AuthorizationAction",
+        back_populates="authorization",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return (
             f"<Authorization user={self.user_id} project={self.game_project_id} "
             f"level={self.user_level} devices={self.authorized_devices}>"
         )
+
+
+# ── 授权批次表：Authorization 下真实权益批次 ───────────────────
+
+class AuthorizationBatch(Base):
+    __tablename__ = "authorization_batch"
+    __table_args__ = (
+        CheckConstraint(
+            "user_level IN ('trial', 'normal', 'vip', 'svip', 'tester')",
+            name="chk_authorization_batch_user_level_enum",
+        ),
+        CheckConstraint(
+            "authorized_devices >= 0",
+            name="chk_authorization_batch_devices_non_negative",
+        ),
+        CheckConstraint(
+            "bound_devices >= 0",
+            name="chk_authorization_batch_bound_devices_non_negative",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'suspended', 'expired', 'merged', 'cancelled')",
+            name="chk_authorization_batch_status_enum",
+        ),
+        Index("idx_authorization_batch_authorization_status", "authorization_id", "status"),
+        Index("idx_authorization_batch_user_project", "user_id", "game_project_id"),
+        Index("idx_authorization_batch_valid_until", "valid_until"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    authorization_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("authorization.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    game_project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("game_project.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    authorized_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    bound_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
+    merged_into_batch_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("authorization_batch.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_action_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("authorization_action.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    updated_action_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("authorization_action.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    authorization: Mapped["Authorization"] = relationship(
+        "Authorization",
+        back_populates="batches",
+    )
+    user: Mapped["User"] = relationship("User")
+    game_project: Mapped["GameProject"] = relationship("GameProject")
+    device_bindings: Mapped[list["DeviceBinding"]] = relationship(
+        "DeviceBinding",
+        back_populates="batch",
+    )
+    merged_into_batch: Mapped["AuthorizationBatch | None"] = relationship(
+        "AuthorizationBatch",
+        remote_side=[id],
+    )
+
+
+class AuthorizationLot(Base):
+    __tablename__ = "authorization_lot"
+    __table_args__ = (
+        CheckConstraint(
+            "lot_type IN ('grant', 'add_devices', 'renew', 'topup_align', 'level_upgrade_diff')",
+            name="chk_authorization_lot_type_enum",
+        ),
+        CheckConstraint(
+            "device_count >= 0",
+            name="chk_authorization_lot_device_count_non_negative",
+        ),
+        CheckConstraint(
+            "paid_hours >= 0",
+            name="chk_authorization_lot_paid_hours_non_negative",
+        ),
+        CheckConstraint(
+            "period_hours >= 0",
+            name="chk_authorization_lot_period_hours_non_negative",
+        ),
+        CheckConstraint(
+            "deducted_points >= 0",
+            name="chk_authorization_lot_deducted_points_non_negative",
+        ),
+        Index("idx_authorization_lot_batch", "batch_id"),
+        Index("idx_authorization_lot_authorization", "authorization_id"),
+        Index("idx_authorization_lot_action", "action_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("authorization_batch.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    authorization_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("authorization.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("authorization_action.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    lot_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    user_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    device_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_hours: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    unit_price: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False, server_default="0")
+    period_hours: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    raw_cost: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, server_default="0")
+    deducted_points: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False, server_default="0")
+    charged_consumed: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False, server_default="0")
+    credit_consumed: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    batch: Mapped["AuthorizationBatch"] = relationship("AuthorizationBatch")
+    authorization: Mapped["Authorization"] = relationship("Authorization")
+    action: Mapped["AuthorizationAction | None"] = relationship("AuthorizationAction")
+
+
+class AuthorizationAction(Base):
+    __tablename__ = "authorization_action"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'committed', 'failed')",
+            name="chk_authorization_action_status_enum",
+        ),
+        UniqueConstraint(
+            "authorization_id",
+            "idempotency_key",
+            name="uq_authorization_action_idempotency",
+        ),
+        Index("idx_authorization_action_user", "user_id", "created_at"),
+        Index("idx_authorization_action_authorization", "authorization_id", "created_at"),
+        Index("idx_authorization_action_type", "action_type", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    authorization_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("authorization.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    preview_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    before_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    accounting_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    authorization: Mapped["Authorization"] = relationship(
+        "Authorization",
+        back_populates="actions",
+    )
+    user: Mapped["User"] = relationship("User")
 
 
 # ── 设备绑定表 ────────────────────────────────────────────────
@@ -558,6 +767,12 @@ class DeviceBinding(Base):
         nullable=False,
         comment="设备编号；用户 + 项目 + 设备编号唯一，作为设备绑定主体",
     )
+    batch_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("authorization_batch.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="设备归属授权批次；设备权益必须可追踪到批次",
+    )
 
     bound_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -580,6 +795,10 @@ class DeviceBinding(Base):
     )
     game_project: Mapped["GameProject"] = relationship(
         "GameProject",
+        back_populates="device_bindings",
+    )
+    batch: Mapped["AuthorizationBatch"] = relationship(
+        "AuthorizationBatch",
         back_populates="device_bindings",
     )
 

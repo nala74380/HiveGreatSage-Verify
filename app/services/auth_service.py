@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 import redis.asyncio as aioredis
 from fastapi import HTTPException, status
 from jose import JWTError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -63,6 +63,7 @@ from app.core.security import (
 from app.database import _main_session_factory
 from app.models.main.models import (
     Authorization,
+    AuthorizationBatch,
     DeviceBinding,
     GameProject,
     LoginLog,
@@ -178,14 +179,63 @@ async def login_user(
                             detail=f"当前项目设备绑定数量已达上限（{limit} 台）",
                         )
 
+                batch_result = await db.execute(
+                    select(AuthorizationBatch)
+                    .where(
+                        AuthorizationBatch.authorization_id == auth.id,
+                        AuthorizationBatch.status == "active",
+                        or_(
+                            AuthorizationBatch.valid_until.is_(None),
+                            AuthorizationBatch.valid_until > now,
+                        ),
+                    )
+                    .order_by(
+                        AuthorizationBatch.valid_until.is_(None),
+                        AuthorizationBatch.valid_until,
+                        AuthorizationBatch.id,
+                    )
+                )
+                batches = list(batch_result.scalars().all())
+                if not batches:
+                    fail_reason = "fail_no_batch"
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="授权批次不存在，请先完成授权批次初始化",
+                    )
+
+                selected_batch: AuthorizationBatch | None = None
+                selected_batch_bound = 0
+                for batch in batches:
+                    batch_count_result = await db.execute(
+                        select(func.count(DeviceBinding.id)).where(
+                            DeviceBinding.batch_id == batch.id,
+                            DeviceBinding.status == "active",
+                        )
+                    )
+                    batch_bound = int(batch_count_result.scalar_one() or 0)
+                    batch_limit = int(batch.authorized_devices or 0)
+                    if batch_limit == 0 or batch_bound < batch_limit:
+                        selected_batch = batch
+                        selected_batch_bound = batch_bound
+                        break
+
+                if selected_batch is None:
+                    fail_reason = "fail_batch_device_limit"
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="当前项目所有有效批次设备名额均已占满",
+                    )
+
                 new_binding = DeviceBinding(
                     user_id=user.id,
                     game_project_id=game_project.id,
                     device_id=body.device_id,
+                    batch_id=selected_batch.id,
                     last_seen_at=now,
                     status="active",
                 )
                 db.add(new_binding)
+                selected_batch.bound_devices = selected_batch_bound + 1
                 await db.flush()
 
                 await create_audit_log(
@@ -203,6 +253,7 @@ async def login_user(
                         "game_project_id": game_project.id,
                         "game_project_code": game_project.code_name,
                         "device_id": body.device_id,
+                        "batch_id": selected_batch.id,
                         "client_type": body.client_type,
                         "authorized_devices": int(auth.authorized_devices or 0),
                     },

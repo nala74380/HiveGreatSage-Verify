@@ -128,7 +128,7 @@
                 text
                 size="small"
                 class="device-entry-link"
-                @click="router.push({ path: '/devices', query: { user_id: row.id, username: row.username } })"
+                @click="openUserDevices(row)"
               >
                 设备
               </el-button>
@@ -238,7 +238,7 @@
 
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
-            <el-button text size="small" @click="openDetailDialog(row)">
+            <el-button text size="small" @click="openUserDevices(row)">
               详情
             </el-button>
 
@@ -446,7 +446,7 @@
       </template>
 
       <el-tabs v-model="editDialog.activeTab" @tab-change="handleEditTabChange">
-        <el-tab-pane label="基础信息" name="base">
+        <el-tab-pane label="账号与安全" name="base">
           <el-form :model="editDialog.form" label-width="110px">
             <el-form-item label="用户名">
               <span class="readonly-val">{{ editDialog.row?.username }}</span>
@@ -480,13 +480,13 @@
                 :loading="editDialog.loading"
                 @click="submitEdit"
               >
-                保存基础信息
+                保存账号状态
               </el-button>
             </el-form-item>
           </el-form>
-        </el-tab-pane>
 
-        <el-tab-pane label="密码" name="password">
+          <el-divider content-position="left">密码治理</el-divider>
+
           <el-form label-width="110px">
             <el-form-item label="新密码">
               <el-input
@@ -542,7 +542,7 @@
           </el-alert>
         </el-tab-pane>
 
-        <el-tab-pane label="项目授权" name="auths">
+        <el-tab-pane label="授权与设备" name="auths">
           <div class="auth-section-title">
             已授权项目
             <el-button
@@ -806,59 +806,93 @@
               </el-button>
             </el-form-item>
           </el-form>
-        </el-tab-pane>
 
-        <el-tab-pane v-if="auth.isAdmin" label="设备绑定" name="devices">
-          <el-alert
-            title="设备绑定治理待接入：当前先提供按用户进入设备页的入口，后续补齐设备解绑、异常标记和授权状态联动。"
-            type="info"
-            show-icon
-            :closable="false"
-            class="small-alert"
-          />
-
-          <div class="governance-panel">
+          <div v-if="auth.isAdmin" class="governance-panel auth-device-panel">
             <div class="governance-row">
-              <span class="governance-label">用户设备</span>
-              <el-button
-                type="primary"
-                plain
-                size="small"
-                @click="router.push({ path: '/devices', query: { user_id: editDialog.row?.id, username: editDialog.row?.username } })"
-              >
-                查看设备
-              </el-button>
+              <div>
+                <div class="section-title">设备绑定</div>
+                <div class="hint-text">按“账号 + 项目 + 设备编号”治理绑定，编辑页展示当前用户设备并支持解绑。</div>
+              </div>
+              <div class="device-action-group">
+                <el-button
+                  :icon="Refresh"
+                  size="small"
+                  :loading="editDialog.deviceLoading"
+                  @click="loadEditDevices"
+                >
+                  刷新设备
+                </el-button>
+                <el-button
+                  type="primary"
+                  plain
+                  size="small"
+                  @click="openUserDevices(editDialog.row)"
+                >
+                  进入设备列表
+                </el-button>
+              </div>
             </div>
 
             <el-table
-              :data="editDialog.auths"
+              v-loading="editDialog.deviceLoading"
+              :data="editDialog.devices"
               size="small"
-              empty-text="暂无项目授权，无法按授权查看设备状态"
+              empty-text="暂无设备绑定"
               stripe
             >
-              <el-table-column label="项目" min-width="150">
+              <el-table-column label="设备编号" min-width="150">
                 <template #default="{ row }">
-                  {{ authProjectName(row) }}
+                  {{ row.device_id || '-' }}
                 </template>
               </el-table-column>
 
-              <el-table-column label="授权状态" width="110">
+              <el-table-column label="项目" min-width="130">
                 <template #default="{ row }">
-                  <el-tag :type="authStatusType(row)" size="small" effect="light">
-                    {{ authStatusText(row) }}
+                  {{ deviceProjectLabel(row) }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="在线状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="row.is_online ? 'success' : 'info'" size="small" effect="light">
+                    {{ row.is_online ? '在线' : '离线' }}
                   </el-tag>
                 </template>
               </el-table-column>
 
-              <el-table-column label="授权设备" width="110">
+              <el-table-column label="绑定状态" width="100">
                 <template #default="{ row }">
-                  {{ displayDeviceLimit(row.authorized_devices) }}
+                  <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="light">
+                    {{ row.status === 'active' ? '已绑定' : row.status || '-' }}
+                  </el-tag>
                 </template>
               </el-table-column>
 
-              <el-table-column label="已激活" width="90">
+              <el-table-column label="最后心跳" width="170">
                 <template #default="{ row }">
-                  {{ row.activated_devices ?? 0 }}
+                  {{ row.last_seen_at ? formatDatetime(row.last_seen_at) : '-' }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="操作" width="90" fixed="right">
+                <template #default="{ row }">
+                  <el-popconfirm
+                    title="确认解绑该设备？解绑后设备需要重新通过账号、项目和设备编号验证。"
+                    confirm-button-text="确认解绑"
+                    cancel-button-text="取消"
+                    @confirm="unbindEditDevice(row)"
+                  >
+                    <template #reference>
+                      <el-button
+                        text
+                        size="small"
+                        type="danger"
+                        :disabled="row.status !== 'active'"
+                      >
+                        解绑
+                      </el-button>
+                    </template>
+                  </el-popconfirm>
                 </template>
               </el-table-column>
             </el-table>
@@ -1163,7 +1197,7 @@
     <el-dialog
       v-model="authUpgradeDialog.visible"
       title="新增授权设备"
-      width="560px"
+      width="720px"
       destroy-on-close
     >
       <el-form :model="authUpgradeDialog.form" label-width="120px">
@@ -1175,6 +1209,26 @@
           <span class="readonly-val">{{ displayDeviceLimit(authUpgradeDialog.row?.authorized_devices) }}</span>
         </el-form-item>
 
+        <el-form-item label="当前到期">
+          <span class="readonly-val">{{ authUpgradeDialog.row?.valid_until ? formatDatetime(authUpgradeDialog.row.valid_until) : '永久' }}</span>
+        </el-form-item>
+
+        <el-form-item label="当前批次">
+          <div class="batch-list-panel" v-loading="authUpgradeDialog.batchesLoading">
+            <div
+              v-for="batch in authUpgradeDialog.batches"
+              :key="batch.id"
+              class="batch-chip"
+            >
+              <strong>批次 {{ batch.id }}</strong>
+              <span>{{ batch.authorized_devices }} 台，已绑 {{ batch.bound_devices }} 台</span>
+              <span>到期 {{ batch.valid_until ? formatDatetime(batch.valid_until) : '永久' }}</span>
+              <span>剩余 {{ remainingHoursText(batch.remaining_hours) }}</span>
+            </div>
+            <span v-if="!authUpgradeDialog.batches.length" class="hint-text">暂无批次数据</span>
+          </div>
+        </el-form-item>
+
         <el-form-item label="新增设备数">
           <el-input-number
             v-model="authUpgradeDialog.form.additional_devices"
@@ -1182,16 +1236,17 @@
             :step="1"
             controls-position="right"
             style="width: 170px"
-            @change="resetAuthUpgradePreview"
+            @change="previewAuthUpgrade"
           />
         </el-form-item>
 
-        <el-form-item label="计费模式">
-          <el-radio-group v-model="authUpgradeDialog.form.mode" @change="resetAuthUpgradePreview">
-            <el-radio-button label="append">追加</el-radio-button>
-            <el-radio-button label="average">均摊</el-radio-button>
-            <el-radio-button label="topup_align">补时并批(扣点)</el-radio-button>
+        <el-form-item label="处理方式">
+          <el-radio-group v-model="authUpgradeDialog.form.mode" @change="previewAuthUpgrade">
+            <el-radio-button label="append">追加新批次</el-radio-button>
+            <el-radio-button label="average">平均后并批</el-radio-button>
+            <el-radio-button label="topup_align">补时后并批</el-radio-button>
           </el-radio-group>
+          <div class="mode-explain">{{ addDeviceModeExplain(authUpgradeDialog.form.mode) }}</div>
         </el-form-item>
 
         <div v-if="authUpgradeDialog.preview" class="cost-preview-panel upgrade-preview-panel">
@@ -1231,7 +1286,7 @@
         </div>
 
         <el-alert
-          title="代理新增设备必须先预览扣点，再确认提交；支持 追加 / 均摊 / 补时并批(扣点) 三种模式。"
+          title="扣点预览会随新增设备数和处理方式自动刷新；后续命令中心接入后，提交也将直接走批次化动作。"
           type="info"
           show-icon
           :closable="false"
@@ -1241,12 +1296,6 @@
 
       <template #footer>
         <el-button @click="authUpgradeDialog.visible = false">取消</el-button>
-        <el-button
-          :loading="authUpgradeDialog.previewLoading"
-          @click="previewAuthUpgrade"
-        >
-          预览扣点
-        </el-button>
         <el-button
           type="primary"
           :loading="authUpgradeDialog.loading"
@@ -1261,7 +1310,7 @@
     <el-dialog
       v-model="authRenewDialog.visible"
       title="授权续费"
-      width="560px"
+      width="720px"
       destroy-on-close
     >
       <el-form :model="authRenewDialog.form" label-width="120px">
@@ -1271,6 +1320,22 @@
 
         <el-form-item label="当前到期">
           <span class="readonly-val">{{ authRenewDialog.row?.valid_until ? formatDate(authRenewDialog.row.valid_until) : '-' }}</span>
+        </el-form-item>
+
+        <el-form-item label="当前批次">
+          <div class="batch-list-panel" v-loading="authRenewDialog.batchesLoading">
+            <div
+              v-for="batch in authRenewDialog.batches"
+              :key="batch.id"
+              class="batch-chip"
+            >
+              <strong>批次 {{ batch.id }}</strong>
+              <span>{{ batch.authorized_devices }} 台，已绑 {{ batch.bound_devices }} 台</span>
+              <span>到期 {{ batch.valid_until ? formatDatetime(batch.valid_until) : '永久' }}</span>
+              <span>剩余 {{ remainingHoursText(batch.remaining_hours) }}</span>
+            </div>
+            <span v-if="!authRenewDialog.batches.length" class="hint-text">暂无批次数据</span>
+          </div>
         </el-form-item>
 
         <el-form-item label="续费到期">
@@ -1285,7 +1350,7 @@
               type="datetime"
               placeholder="选择新的到期时间"
               style="width: 100%"
-              @change="resetAuthRenewPreview"
+              @change="previewAuthRenew"
             />
           </div>
         </el-form-item>
@@ -1323,9 +1388,6 @@
 
       <template #footer>
         <el-button @click="authRenewDialog.visible = false">取消</el-button>
-        <el-button :loading="authRenewDialog.previewLoading" @click="previewAuthRenew">
-          预览扣点
-        </el-button>
         <el-button
           type="primary"
           :loading="authRenewDialog.loading"
@@ -1340,7 +1402,7 @@
     <el-dialog
       v-model="authLevelDialog.visible"
       title="授权等级升级"
-      width="560px"
+      width="720px"
       destroy-on-close
     >
       <el-form :model="authLevelDialog.form" label-width="120px">
@@ -1352,8 +1414,24 @@
           <LevelTag :level="authLevelDialog.row?.user_level" />
         </el-form-item>
 
+        <el-form-item label="当前批次">
+          <div class="batch-list-panel" v-loading="authLevelDialog.batchesLoading">
+            <div
+              v-for="batch in authLevelDialog.batches"
+              :key="batch.id"
+              class="batch-chip"
+            >
+              <strong>批次 {{ batch.id }}</strong>
+              <span>{{ batch.authorized_devices }} 台，已绑 {{ batch.bound_devices }} 台</span>
+              <span>到期 {{ batch.valid_until ? formatDatetime(batch.valid_until) : '永久' }}</span>
+              <span>剩余 {{ remainingHoursText(batch.remaining_hours) }}</span>
+            </div>
+            <span v-if="!authLevelDialog.batches.length" class="hint-text">暂无批次数据</span>
+          </div>
+        </el-form-item>
+
         <el-form-item label="升级到">
-          <el-select v-model="authLevelDialog.form.user_level" style="width: 180px" @change="resetAuthLevelPreview">
+          <el-select v-model="authLevelDialog.form.user_level" style="width: 180px" @change="previewAuthLevelUpgrade">
             <el-option label="试用" value="trial" />
             <el-option label="普通" value="normal" />
             <el-option label="VIP" value="vip" />
@@ -1396,9 +1474,6 @@
 
       <template #footer>
         <el-button @click="authLevelDialog.visible = false">取消</el-button>
-        <el-button :loading="authLevelDialog.previewLoading" @click="previewAuthLevelUpgrade">
-          预览扣点
-        </el-button>
         <el-button
           type="primary"
           :loading="authLevelDialog.loading"
@@ -1508,6 +1583,8 @@ const editDialog = reactive({
     confirm_password: '',
   },
   auths: [],
+  deviceLoading: false,
+  devices: [],
   grantForm: buildGrantForm(),
   finance: {
     chargeLoading: false,
@@ -1539,6 +1616,8 @@ const authUpgradeDialog = reactive({
   visible: false,
   loading: false,
   previewLoading: false,
+  batchesLoading: false,
+  batches: [],
   row: null,
   preview: null,
   idempotencyKey: '',
@@ -1552,6 +1631,8 @@ const authRenewDialog = reactive({
   visible: false,
   loading: false,
   previewLoading: false,
+  batchesLoading: false,
+  batches: [],
   row: null,
   preview: null,
   idempotencyKey: '',
@@ -1564,6 +1645,8 @@ const authLevelDialog = reactive({
   visible: false,
   loading: false,
   previewLoading: false,
+  batchesLoading: false,
+  batches: [],
   row: null,
   preview: null,
   idempotencyKey: '',
@@ -1640,6 +1723,18 @@ function authProjectName(authItem) {
   )
 }
 
+function deviceProjectLabel(device) {
+  if (device?.game_project_name || device?.project_display_name || device?.project_name) {
+    return device.game_project_name || device.project_display_name || device.project_name
+  }
+
+  const projectId = Number(device?.game_project_id || device?.project_id)
+  const project = allProjects.value.find(item => Number(item.id) === projectId)
+  if (project) return projectName(project)
+
+  return projectId ? `项目#${projectId}` : '-'
+}
+
 function normalizeProject(project) {
   return {
     ...project,
@@ -1708,6 +1803,13 @@ function normalizeAuthItem(item) {
   }
 }
 
+function normalizeDeviceBinding(item) {
+  return {
+    ...item,
+    is_online: Boolean(item?.is_online),
+  }
+}
+
 function normalizeUserRow(row) {
   const authorizations = Array.isArray(row.authorizations)
     ? row.authorizations.map(normalizeAuthItem)
@@ -1734,6 +1836,25 @@ function displayInactiveDevices(item) {
 
   if (authorized === 0) return '不限'
   return Math.max(authorized - activated, 0)
+}
+
+function remainingHoursText(hours) {
+  if (hours === null || hours === undefined) return '永久'
+  const safeHours = Number(hours || 0)
+  if (safeHours <= 0) return '已到期'
+  const days = Math.floor(safeHours / 24)
+  const restHours = safeHours % 24
+  if (days <= 0) return `${restHours} 小时`
+  return restHours ? `${days} 天 ${restHours} 小时` : `${days} 天`
+}
+
+function addDeviceModeExplain(mode) {
+  const map = {
+    append: '新增设备单独形成新批次，旧设备到期时间不变。',
+    average: '把旧批次剩余时间和新增设备购买时间按设备数平均，最后统一为一个到期时间。',
+    topup_align: '新增设备按目标时间购买，同时把旧的短批次补齐到同一到期时间，补出来的时间需要扣点。',
+  }
+  return map[mode] || ''
 }
 
 function fmtMoney(value) {
@@ -1845,7 +1966,7 @@ function setAuthRenewExpiry(days) {
     : new Date()
   base.setDate(base.getDate() + days)
   authRenewDialog.form.valid_until = base
-  resetAuthRenewPreview()
+  previewAuthRenew()
 }
 
 function resetGrantPreview() {
@@ -2017,15 +2138,14 @@ function openUserDevices(row) {
   router.push({ path: '/devices', query: { user_id: row.id, username: row.username } })
 }
 
-async function openDetailDialog(row) {
-  const detailTab = auth.isAdmin ? 'devices' : 'auths'
-  await openEditDialog(row, detailTab)
-}
-
 async function openEditDialog(row, initialTab = 'base') {
   editDialog.visible = true
   editDialog.row = normalizeUserRow(row)
-  editDialog.activeTab = initialTab
+  editDialog.activeTab = initialTab === 'password'
+    ? 'base'
+    : initialTab === 'devices'
+      ? 'auths'
+      : initialTab
   editDialog.form = {
     status: row.status,
   }
@@ -2034,6 +2154,8 @@ async function openEditDialog(row, initialTab = 'base') {
     confirm_password: '',
   }
   editDialog.generatedPassword = ''
+  editDialog.devices = []
+  editDialog.deviceLoading = false
   editDialog.grantForm = buildGrantForm()
   resetGrantPreview()
   editDialog.finance.charges = []
@@ -2049,11 +2171,16 @@ async function openEditDialog(row, initialTab = 'base') {
   editDialog.audit.page = 1
   editDialog.audit.total = 0
 
-  await loadEditAuths()
+  await Promise.all([
+    loadEditAuths(),
+    auth.isAdmin ? loadEditDevices() : Promise.resolve(),
+  ])
 }
 
 function handleEditTabChange(tabName) {
-  if (tabName === 'finance' && auth.isAdmin) {
+  if (tabName === 'auths' && auth.isAdmin) {
+    loadEditDevices()
+  } else if (tabName === 'finance' && auth.isAdmin) {
     loadUserFinance()
   } else if (tabName === 'audit' && auth.isAdmin) {
     loadUserAuditLogs()
@@ -2073,6 +2200,47 @@ async function loadEditAuths() {
       : []
 
   editDialog.auths = auths.map(normalizeAuthItem)
+}
+
+async function loadEditDevices() {
+  if (!auth.isAdmin || !editDialog.row?.id) return
+
+  editDialog.deviceLoading = true
+
+  try {
+    const res = await userApi.deviceBindings(editDialog.row.id)
+    editDialog.devices = (res.data?.devices || []).map(normalizeDeviceBinding)
+  } finally {
+    editDialog.deviceLoading = false
+  }
+}
+
+async function unbindEditDevice(row) {
+  if (!auth.isAdmin || !editDialog.row?.id || !row?.id) return
+
+  await userApi.unbindDevice(editDialog.row.id, row.id)
+  ElMessage.success('设备已解绑')
+
+  await Promise.all([
+    loadEditDevices(),
+    loadEditAuths(),
+    loadUsers(),
+  ])
+}
+
+async function loadAuthorizationBatches(row, dialogState) {
+  if (!editDialog.row?.id || !row?.id) {
+    dialogState.batches = []
+    return
+  }
+
+  dialogState.batchesLoading = true
+  try {
+    const res = await userApi.authBatches(editDialog.row.id, row.id)
+    dialogState.batches = res.data?.batches || []
+  } finally {
+    dialogState.batchesLoading = false
+  }
 }
 
 async function loadUserFreezes() {
@@ -2165,7 +2333,7 @@ async function submitEdit() {
       status: editDialog.form.status,
     })
 
-    ElMessage.success('基础信息已保存')
+    ElMessage.success('账号状态已保存')
     editDialog.row.status = editDialog.form.status
     await loadUsers()
   } finally {
@@ -2304,36 +2472,44 @@ async function quickGrantDo() {
   }
 }
 
-function openAuthUpgradeDialog(row) {
+async function openAuthUpgradeDialog(row) {
   if (row.status !== 'active') {
     ElMessage.warning('只有有效授权可以新增设备')
     return
   }
 
   authUpgradeDialog.row = row
+  authUpgradeDialog.batches = []
   authUpgradeDialog.form = {
     additional_devices: 1,
     mode: 'append',
   }
   resetAuthUpgradePreview()
   authUpgradeDialog.visible = true
+  await loadAuthorizationBatches(row, authUpgradeDialog)
+  await previewAuthUpgrade()
 }
 
-function openAuthRenewDialog(row) {
+async function openAuthRenewDialog(row) {
   if (row.status !== 'active') {
     ElMessage.warning('只有有效授权可以续费')
     return
   }
 
   authRenewDialog.row = row
+  authRenewDialog.batches = []
+  const defaultRenewUntil = row.valid_until ? new Date(row.valid_until) : new Date()
+  defaultRenewUntil.setDate(defaultRenewUntil.getDate() + 30)
   authRenewDialog.form = {
-    valid_until: row.valid_until ? new Date(row.valid_until) : null,
+    valid_until: defaultRenewUntil,
   }
   resetAuthRenewPreview()
   authRenewDialog.visible = true
+  await loadAuthorizationBatches(row, authRenewDialog)
+  await previewAuthRenew()
 }
 
-function openAuthLevelDialog(row) {
+async function openAuthLevelDialog(row) {
   if (row.status !== 'active') {
     ElMessage.warning('只有有效授权可以升级等级')
     return
@@ -2341,11 +2517,14 @@ function openAuthLevelDialog(row) {
 
   const nextLevel = row.user_level === 'vip' ? 'svip' : 'vip'
   authLevelDialog.row = row
+  authLevelDialog.batches = []
   authLevelDialog.form = {
     user_level: nextLevel,
   }
   resetAuthLevelPreview()
   authLevelDialog.visible = true
+  await loadAuthorizationBatches(row, authLevelDialog)
+  await previewAuthLevelUpgrade()
 }
 
 async function previewAuthUpgrade() {
@@ -2366,6 +2545,8 @@ async function previewAuthUpgrade() {
     )
     authUpgradeDialog.preview = res.data
     authUpgradeDialog.idempotencyKey = newIdempotencyKey('add-devices')
+  } catch {
+    authUpgradeDialog.preview = null
   } finally {
     authUpgradeDialog.previewLoading = false
   }
@@ -2419,6 +2600,8 @@ async function previewAuthRenew() {
     })
     authRenewDialog.preview = res.data
     authRenewDialog.idempotencyKey = newIdempotencyKey('renew')
+  } catch {
+    authRenewDialog.preview = null
   } finally {
     authRenewDialog.previewLoading = false
   }
@@ -2471,6 +2654,8 @@ async function previewAuthLevelUpgrade() {
     })
     authLevelDialog.preview = res.data
     authLevelDialog.idempotencyKey = newIdempotencyKey('level-upgrade')
+  } catch {
+    authLevelDialog.preview = null
   } finally {
     authLevelDialog.previewLoading = false
   }
@@ -2840,10 +3025,48 @@ onMounted(async () => {
   width: 100%;
 }
 
+.batch-list-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.batch-chip {
+  display: grid;
+  grid-template-columns: 90px repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #475569;
+  font-size: 12px;
+}
+
+.batch-chip strong {
+  color: #1e293b;
+}
+
+.mode-explain {
+  width: 100%;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .governance-panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.auth-device-panel {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
 }
 
 .governance-row {
@@ -2851,6 +3074,18 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   min-height: 32px;
+}
+
+.auth-device-panel .governance-row {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.device-action-group {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .governance-label {
@@ -2939,6 +3174,10 @@ onMounted(async () => {
   }
 
   .placeholder-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-chip {
     grid-template-columns: 1fr;
   }
 

@@ -52,6 +52,9 @@ from app.models.main.models import Admin, Agent
 from app.schemas.user import (
     AuthorizationCreateRequest,
     AuthorizationCostPreviewResponse,
+    AuthorizationBatchListResponse,
+    AuthorizationCommandPreviewResponse,
+    AuthorizationCommandRequest,
     AuthorizationLevelUpgradePreviewResponse,
     AuthorizationLevelUpgradeRequest,
     AuthorizationLevelUpgradeResponse,
@@ -77,7 +80,9 @@ from app.services.user_service import (
     get_creator_agent_detail,
     get_user,
     grant_authorization,
+    list_authorization_batches,
     level_upgrade_authorization,
+    preview_authorization_command,
     list_users,
     preview_authorization_cost,
     preview_authorization_level_upgrade,
@@ -688,6 +693,50 @@ async def renew_preview_endpoint(
 ) -> AuthorizationRenewPreviewResponse:
     admin, agent = caller
     return await preview_authorization_renew(
+        user_id=user_id,
+        auth_id=auth_id,
+        body=body,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+
+@router.get(
+    "/{user_id}/authorizations/{auth_id}/batches",
+    response_model=AuthorizationBatchListResponse,
+    summary="查询授权批次列表",
+)
+async def authorization_batches_endpoint(
+    user_id: int,
+    auth_id: int,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationBatchListResponse:
+    admin, agent = caller
+    return await list_authorization_batches(
+        user_id=user_id,
+        auth_id=auth_id,
+        db=db,
+        admin=admin,
+        agent=agent,
+    )
+
+
+@router.post(
+    "/{user_id}/authorizations/{auth_id}/commands/preview",
+    response_model=AuthorizationCommandPreviewResponse,
+    summary="批次化授权动作预览",
+)
+async def authorization_command_preview_endpoint(
+    user_id: int,
+    auth_id: int,
+    body: AuthorizationCommandRequest,
+    caller: tuple[Admin | None, Agent | None] = Depends(_resolve_caller),
+    db: AsyncSession = Depends(get_main_db),
+) -> AuthorizationCommandPreviewResponse:
+    admin, agent = caller
+    return await preview_authorization_command(
         user_id=user_id,
         auth_id=auth_id,
         body=body,
