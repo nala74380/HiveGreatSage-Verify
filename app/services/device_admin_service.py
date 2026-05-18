@@ -26,7 +26,7 @@ r"""
 改进历史:
     V1.3.0 - 删除旧脱敏 / 摘要字段口径，统一返回设备原文字段。
     V1.2.0 - 项目维度设备列表移除 device_id 原文输出
-    V1.1.0 - 项目维度设备列表增加 device_id masked/hash 字段
+    V1.1.0 - 项目维度设备列表补充 device_id / device_fingerprint / connection 标识字段
     V1.0.0 - 初始版本（T026）
 """
 
