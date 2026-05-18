@@ -558,16 +558,6 @@ class DeviceBinding(Base):
         nullable=False,
         comment="设备编号；用户 + 项目 + 设备编号唯一，作为设备绑定主体",
     )
-    connection_type: Mapped[str | None] = mapped_column(
-        String(16),
-        nullable=True,
-        comment="设备连接类型：usb / tcp / unknown",
-    )
-    connection_label: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="连接标识展示串：USB 显示 SN，TCP 显示 IP:端口",
-    )
 
     bound_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

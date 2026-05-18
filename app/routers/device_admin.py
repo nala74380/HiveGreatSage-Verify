@@ -252,7 +252,6 @@ async def _build_base_query(
         base_q = base_q.where(
             (User.username.ilike(kw))
             | (DeviceBinding.device_id.ilike(kw))
-            | (DeviceBinding.connection_label.ilike(kw))
         )
 
     return base_q
@@ -313,8 +312,6 @@ def _device_response(
     return {
         "binding_id": binding.id,
         "device_id": binding.device_id,
-        "connection_type": binding.connection_type,
-        "connection_label": binding.connection_label,
         "user_id": binding.user_id,
         "username": user.username,
         "user_status": user.status,

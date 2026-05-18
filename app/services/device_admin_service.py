@@ -3,7 +3,7 @@ r"""
 名称: 管理后台设备监控服务层
 作者: 蜂巢·大圣 (HiveGreatSage)
 时间: 2026-05-18
-版本: V1.3.0
+版本: V1.4.0
 功能说明:
     T026 — 管理后台设备监控，支持 Admin / Agent 两种权限视角。
 
@@ -20,10 +20,11 @@ r"""
 
     当前设备标识口径：
       - device_id = 设备编号，同一账号、同一项目下唯一
-      - connection_type / connection_label = 连接标识
+      - 连接标识仅属于 PCControl 本地显示，不进入后台设备链
 
 改进历史:
-    V1.4.0 - 设备监控统一使用设备编号。
+    V1.4.0 - 从后台设备监控链移除 connection_type / connection_label。
+    V1.3.0 - 设备监控统一使用设备编号。
     V1.0.0 - 初始版本（T026）
 """
 
@@ -154,8 +155,6 @@ async def _build_device_list(
         last_seen_ts = data.get("last_seen", 0)
         all_devices.append({
             **_device_identity_fields(device_id),
-            "connection_type": data.get("connection_type"),
-            "connection_label": data.get("connection_label"),
             "user_id": data.get("user_id"),
             "status": data.get("status"),
             "last_seen": datetime.fromtimestamp(last_seen_ts, tz=timezone.utc).isoformat()
@@ -168,8 +167,6 @@ async def _build_device_list(
     for rec in offline_records:
         all_devices.append({
             **_device_identity_fields(rec["device_id"]),
-            "connection_type": rec.get("connection_type"),
-            "connection_label": rec.get("connection_label"),
             "user_id": rec["user_id"],
             "status": rec.get("status") or "offline",
             "last_seen": rec["last_seen"].isoformat() if rec["last_seen"] else None,
@@ -229,8 +226,6 @@ async def _fetch_offline_from_db(
         return [
             {
                 "device_id": r.device_id,
-                "connection_type": r.connection_type,
-                "connection_label": r.connection_label,
                 "user_id": r.user_id,
                 "status": r.status,
                 "last_seen": r.last_seen,

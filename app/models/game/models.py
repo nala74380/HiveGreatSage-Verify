@@ -196,7 +196,6 @@ class DeviceRuntime(GameBase):
 
     当前设备标识口径：
       1. device_id = 设备编号，同一账号、同一项目下唯一。
-      2. connection_type / connection_label = 连接标识。
     """
     __tablename__ = "device_runtime"
     __table_args__ = (

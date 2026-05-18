@@ -59,8 +59,6 @@ async def _create_and_login(
         "password": "Device@2026!",
         "project_uuid": "00000000-0000-0000-0000-000000000001",
         "device_id": device_id,
-        "connection_type": "usb",
-        "connection_label": "SN:TEST1234",
         "client_type": "android",
     })
     assert r.status_code == 200
@@ -157,8 +155,6 @@ class TestAdminDeviceList:
 
         await client.post("/api/device/heartbeat", json={
             "device_id": device_id,
-            "connection_type": "usb",
-            "connection_label": "SN:TEST1234",
             "status": "running",
             "game_data": {"test_key": "test_val"},
         }, headers={"Authorization": f"Bearer {user_token}"})
@@ -176,8 +172,6 @@ class TestAdminDeviceList:
         )
         assert our_device is not None, "刚上报的设备未出现在监控列表中"
         assert our_device["device_id"] == device_id
-        assert our_device["connection_type"] == "usb"
-        assert our_device["connection_label"] == "SN:TEST1234"
         assert "user_id" in our_device
         assert "username" in our_device
         assert "status" in our_device
@@ -214,8 +208,6 @@ class TestAdminDeviceList:
             "/api/device/heartbeat",
             json={
                 "device_id": device_id,
-                "connection_type": "usb",
-                "connection_label": "SN:TEST1234",
                 "status": "running",
                 "game_data": {"case": "user_devices"},
             },

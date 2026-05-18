@@ -31,8 +31,6 @@ def _idem(prefix: str) -> str:
 def _heartbeat_payload(device_id: str, *, status: str, game_data: dict) -> dict:
     return {
         "device_id": device_id,
-        "connection_type": "usb",
-        "connection_label": "SN:TEST1234",
         "status": status,
         "game_data": game_data,
     }
@@ -132,8 +130,6 @@ async def _login_user(
         "password": password,
         "project_uuid": project_uuid,
         "device_id": device_id,
-        "connection_type": "usb" if client_type == "android" else "tcp",
-        "connection_label": "SN:TEST1234" if client_type == "android" else "192.168.1.8:5555",
         "client_type": client_type,
     })
 

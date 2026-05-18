@@ -3,7 +3,7 @@ r"""
 文件名称: device_service.py
 作者: 蜂巢·大圣 (HiveGreatSage)
 日期/时间: 2026-05-18
-版本: V1.3.0
+版本: V1.4.0
 功能说明:
     设备数据服务层，包含三个业务逻辑：
       - process_heartbeat()  安卓脚本心跳上报（写 Redis）
@@ -12,9 +12,10 @@ r"""
 
     当前设备标识口径：
       1. device_id = 设备编号，同一账号、同一项目下唯一。
-      2. connection_type / connection_label = 连接标识。
+      2. connection_type / connection_label 仅属于 PCControl 本地显示，不进入后端设备链。
 
 改进历史:
+    V1.4.0 (2026-05-18) - 从后端设备链移除 connection_type / connection_label。
     V1.3.0 (2026-05-18) - 移除旧脱敏日志调用；维持新设备标识主链。
     V1.2.0 (2026-05-17) - 删除 IMSI 上传链；心跳与查询链路新增 device_id / connection_type / connection_label。
     V1.1.0 (2026-05-07) - 移除旧 IMSI 响应字段。
@@ -91,8 +92,6 @@ async def process_heartbeat(
         "user_id": current_user.id,
         "game_id": game_project.id,
         "device_id": binding.device_id,
-        "connection_type": binding.connection_type,
-        "connection_label": binding.connection_label,
     }
     await set_heartbeat(
         redis=redis,
@@ -126,8 +125,6 @@ async def get_device_list(
         last_seen_ts = data.get("last_seen", 0)
         devices.append(DeviceStatus(
             device_id=hb["device_id"],
-            connection_type=data.get("connection_type"),
-            connection_label=data.get("connection_label"),
             user_id=current_user.id,
             status=data.get("status"),
             last_seen=datetime.fromtimestamp(last_seen_ts, tz=timezone.utc) if last_seen_ts else None,
@@ -195,8 +192,6 @@ async def get_device_data(
         last_seen_ts = cached.get("last_seen", 0)
         return DeviceDataResponse(
             device_id=device_id,
-            connection_type=cached.get("connection_type", binding.connection_type),
-            connection_label=cached.get("connection_label", binding.connection_label),
             user_id=current_user.id,
             status=cached.get("status"),
             last_seen=datetime.fromtimestamp(last_seen_ts, tz=timezone.utc) if last_seen_ts else None,
@@ -213,8 +208,6 @@ async def get_device_data(
     if db_record:
         return DeviceDataResponse(
             device_id=db_record.device_id,
-            connection_type=db_record.connection_type,
-            connection_label=db_record.connection_label,
             user_id=db_record.user_id,
             status=db_record.status,
             last_seen=db_record.last_seen,
@@ -225,8 +218,6 @@ async def get_device_data(
 
     return DeviceDataResponse(
         device_id=binding.device_id,
-        connection_type=binding.connection_type,
-        connection_label=binding.connection_label,
         user_id=current_user.id,
         status=None,
         last_seen=None,
@@ -303,8 +294,6 @@ async def _get_offline_devices_from_db(
             if rec.device_id not in exclude_device_ids:
                 offline.append(DeviceStatus(
                     device_id=rec.device_id,
-                    connection_type=rec.connection_type,
-                    connection_label=rec.connection_label,
                     user_id=rec.user_id,
                     status=rec.status or "offline",
                     last_seen=rec.last_seen,
@@ -376,8 +365,6 @@ async def _get_devices_from_main_db(
 
         devices.append(DeviceStatus(
             device_id=b.device_id,
-            connection_type=b.connection_type,
-            connection_label=b.connection_label,
             user_id=b.user_id,
             status="idle" if is_online else "offline",
             last_seen=b.last_seen_at,
