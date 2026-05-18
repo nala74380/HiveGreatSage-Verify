@@ -80,6 +80,10 @@ async def process_heartbeat(
 
     now_ts = datetime.now(timezone.utc)
     binding.last_seen_at = now_ts
+    if body.connection_type is not None:
+        binding.connection_type = body.connection_type
+    if body.connection_label is not None:
+        binding.connection_label = body.connection_label
     payload = {
         "status": body.status,
         "last_seen": int(now_ts.timestamp()),
@@ -87,6 +91,8 @@ async def process_heartbeat(
         "user_id": current_user.id,
         "game_id": game_project.id,
         "device_id": binding.device_id,
+        "connection_type": binding.connection_type,
+        "connection_label": binding.connection_label,
     }
     await set_heartbeat(
         redis=redis,
@@ -120,6 +126,8 @@ async def get_device_list(
         last_seen_ts = data.get("last_seen", 0)
         devices.append(DeviceStatus(
             device_id=hb["device_id"],
+            connection_type=data.get("connection_type"),
+            connection_label=data.get("connection_label"),
             user_id=current_user.id,
             status=data.get("status"),
             last_seen=datetime.fromtimestamp(last_seen_ts, tz=timezone.utc) if last_seen_ts else None,
@@ -187,6 +195,8 @@ async def get_device_data(
         last_seen_ts = cached.get("last_seen", 0)
         return DeviceDataResponse(
             device_id=device_id,
+            connection_type=cached.get("connection_type"),
+            connection_label=cached.get("connection_label"),
             user_id=current_user.id,
             status=cached.get("status"),
             last_seen=datetime.fromtimestamp(last_seen_ts, tz=timezone.utc) if last_seen_ts else None,
@@ -203,6 +213,8 @@ async def get_device_data(
     if db_record:
         return DeviceDataResponse(
             device_id=db_record.device_id,
+            connection_type=db_record.connection_type,
+            connection_label=db_record.connection_label,
             user_id=db_record.user_id,
             status=db_record.status,
             last_seen=db_record.last_seen,
@@ -213,6 +225,8 @@ async def get_device_data(
 
     return DeviceDataResponse(
         device_id=binding.device_id,
+        connection_type=binding.connection_type,
+        connection_label=binding.connection_label,
         user_id=current_user.id,
         status=None,
         last_seen=None,
@@ -289,6 +303,8 @@ async def _get_offline_devices_from_db(
             if rec.device_id not in exclude_device_ids:
                 offline.append(DeviceStatus(
                     device_id=rec.device_id,
+                    connection_type=rec.connection_type,
+                    connection_label=rec.connection_label,
                     user_id=rec.user_id,
                     status=rec.status or "offline",
                     last_seen=rec.last_seen,
@@ -360,6 +376,8 @@ async def _get_devices_from_main_db(
 
         devices.append(DeviceStatus(
             device_id=b.device_id,
+            connection_type=b.connection_type,
+            connection_label=b.connection_label,
             user_id=b.user_id,
             status="idle" if is_online else "offline",
             last_seen=b.last_seen_at,

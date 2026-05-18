@@ -37,6 +37,18 @@ class LoginRequest(BaseModel):
         description="设备编号；同一账号、同一项目下唯一",
         examples=["A118"],
     )
+    connection_type: str | None = Field(
+        default=None,
+        max_length=16,
+        description="Connection display type only; not part of binding identity.",
+        examples=["usb"],
+    )
+    connection_label: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Connection display label only; not part of binding identity.",
+        examples=["SN:TEST1234"],
+    )
     client_type: str = Field(
         ...,
         description="客户端类型",
@@ -44,7 +56,7 @@ class LoginRequest(BaseModel):
         pattern="^(pc|android)$",
     )
 
-    @field_validator("device_id", mode="before")
+    @field_validator("device_id", "connection_type", "connection_label", mode="before")
     @classmethod
     def normalize_optional_text(cls, value):
         if value is None:

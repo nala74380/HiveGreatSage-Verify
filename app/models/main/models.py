@@ -767,6 +767,16 @@ class DeviceBinding(Base):
         nullable=False,
         comment="设备编号；用户 + 项目 + 设备编号唯一，作为设备绑定主体",
     )
+    connection_type: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="Connection display type only; not part of binding identity.",
+    )
+    connection_label: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Connection display label only; not part of binding identity.",
+    )
     batch_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("authorization_batch.id", ondelete="RESTRICT"),

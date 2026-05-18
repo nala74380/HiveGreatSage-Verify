@@ -232,6 +232,8 @@ def _build_upsert_records(heartbeats: list[dict]) -> list[dict]:
         last_seen_ts = data.get("last_seen", 0)
         records.append({
             "device_id": device_id,
+            "connection_type": data.get("connection_type"),
+            "connection_label": data.get("connection_label"),
             "user_id": int(user_id),
             "status": data.get("status"),
             "last_seen": (
@@ -265,6 +267,8 @@ async def _upsert_to_game_db(db_name: str, records: list[dict]) -> None:
                 index_elements=["device_id"],
                 set_={
                     "device_id": stmt.excluded.device_id,
+                    "connection_type": stmt.excluded.connection_type,
+                    "connection_label": stmt.excluded.connection_label,
                     "status": stmt.excluded.status,
                     "last_seen": stmt.excluded.last_seen,
                     "game_data": stmt.excluded.game_data,

@@ -107,9 +107,15 @@ async def get_agent_device_list(
     )
 
 
-def _device_identity_fields(device_id: str) -> dict:
+def _device_identity_fields(
+    device_id: str,
+    connection_type: str | None = None,
+    connection_label: str | None = None,
+) -> dict:
     return {
         "device_id": device_id,
+        "connection_type": connection_type,
+        "connection_label": connection_label,
     }
 
 
@@ -154,7 +160,11 @@ async def _build_device_list(
     for device_id, data in online_map.items():
         last_seen_ts = data.get("last_seen", 0)
         all_devices.append({
-            **_device_identity_fields(device_id),
+            **_device_identity_fields(
+                device_id,
+                data.get("connection_type"),
+                data.get("connection_label"),
+            ),
             "user_id": data.get("user_id"),
             "status": data.get("status"),
             "last_seen": datetime.fromtimestamp(last_seen_ts, tz=timezone.utc).isoformat()
@@ -166,7 +176,11 @@ async def _build_device_list(
 
     for rec in offline_records:
         all_devices.append({
-            **_device_identity_fields(rec["device_id"]),
+            **_device_identity_fields(
+                rec["device_id"],
+                rec.get("connection_type"),
+                rec.get("connection_label"),
+            ),
             "user_id": rec["user_id"],
             "status": rec.get("status") or "offline",
             "last_seen": rec["last_seen"].isoformat() if rec["last_seen"] else None,
@@ -226,6 +240,8 @@ async def _fetch_offline_from_db(
         return [
             {
                 "device_id": r.device_id,
+                "connection_type": r.connection_type,
+                "connection_label": r.connection_label,
                 "user_id": r.user_id,
                 "status": r.status,
                 "last_seen": r.last_seen,
