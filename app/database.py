@@ -91,7 +91,9 @@ def _get_game_engine(code_name: str) -> AsyncEngine:
         # 改用 make_url 基于主库连接串只替换数据库名：
         # "hive_" + "game_001" = "hive_game_001"，与 game_project.db_name 一致。
         db_name = "hive_" + code_name
-        url = str(_make_url(settings.DATABASE_MAIN_URL).set(database=db_name))
+        # IMPORTANT: keep URL object (or render with hide_password=False).
+        # str(URL) redacts password as "***", which breaks game DB auth.
+        url = _make_url(settings.DATABASE_MAIN_URL).set(database=db_name)
         _game_engines[code_name] = create_async_engine(
             url,
             echo=settings.DEBUG,

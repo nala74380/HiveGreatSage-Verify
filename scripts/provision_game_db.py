@@ -99,9 +99,10 @@ async def provision_game_db(code: str, db_name: str | None = None) -> None:
 
     admin_url = os.getenv("DATABASE_ADMIN_URL")
     if not admin_url:
-        admin_url = str(main_url.set(database="postgres"))
+        # NOTE: str(URL) hides password as "***"; must render real DSN.
+        admin_url = main_url.set(database="postgres").render_as_string(hide_password=False)
 
-    game_db_url = str(main_url.set(database=db_name))
+    game_db_url = main_url.set(database=db_name).render_as_string(hide_password=False)
 
     if await _database_exists(admin_url, db_name):
         print(f"[OK] database exists: {db_name}")

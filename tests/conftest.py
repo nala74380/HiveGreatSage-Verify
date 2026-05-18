@@ -76,9 +76,9 @@ SECOND_GAME_PROJECT_CODE = "game_002"
 ADMIN_USERNAME    = "test_admin"
 ADMIN_PASSWORD    = "TestAdmin@2026!"
 
-_GAME_TEST_DB_URL = str(
-    _make_url(settings.DATABASE_MAIN_URL).set(database="hive_" + GAME_PROJECT_CODE)
-)
+_GAME_TEST_DB_URL = _make_url(settings.DATABASE_MAIN_URL).set(
+    database="hive_" + GAME_PROJECT_CODE
+).render_as_string(hide_password=False)
 
 # ─────────────────────────────────────────────────────────────
 # 未连通时的标准跳过消息（统一文案，便于全文搜索）

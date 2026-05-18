@@ -120,7 +120,7 @@
               <el-button
                 text
                 class="username-link"
-                @click="openEditDialog(row)"
+                @click="openUserDevices(row)"
               >
                 {{ row.username }}
               </el-button>
@@ -236,8 +236,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
+            <el-button text size="small" @click="openDetailDialog(row)">
+              详情
+            </el-button>
+
             <el-button text size="small" type="primary" @click="openEditDialog(row)">
               编辑
             </el-button>
@@ -2008,10 +2012,20 @@ async function submitCreate() {
   }
 }
 
-async function openEditDialog(row) {
+function openUserDevices(row) {
+  if (!row?.id) return
+  router.push({ path: '/devices', query: { user_id: row.id, username: row.username } })
+}
+
+async function openDetailDialog(row) {
+  const detailTab = auth.isAdmin ? 'devices' : 'auths'
+  await openEditDialog(row, detailTab)
+}
+
+async function openEditDialog(row, initialTab = 'base') {
   editDialog.visible = true
   editDialog.row = normalizeUserRow(row)
-  editDialog.activeTab = 'base'
+  editDialog.activeTab = initialTab
   editDialog.form = {
     status: row.status,
   }
