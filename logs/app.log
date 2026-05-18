@@ -43,3 +43,93 @@
 2026-05-19 00:07:45.640 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=1176, 查询到 1 条 DeviceBinding
 2026-05-19 00:08:29.354 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=2, 查询到 1 条 DeviceBinding
 2026-05-19 00:08:30.905 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=2, 查询到 1 条 DeviceBinding
+2026-05-19 00:35:03.863 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 00:35:03.878 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 00:35:05.674 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 00:35:05.675 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 00:35:05.768 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 00:35:34.061 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 00:35:34.064 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 00:35:35.590 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 00:35:35.591 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 00:35:35.697 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 00:55:04.935 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 00:55:04.952 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 00:55:06.702 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 00:55:06.703 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 00:55:06.797 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:04:02.975 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:04:02.981 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:04:04.745 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:04:04.746 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:04:04.843 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:13:05.907 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:13:05.913 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:13:07.662 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:13:07.663 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:13:07.761 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:13:35.950 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:13:35.955 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:13:37.476 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:13:37.477 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:13:37.579 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:14:32.239 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:14:32.246 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:14:33.813 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:14:33.814 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:14:33.921 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:15:05.334 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:15:05.340 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:15:06.867 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:15:06.868 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:15:06.967 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:17:37.208 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:17:37.219 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:17:39.522 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:17:39.523 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:17:39.635 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:18:07.230 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:18:07.235 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:18:08.762 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:18:08.762 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:18:08.860 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:18:57.568 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:18:57.573 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:18:59.129 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:18:59.130 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:18:59.226 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:19:30.611 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:19:30.616 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:19:32.211 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:19:32.212 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:19:32.309 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:25:35.020 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:25:35.026 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:25:36.682 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:25:36.683 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:25:36.790 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:29:26.901 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:29:26.905 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:29:28.448 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:29:28.449 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:29:28.547 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:34:58.250 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:34:58.255 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:34:59.786 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:34:59.786 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:34:59.879 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:35:31.440 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:35:31.448 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:35:33.093 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:35:33.094 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:35:33.202 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:37:38.557 | INFO     | app.main:lifespan:165 - 关闭数据库连接池...
+2026-05-19 01:37:38.565 | INFO     | app.main:lifespan:167 - HiveGreatSage-Verify 已关闭
+2026-05-19 01:37:40.224 | INFO     | app.main:_setup_sentry:96 - Sentry DSN 未配置，跳过初始化
+2026-05-19 01:37:40.226 | INFO     | app.main:lifespan:144 - HiveGreatSage-Verify 启动 | 环境=development | AT有效期=30min | RT有效期=30天
+2026-05-19 01:37:40.320 | INFO     | app.main:lifespan:159 - 系统默认配置已初始化
+2026-05-19 01:40:08.247 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=2, 查询到 1 条 DeviceBinding
+2026-05-19 01:40:12.229 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=2, 查询到 1 条 DeviceBinding
+2026-05-19 01:40:13.539 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=2, 查询到 1 条 DeviceBinding
+2026-05-19 01:41:05.904 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=2, 查询到 1 条 DeviceBinding
+2026-05-19 01:41:07.045 | INFO     | app.routers.admin:get_user_devices:227 - [get_user_devices] user_id=2, 查询到 1 条 DeviceBinding

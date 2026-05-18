@@ -161,10 +161,6 @@ async def login_user(
 
             if binding:
                 binding.last_seen_at = now
-                if body.connection_type is not None:
-                    binding.connection_type = body.connection_type
-                if body.connection_label is not None:
-                    binding.connection_label = body.connection_label
             else:
                 limit = int(auth.authorized_devices or 0)
                 if limit > 0:
@@ -234,8 +230,6 @@ async def login_user(
                     user_id=user.id,
                     game_project_id=game_project.id,
                     device_id=body.device_id,
-                    connection_type=body.connection_type,
-                    connection_label=body.connection_label,
                     batch_id=selected_batch.id,
                     last_seen_at=now,
                     status="active",
@@ -259,8 +253,6 @@ async def login_user(
                         "game_project_id": game_project.id,
                         "game_project_code": game_project.code_name,
                         "device_id": body.device_id,
-                        "connection_type": body.connection_type,
-                        "connection_label": body.connection_label,
                         "batch_id": selected_batch.id,
                         "client_type": body.client_type,
                         "authorized_devices": int(auth.authorized_devices or 0),

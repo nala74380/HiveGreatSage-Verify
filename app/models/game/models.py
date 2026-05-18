@@ -207,14 +207,6 @@ class DeviceRuntime(GameBase):
         String(64), primary_key=True,
         comment="设备编号",
     )
-    connection_type: Mapped[str | None] = mapped_column(
-        String(16), nullable=True,
-        comment="连接类型：usb / tcp / unknown",
-    )
-    connection_label: Mapped[str | None] = mapped_column(
-        String(255), nullable=True,
-        comment="连接标识展示串：USB 显示 SN，TCP 显示 IP:端口",
-    )
     user_id: Mapped[int] = mapped_column(
         Integer, nullable=False,
         comment="来自 hive_platform.user.id，跨库无外键",

@@ -12,10 +12,9 @@ r"""
 
     当前设备标识口径：
       1. device_id = 设备编号，同一账号、同一项目下唯一。
-      2. connection_type / connection_label = 连接标识。
 
 改进历史:
-    V1.1.0 (2026-05-17) - 删除 /api/device/imsi；心跳/查询链路新增 device_id 与连接标识口径。
+    V1.2.0 (2026-05-18) - 从后端设备链移除 connection_type / connection_label。
     V1.0.1 - IMSI 上传透传 game_project_code，按当前项目绑定记录写入
     V1.0.0 - 从存根重写为完整实现
 调试信息:

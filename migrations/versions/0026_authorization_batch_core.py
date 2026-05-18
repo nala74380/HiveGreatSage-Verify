@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "0026_authorization_batch_core"
-down_revision = "0025_loginlog_device_id_cleanup"
+down_revision = "0025_identity_cleanup"
 branch_labels = None
 depends_on = None
 

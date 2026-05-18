@@ -34,18 +34,6 @@ class HeartbeatRequest(BaseModel):
         description="设备编号；同一账号、同一项目下唯一",
         examples=["A118"],
     )
-    connection_type: str | None = Field(
-        default=None,
-        max_length=16,
-        description="Connection display type only; not part of binding identity.",
-        examples=["usb"],
-    )
-    connection_label: str | None = Field(
-        default=None,
-        max_length=255,
-        description="Connection display label only; not part of binding identity.",
-        examples=["SN:TEST1234"],
-    )
     status: str = Field(
         ...,
         pattern="^(running|idle|error)$",
@@ -58,7 +46,7 @@ class HeartbeatRequest(BaseModel):
         examples=[{"map": "北境", "gold": 1024, "task": "日常采集"}],
     )
 
-    @field_validator("device_id", "connection_type", "connection_label", mode="before")
+    @field_validator("device_id", mode="before")
     @classmethod
     def normalize_optional_text(cls, value):
         if value is None:
@@ -76,8 +64,6 @@ class HeartbeatResponse(BaseModel):
 
 class DeviceStatus(BaseModel):
     device_id: str = Field(description="设备编号")
-    connection_type: str | None = None
-    connection_label: str | None = None
     user_id: int
     status: str | None = Field(description="running / idle / error / offline")
     last_seen: datetime | None = Field(description="最后一次心跳时间")
@@ -96,8 +82,6 @@ class DeviceListResponse(BaseModel):
 
 class DeviceDataResponse(BaseModel):
     device_id: str
-    connection_type: str | None = None
-    connection_label: str | None = None
     user_id: int
     status: str | None
     last_seen: datetime | None

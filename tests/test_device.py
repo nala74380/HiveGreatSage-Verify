@@ -64,8 +64,6 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
         "password": "DevTest@2026!",
         "project_uuid": "00000000-0000-0000-0000-000000000001",
         "device_id": device_id,
-        "connection_type": "usb",
-        "connection_label": "SN:TEST1234",
         "client_type": "android",
     })
     assert r3.status_code == 200, f"登录失败: {r3.status_code} | {r3.text}"
@@ -360,8 +358,6 @@ class TestDeviceList:
         our_device = next((d for d in online_devices if d["device_id"] == session["device_id"]), None)
         assert our_device is not None
         assert our_device["device_id"] == session["device_id"]
-        assert our_device["connection_type"] == "usb"
-        assert our_device["connection_label"] == "SN:TEST1234"
 
     async def test_device_data_after_heartbeat(self, client, admin_headers, project_id):
         session = await _login(client, admin_headers, project_id)
@@ -377,8 +373,6 @@ class TestDeviceList:
         assert r.status_code == 200
         data = r.json()
         assert data["device_id"] == session["device_id"]
-        assert data["connection_type"] == "usb"
-        assert data["connection_label"] == "SN:TEST1234"
         assert data["is_online"] is True
         assert data["source"] == "redis"
         assert data["game_data"]["gold"] == 9999
