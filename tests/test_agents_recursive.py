@@ -360,7 +360,7 @@ class TestRevokeAll:
             "username": username,
             "password": "Revoke@2026!",
             "project_uuid": "00000000-0000-0000-0000-000000000001",
-            "device_fingerprint": f"rev_dev_{uuid.uuid4().hex[:12]}",
+            "device_id": f"rev_dev_{uuid.uuid4().hex[:12]}",
             "client_type": "android",
         })
         assert r.status_code == 200
@@ -404,7 +404,7 @@ class TestRevokeAll:
         # 用原 RT 刷新，应失败（严格轮换，旧 RT 已删除）
         r = await client.post("/api/auth/refresh", json={
             "refresh_token": refresh_token,
-            "device_fingerprint": "test_agent_device_001",
+            "device_id": "test_agent_device_001",
             "client_type": "android",
         })
         assert r.status_code == 401

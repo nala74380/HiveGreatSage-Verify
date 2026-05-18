@@ -282,8 +282,8 @@ const conceptRows = [
   },
   {
     name: 'DeviceBinding',
-    meaning: '用户、项目、设备指纹三元绑定。',
-    note: 'Android 登录会创建绑定并占用设备名额；PC 登录不占用 Android 设备名额。',
+    meaning: '账号、项目、设备编号三元绑定。',
+    note: '同一账号同一项目下，同一设备编号只复用原绑定；新设备编号在授权名额内才创建新绑定。',
   },
   {
     name: 'AgentProjectAuth',
@@ -432,7 +432,6 @@ const loginRequest = `{
   "username": "user_001",
   "password": "User@2026!",
   "project_uuid": "00000000-0000-0000-0000-000000000001",
-  "device_fingerprint": "android_device_001",
   "device_id": "A-001",
   "connection_type": "usb",
   "connection_label": "SN:TEST1234",
@@ -460,13 +459,12 @@ class VerifyClient:
         self.access_token = None
         self.refresh_token = None
 
-    def login(self, username, password, device_fingerprint):
+    def login(self, username, password, device_id):
         resp = requests.post(f"{BASE_URL}/api/auth/login", json={
             "username": username,
             "password": password,
             "project_uuid": PROJECT_UUID,
-            "device_fingerprint": device_fingerprint,
-            "device_id": device_fingerprint,
+            "device_id": device_id,
             "connection_type": "tcp",
             "connection_label": BASE_URL,
             "client_type": "pc",
@@ -510,8 +508,7 @@ function login(username, password, deviceId) {
     username: username,
     password: password,
     project_uuid: PROJECT_UUID,
-    device_fingerprint: deviceId,
-    device_id: "A-001",
+    device_id: deviceId,
     connection_type: "usb",
     connection_label: "SN:TEST1234",
     client_type: "android"
@@ -530,7 +527,7 @@ function login(username, password, deviceId) {
 
 function heartbeat(deviceId, gameData) {
   httpRequest(BASE_URL + "/api/device/heartbeat", "POST", JSON.stringify({
-    device_fingerprint: deviceId,
+    device_id: deviceId,
     status: "running",
     game_data: gameData || {}
   }), {
@@ -559,7 +556,6 @@ const heartbeatRequest = `POST /api/device/heartbeat
 Authorization: Bearer <user_access_token>
 
 {
-  "device_fingerprint": "android_device_001",
   "device_id": "A-001",
   "connection_type": "usb",
   "connection_label": "SN:TEST1234",
@@ -613,7 +609,7 @@ const failReasons = [
   { http: '403', reason: '项目授权已过期', check: '检查 Authorization.valid_until。' },
   { http: '403', reason: '设备数量达到上限', check: '检查 Authorization.authorized_devices 与 DeviceBinding active 数量。' },
   { http: '404', reason: 'project_uuid 不存在或项目停用', check: '后台项目详情核对 UUID、is_active、终端配置。' },
-  { http: '422', reason: '请求字段不符合契约', check: '检查字段名，例如登录必须使用 device_fingerprint，不是 hardware_serial。' },
+  { http: '422', reason: '请求字段不符合契约', check: '检查字段名；登录和心跳必须提交 device_id。' },
   { http: '429', reason: '登录或心跳过于频繁', check: '心跳建议 30 秒一次；登录失败不要高频重试。' },
 ]
 

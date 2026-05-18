@@ -6,7 +6,7 @@ r"""
 版本: V1.0.0
 功能说明:
     为 device_binding 增加 game_project_id，将设备绑定主口径从
-    user_id + device_fingerprint 调整为 user_id + game_project_id + device_fingerprint。
+    user_id + device_id 调整为 user_id + game_project_id + device_id。
 
 设计原因:
     Verify 已经将用户授权迁移到 Authorization（用户 × 项目）维度。
@@ -65,7 +65,7 @@ def upgrade() -> None:
     op.create_unique_constraint(
         "uq_user_project_device",
         "device_binding",
-        ["user_id", "game_project_id", "device_fingerprint"],
+        ["user_id", "game_project_id", "device_id"],
     )
 
     op.create_index(
@@ -81,7 +81,7 @@ def upgrade() -> None:
     op.create_index(
         "idx_device_binding_device",
         "device_binding",
-        ["device_fingerprint"],
+        ["device_id"],
     )
 
 
@@ -99,7 +99,7 @@ def downgrade() -> None:
     op.create_unique_constraint(
         "uq_user_device",
         "device_binding",
-        ["user_id", "device_fingerprint"],
+        ["user_id", "device_id"],
     )
 
     op.drop_constraint(

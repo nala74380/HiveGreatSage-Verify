@@ -64,7 +64,7 @@ async def _create_user_and_login(
         "username": username,
         "password": "Param@2026!",
         "project_uuid": "00000000-0000-0000-0000-000000000001",
-        "device_fingerprint": f"param_dev_{uuid.uuid4().hex[:12]}",
+        "device_id": f"param_dev_{uuid.uuid4().hex[:12]}",
         "client_type": "android",
     })
     assert r.status_code == 200, f"登录失败: {r.text}"

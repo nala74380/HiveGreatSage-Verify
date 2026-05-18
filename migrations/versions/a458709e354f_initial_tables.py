@@ -157,7 +157,7 @@ def upgrade() -> None:
         "device_binding",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("device_fingerprint", sa.String(length=256), nullable=False),
+        sa.Column("device_id", sa.String(length=64), nullable=False),
         sa.Column(
             "bound_at",
             sa.DateTime(timezone=True),
@@ -170,13 +170,13 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("user_id", "device_fingerprint", name="uq_user_device"),
+        sa.UniqueConstraint("user_id", "device_id", name="uq_user_device"),
     )
     op.create_table(
         "login_log",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
-        sa.Column("device_fingerprint", sa.String(length=256), nullable=True),
+        sa.Column("device_id", sa.String(length=64), nullable=True),
         sa.Column("ip_address", postgresql.INET(), nullable=True),
         sa.Column("client_type", sa.String(length=20), nullable=True),
         sa.Column("game_project_id", sa.Integer(), nullable=True),

@@ -8,9 +8,8 @@ r"""
     设备终端链集成测试。
 
 当前设备标识口径：
-    1. device_fingerprint = 内部稳定绑定键。
-    2. device_id = 用户自定义设备编号。
-    3. connection_type / connection_label = 连接标识。
+    1. 账号 + 项目 + device_id 是设备绑定身份。
+    2. connection_type / connection_label = 连接标识。
 
 改进历史:
     V1.1.0 (2026-05-17) - 删除旧设备标识假设；补 device_id 与连接标识字段断言。
@@ -29,9 +28,8 @@ def _idem(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
 
 
-def _heartbeat_payload(device_fp: str, *, status: str, game_data: dict, device_id: str = "A-001") -> dict:
+def _heartbeat_payload(device_id: str, *, status: str, game_data: dict) -> dict:
     return {
-        "device_fingerprint": device_fp,
         "device_id": device_id,
         "connection_type": "usb",
         "connection_label": "SN:TEST1234",
@@ -63,13 +61,12 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
     assert r2.status_code == 201, f"授权失败: {r2.status_code} | {r2.text}"
 
     authorization_id = r2.json()["id"]
-    device_fp = f"dev_{uuid.uuid4().hex[:12]}"
+    device_id = f"A-{uuid.uuid4().hex[:8]}"
     r3 = await client.post("/api/auth/login", json={
         "username": username,
         "password": "DevTest@2026!",
         "project_uuid": "00000000-0000-0000-0000-000000000001",
-        "device_fingerprint": device_fp,
-        "device_id": "A-001",
+        "device_id": device_id,
         "connection_type": "usb",
         "connection_label": "SN:TEST1234",
         "client_type": "android",
@@ -77,8 +74,7 @@ async def _login(client: AsyncClient, admin_headers: dict, project_id: int) -> d
     assert r3.status_code == 200, f"登录失败: {r3.status_code} | {r3.text}"
     return {
         "access_token": r3.json()["access_token"],
-        "device_fp": device_fp,
-        "device_id": "A-001",
+        "device_id": device_id,
         "user_id": user_id,
         "authorization_id": authorization_id,
     }
@@ -128,15 +124,14 @@ async def _login_user(
     username: str,
     password: str,
     project_uuid: str,
-    device_fingerprint: str,
+    device_id: str,
     client_type: str,
 ):
     return await client.post("/api/auth/login", json={
         "username": username,
         "password": password,
         "project_uuid": project_uuid,
-        "device_fingerprint": device_fingerprint,
-        "device_id": "A-001",
+        "device_id": device_id,
         "connection_type": "usb" if client_type == "android" else "tcp",
         "connection_label": "SN:TEST1234" if client_type == "android" else "192.168.1.8:5555",
         "client_type": client_type,
@@ -150,13 +145,13 @@ class TestHeartbeat:
 
         r = await client.post(
             "/api/device/heartbeat",
-            json=_heartbeat_payload(session["device_fp"], status="running", game_data={"map": "北境", "gold": 1024}),
+            json=_heartbeat_payload(session["device_id"], status="running", game_data={"map": "北境", "gold": 1024}),
             headers=headers,
         )
         assert r.status_code == 200
         assert r.json()["code"] == 0
 
-    async def test_heartbeat_does_not_write_main_db_last_seen(
+    async def test_heartbeat_updates_main_db_last_seen(
         self,
         client,
         admin_headers,
@@ -171,14 +166,14 @@ class TestHeartbeat:
                 select(DeviceBinding.last_seen_at).where(
                     DeviceBinding.user_id == session["user_id"],
                     DeviceBinding.game_project_id == project_id,
-                    DeviceBinding.device_fingerprint == session["device_fp"],
+                    DeviceBinding.device_id == session["device_id"],
                 )
             )
             before_last_seen = before_result.scalar_one()
 
         r = await client.post(
             "/api/device/heartbeat",
-            json=_heartbeat_payload(session["device_fp"], status="running", game_data={"gold": 2048}),
+            json=_heartbeat_payload(session["device_id"], status="running", game_data={"gold": 2048}),
             headers=headers,
         )
         assert r.status_code == 200
@@ -188,12 +183,13 @@ class TestHeartbeat:
                 select(DeviceBinding.last_seen_at).where(
                     DeviceBinding.user_id == session["user_id"],
                     DeviceBinding.game_project_id == project_id,
-                    DeviceBinding.device_fingerprint == session["device_fp"],
+                    DeviceBinding.device_id == session["device_id"],
                 )
             )
             after_last_seen = after_result.scalar_one()
 
-        assert after_last_seen == before_last_seen
+        assert after_last_seen is not None
+        assert after_last_seen >= before_last_seen
 
     async def test_heartbeat_wrong_device(self, client, admin_headers, project_id):
         session = await _login(client, admin_headers, project_id)
@@ -228,14 +224,14 @@ class TestProjectScopedBindings:
             project_id,
             authorized_devices=1,
         )
-        pc_device_fp = f"pc_{uuid.uuid4().hex[:12]}"
+        pc_device_id = f"pc_{uuid.uuid4().hex[:12]}"
 
         response = await _login_user(
             client,
             username=user["username"],
             password=user["password"],
             project_uuid="00000000-0000-0000-0000-000000000001",
-            device_fingerprint=pc_device_fp,
+            device_id=pc_device_id,
             client_type="pc",
         )
         assert response.status_code == 200, response.text
@@ -270,7 +266,7 @@ class TestProjectScopedBindings:
             username=user["username"],
             password=user["password"],
             project_uuid="00000000-0000-0000-0000-000000000001",
-            device_fingerprint=f"android_a_{uuid.uuid4().hex[:8]}",
+            device_id=f"A-{uuid.uuid4().hex[:8]}",
             client_type="android",
         )
         assert first_login.status_code == 200, first_login.text
@@ -280,7 +276,7 @@ class TestProjectScopedBindings:
             username=user["username"],
             password=user["password"],
             project_uuid="00000000-0000-0000-0000-000000000001",
-            device_fingerprint=f"android_b_{uuid.uuid4().hex[:8]}",
+            device_id=f"B-{uuid.uuid4().hex[:8]}",
             client_type="android",
         )
         assert second_login.status_code == 403
@@ -299,14 +295,14 @@ class TestProjectScopedBindings:
             project_id,
             authorized_devices=1,
         )
-        device_fp = f"cross_project_{uuid.uuid4().hex[:10]}"
+        device_id = f"cross_project_{uuid.uuid4().hex[:10]}"
 
         login_a = await _login_user(
             client,
             username=user["username"],
             password=user["password"],
             project_uuid="00000000-0000-0000-0000-000000000001",
-            device_fingerprint=device_fp,
+            device_id=device_id,
             client_type="android",
         )
         assert login_a.status_code == 200, login_a.text
@@ -314,7 +310,7 @@ class TestProjectScopedBindings:
 
         heartbeat_a = await client.post(
             "/api/device/heartbeat",
-            json=_heartbeat_payload(device_fp, status="running", game_data={"project": "A"}),
+            json=_heartbeat_payload(device_id, status="running", game_data={"project": "A"}),
             headers=headers_a,
         )
         assert heartbeat_a.status_code == 200, heartbeat_a.text
@@ -334,7 +330,7 @@ class TestProjectScopedBindings:
             username=user["username"],
             password=user["password"],
             project_uuid=SECOND_GAME_PROJECT_UUID,
-            device_fingerprint=f"b_login_{uuid.uuid4().hex[:8]}",
+            device_id=f"PC-B-{uuid.uuid4().hex[:8]}",
             client_type="pc",
         )
         assert login_b.status_code == 200, login_b.text
@@ -342,7 +338,7 @@ class TestProjectScopedBindings:
 
         heartbeat_b = await client.post(
             "/api/device/heartbeat",
-            json=_heartbeat_payload(device_fp, status="running", game_data={"project": "B"}),
+            json=_heartbeat_payload(device_id, status="running", game_data={"project": "B"}),
             headers=headers_b,
         )
         assert heartbeat_b.status_code == 403
@@ -356,7 +352,7 @@ class TestDeviceList:
 
         await client.post(
             "/api/device/heartbeat",
-            json=_heartbeat_payload(session["device_fp"], status="idle", game_data={"level": 50}, device_id=session["device_id"]),
+            json=_heartbeat_payload(session["device_id"], status="idle", game_data={"level": 50}),
             headers=headers,
         )
 
@@ -366,7 +362,7 @@ class TestDeviceList:
         assert data["online_count"] >= 1
 
         online_devices = [d for d in data["devices"] if d["is_online"]]
-        our_device = next((d for d in online_devices if d["device_fingerprint"] == session["device_fp"]), None)
+        our_device = next((d for d in online_devices if d["device_id"] == session["device_id"]), None)
         assert our_device is not None
         assert our_device["device_id"] == session["device_id"]
         assert our_device["connection_type"] == "usb"
@@ -378,14 +374,13 @@ class TestDeviceList:
 
         await client.post(
             "/api/device/heartbeat",
-            json=_heartbeat_payload(session["device_fp"], status="running", game_data={"task": "采集", "gold": 9999}, device_id=session["device_id"]),
+            json=_heartbeat_payload(session["device_id"], status="running", game_data={"task": "采集", "gold": 9999}),
             headers=headers,
         )
 
-        r = await client.get(f"/api/device/data?device_fingerprint={session['device_fp']}", headers=headers)
+        r = await client.get(f"/api/device/data?device_id={session['device_id']}", headers=headers)
         assert r.status_code == 200
         data = r.json()
-        assert data["device_fingerprint"] == session["device_fp"]
         assert data["device_id"] == session["device_id"]
         assert data["connection_type"] == "usb"
         assert data["connection_label"] == "SN:TEST1234"
@@ -401,7 +396,7 @@ class TestDeviceList:
     ):
         session = await _login(client, admin_headers, project_id)
         headers = {"Authorization": f"Bearer {session['access_token']}"}
-        heartbeat_body = _heartbeat_payload(session["device_fp"], status="running", game_data={"gold": 777}, device_id=session["device_id"])
+        heartbeat_body = _heartbeat_payload(session["device_id"], status="running", game_data={"gold": 777})
 
         r1 = await client.post("/api/device/heartbeat", json=heartbeat_body, headers=headers)
         assert r1.status_code == 200
@@ -419,7 +414,7 @@ class TestDeviceList:
         assert r3.status_code == 403
 
         r4 = await client.get(
-            f"/api/device/data?device_fingerprint={session['device_fp']}",
+            f"/api/device/data?device_id={session['device_id']}",
             headers=headers,
         )
         assert r4.status_code == 403

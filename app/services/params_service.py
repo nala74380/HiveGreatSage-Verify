@@ -195,6 +195,7 @@ async def set_user_params(
         )
         await game_db.execute(stmt)
         await game_db.flush()
+        await game_db.commit()
 
     updated_count = sum(1 for r in results if r.success)
     failed_count = len(results) - updated_count

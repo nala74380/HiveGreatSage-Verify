@@ -1815,7 +1815,7 @@ async def _load_project_activation_count_map(
       - LoginLog 只作为登录审计，不再作为激活设备统计来源。
 
     修复问题:
-      旧实现按 LoginLog.success + distinct device_fingerprint 统计。
+      旧实现按 LoginLog.success 统计。
       这会把 PC 中控登录也误算成已激活设备，导致：
         用户列表显示已激活 1，
         但设备详情中没有真实设备。
@@ -1827,7 +1827,7 @@ async def _load_project_activation_count_map(
         select(
             DeviceBinding.user_id,
             DeviceBinding.game_project_id,
-            func.count(func.distinct(DeviceBinding.device_fingerprint)).label("cnt"),
+            func.count(func.distinct(DeviceBinding.device_id)).label("cnt"),
         )
         .where(
             DeviceBinding.user_id.in_(user_ids),

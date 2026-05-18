@@ -20,8 +20,8 @@ r"""
       6. Access Token 中的 authorization_level 来自 Authorization.user_level。
       7. Access Token 项目字段统一为 project_code。
       8. Android 首次创建设备绑定时写入 audit_log。
-      9. 设备绑定审计当前直接记录设备原文字段。
-      10. LoginLog 当前直接写入 device_fingerprint 原文。
+      9. 设备绑定审计记录设备编号。
+      10. LoginLog 当前直接写入 device_id。
 
     当前字段口径:
       1. LoginResponse 返回 authorization_level / game_project_code。
@@ -29,10 +29,7 @@ r"""
       3. User.user_level / max_devices / expired_at 不再作为业务字段。
 
 改进历史:
-    V1.6.0 (2026-05-18) - 删除设备摘要写法，统一直接记录 device_fingerprint 原文字段。
-    V1.5.0 (2026-05-18) - 登录与设备绑定审计改为直接记录设备原文字段。
-    V1.5.0 (2026-05-18) - 登录与设备绑定审计改为直接记录设备原文字段。
-    V1.3.0 (2026-05-07) - device_binding.bind 审计移除设备指纹原文。
+    V1.7.0 (2026-05-18) - 设备绑定统一改为账号 + 项目 + 设备编号。
     V1.2.0 (2026-05-07) - Android 首次创建设备绑定接入 audit_log。
     V1.1.0 (2026-05-02) - 登录与刷新过滤软删除用户；刷新改用 Authorization.user_level。
     V1.0.1 - 设备绑定改为用户 × 项目 × 设备维度，设备上限改用 Authorization.authorized_devices。
@@ -155,7 +152,7 @@ async def login_user(
                 select(DeviceBinding).where(
                     DeviceBinding.user_id == user.id,
                     DeviceBinding.game_project_id == game_project.id,
-                    DeviceBinding.device_fingerprint == body.device_fingerprint,
+                    DeviceBinding.device_id == body.device_id,
                     DeviceBinding.status == "active",
                 )
             )
@@ -163,7 +160,6 @@ async def login_user(
 
             if binding:
                 binding.last_seen_at = now
-                binding.device_id = body.device_id or binding.device_id
                 binding.connection_type = body.connection_type or binding.connection_type
                 binding.connection_label = body.connection_label or binding.connection_label
             else:
@@ -187,7 +183,6 @@ async def login_user(
                 new_binding = DeviceBinding(
                     user_id=user.id,
                     game_project_id=game_project.id,
-                    device_fingerprint=body.device_fingerprint,
                     device_id=body.device_id,
                     connection_type=body.connection_type,
                     connection_label=body.connection_label,
@@ -211,7 +206,7 @@ async def login_user(
                         "username": user.username,
                         "game_project_id": game_project.id,
                         "game_project_code": game_project.code_name,
-                        "device_fingerprint": body.device_fingerprint,
+                        "device_id": body.device_id,
                         "client_type": body.client_type,
                         "authorized_devices": int(auth.authorized_devices or 0),
                     },
@@ -232,7 +227,7 @@ async def login_user(
             user_id=user.id,
             jti=jti,
             rt_value=refresh_token,
-            device_fingerprint=body.device_fingerprint,
+            device_id=body.device_id,
             client_type=body.client_type,
             game_project_code=game_project.code_name,
             token_version=user.token_version,
@@ -242,7 +237,7 @@ async def login_user(
         db.add(
             _build_login_log(
                 user_id=user.id,
-                device_fingerprint=body.device_fingerprint,
+                device_id=body.device_id,
                 ip_address=client_ip,
                 client_type=body.client_type,
                 game_project_id=game_project.id,
@@ -266,7 +261,7 @@ async def login_user(
     except HTTPException:
         await _write_login_log(
             user_id=user.id if user else None,
-            device_fingerprint=body.device_fingerprint,
+            device_id=body.device_id,
             ip_address=client_ip,
             client_type=body.client_type,
             game_project_id=game_project.id if game_project else None,
@@ -291,7 +286,7 @@ async def refresh_access_token(
     user_id: int = int(rt_data["user_id"])
     old_jti: str = str(rt_data["jti"])
     game_project_code: str = str(rt_data.get("game_project_code") or "").strip()
-    rt_device_fingerprint: str = str(rt_data.get("device_fingerprint") or "")
+    rt_device_id: str = str(rt_data.get("device_id") or "")
     rt_client_type: str = str(rt_data.get("client_type") or "")
     rt_token_version: int = int(rt_data.get("token_version", 0))
 
@@ -301,7 +296,7 @@ async def refresh_access_token(
             detail="Refresh Token 缺少项目上下文",
         )
 
-    if rt_device_fingerprint != body.device_fingerprint or rt_client_type != body.client_type:
+    if rt_device_id != body.device_id or rt_client_type != body.client_type:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh Token 与当前设备不匹配",
@@ -379,7 +374,7 @@ async def refresh_access_token(
         user_id=user.id,
         jti=new_jti,
         rt_value=new_refresh_token,
-        device_fingerprint=body.device_fingerprint,
+        device_id=body.device_id,
         client_type=body.client_type,
         game_project_code=game_project.code_name,
         token_version=user.token_version,
@@ -494,7 +489,7 @@ def _is_authorization_expired(
 
 def _build_login_log(
     user_id: int | None,
-    device_fingerprint: str,
+    device_id: str,
     ip_address: str,
     client_type: str,
     game_project_id: int | None,
@@ -503,7 +498,7 @@ def _build_login_log(
 ) -> LoginLog:
     return LoginLog(
         user_id=user_id,
-        device_fingerprint=device_fingerprint,
+        device_id=device_id,
         ip_address=ip_address,
         client_type=client_type,
         game_project_id=game_project_id,
@@ -514,7 +509,7 @@ def _build_login_log(
 
 async def _write_login_log(
     user_id: int | None,
-    device_fingerprint: str,
+    device_id: str,
     ip_address: str,
     client_type: str,
     game_project_id: int | None,
@@ -523,7 +518,7 @@ async def _write_login_log(
 ) -> None:
     log = _build_login_log(
         user_id=user_id,
-        device_fingerprint=device_fingerprint,
+        device_id=device_id,
         ip_address=ip_address,
         client_type=client_type,
         game_project_id=game_project_id,

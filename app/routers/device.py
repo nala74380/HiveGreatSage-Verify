@@ -11,9 +11,8 @@ r"""
       GET  /api/device/data       — PC 中控拉取单台设备运行数据详情
 
     当前设备标识口径：
-      1. device_fingerprint = 设备内部稳定绑定键。
-      2. device_id = 用户自定义设备编号。
-      3. connection_type / connection_label = 连接标识。
+      1. device_id = 设备编号，同一账号、同一项目下唯一。
+      2. connection_type / connection_label = 连接标识。
 
 改进历史:
     V1.1.0 (2026-05-17) - 删除 /api/device/imsi；心跳/查询链路新增 device_id 与连接标识口径。
@@ -60,7 +59,7 @@ async def heartbeat(
     redis: aioredis.Redis = Depends(get_redis),
 ) -> HeartbeatResponse:
     """安卓脚本心跳上报接口。"""
-    heartbeat_identifier = f"{current_user.id}:{game_project_code}:{body.device_fingerprint}"
+    heartbeat_identifier = f"{current_user.id}:{game_project_code}:{body.device_id}"
     allowed, count = await incr_rate_limit(
         redis,
         endpoint_tag="heartbeat",
@@ -101,10 +100,10 @@ async def list_devices(
 
 @router.get("/data", response_model=DeviceDataResponse)
 async def device_data(
-    device_fingerprint: str = Query(
+    device_id: str = Query(
         ...,
-        description="要查询的设备内部稳定绑定键",
-        examples=["a1b2c3d4e5f6"],
+        description="要查询的设备编号",
+        examples=["A118"],
     ),
     current_user: User = Depends(get_current_user),
     game_project_code: str = Depends(get_game_project_code),
@@ -113,7 +112,7 @@ async def device_data(
 ) -> DeviceDataResponse:
     """PC 中控拉取单台设备的运行数据详情。"""
     return await get_device_data(
-        device_fingerprint=device_fingerprint,
+        device_id=device_id,
         current_user=current_user,
         game_project_code=game_project_code,
         main_db=main_db,

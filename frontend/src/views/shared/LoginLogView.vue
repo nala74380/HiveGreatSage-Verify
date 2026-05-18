@@ -136,9 +136,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="设备标识" min-width="180" show-overflow-tooltip>
+        <el-table-column label="设备编号" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="mono text-muted">{{ row.device_fingerprint || '—' }}</span>
+            <span class="mono text-muted">{{ row.device_id || '—' }}</span>
           </template>
         </el-table-column>
 

@@ -156,7 +156,7 @@
           <template #default="{ row }">
             <div class="mono">{{ deviceDisplay(row) }}</div>
             <div v-if="row.connection_label" class="sub-text">连接：{{ row.connection_label }}</div>
-            <div class="sub-text">绑定键：{{ row.device_fingerprint || '—' }}</div>
+            <div class="sub-text">设备编号：{{ row.device_id || '—' }}</div>
           </template>
         </el-table-column>
 
@@ -274,8 +274,8 @@
             <span class="mono">{{ drawer.data.connection_label || '—' }}</span>
           </el-descriptions-item>
 
-          <el-descriptions-item label="内部绑定键">
-            <span class="mono">{{ drawer.data.device_fingerprint || '—' }}</span>
+          <el-descriptions-item label="设备编号">
+            <span class="mono">{{ drawer.data.device_id || '—' }}</span>
           </el-descriptions-item>
 
           <el-descriptions-item label="用户">
@@ -331,7 +331,7 @@
  *   管理后台设备监控页面。
  *
  * 本版改进:
- *   1. 直接展示设备编号、连接标识与内部绑定键。
+ *   1. 直接展示设备编号与连接标识。
  */
 
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -437,7 +437,7 @@ const sourceLabel = (source) => {
   return map[source] || source || '—'
 }
 
-const deviceDisplay = (row) => row?.device_id || row?.connection_label || row?.device_fingerprint || '—'
+const deviceDisplay = (row) => row?.device_id || row?.connection_label || '—'
 const projectCode = (row) => row?.game_project_code || row?.project_code || '—'
 
 const loadDevices = async () => {

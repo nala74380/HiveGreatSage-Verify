@@ -19,15 +19,6 @@ def upgrade() -> None:
     op.add_column(
         "device_binding",
         sa.Column(
-            "device_id",
-            sa.String(length=64),
-            nullable=True,
-            comment="用户自定义设备编号（业务展示字段）",
-        ),
-    )
-    op.add_column(
-        "device_binding",
-        sa.Column(
             "connection_type",
             sa.String(length=16),
             nullable=True,
@@ -70,4 +61,3 @@ def downgrade() -> None:
     op.create_index("idx_device_binding_imsi_hash", "device_binding", ["imsi_hash"])
     op.drop_column("device_binding", "connection_label")
     op.drop_column("device_binding", "connection_type")
-    op.drop_column("device_binding", "device_id")

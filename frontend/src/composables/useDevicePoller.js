@@ -25,7 +25,7 @@ const POLL_INTERVAL = 10_000
 
 function normalizeBindingDevice(d) {
   return {
-    device_id:  d.device_fingerprint,
+    device_id:  d.device_id,
     user_id:    d.user_id,
     username:   d.username,
     is_online:  d.is_online ?? false,

@@ -37,11 +37,10 @@ r"""
     当前口径:
       - 项目编码对外统一使用 game_project_code。
       - 在线状态优先来自 Redis runtime key，DB last_seen_at 作为补充。
-      - 后台设备链直接返回设备原文字段与连接标识字段。
+      - 后台设备链直接返回设备编号与连接标识字段。
 
 改进历史:
-    V2.6.0 (2026-05-18) - 删除旧脱敏 / 摘要口径，统一直出设备原文字段。
-    V2.5.0 (2026-05-07): 全局设备监控移除 device_id / device_fingerprint 原文输出。
+    V2.7.0 (2026-05-18) - 设备监控统一按设备编号查询与展示。
     V2.4.0 (2026-05-07): 后台设备列表增加敏感字段脱敏与 hash 字段；IMSI 不再返回原文。
 """
 
@@ -156,9 +155,9 @@ async def _read_runtime_from_redis(
     *,
     game_id: int,
     user_id: int,
-    device_fingerprint: str,
+    device_id: str,
 ) -> dict | None:
-    key = f"device:runtime:{game_id}:{user_id}:{device_fingerprint}"
+    key = f"device:runtime:{game_id}:{user_id}:{device_id}"
     raw = await redis.get(key)
     if not raw:
         return None
@@ -194,8 +193,8 @@ async def _build_redis_online_map(
             try:
                 gid = int(parts[2])
                 uid = int(parts[3])
-                fp = parts[4]
-                online_map[(gid, uid, fp)] = data
+                device_id = parts[4]
+                online_map[(gid, uid, device_id)] = data
             except (ValueError, IndexError):
                 pass
 
@@ -252,7 +251,6 @@ async def _build_base_query(
         kw = f"%{keyword.strip()}%"
         base_q = base_q.where(
             (User.username.ilike(kw))
-            | (DeviceBinding.device_fingerprint.ilike(kw))
             | (DeviceBinding.device_id.ilike(kw))
             | (DeviceBinding.connection_label.ilike(kw))
         )
@@ -315,7 +313,6 @@ def _device_response(
     return {
         "binding_id": binding.id,
         "device_id": binding.device_id,
-        "device_fingerprint": binding.device_fingerprint,
         "connection_type": binding.connection_type,
         "connection_label": binding.connection_label,
         "user_id": binding.user_id,
@@ -388,7 +385,7 @@ async def list_all_devices(
             redis,
             game_id=project.id,
             user_id=binding.user_id,
-            device_fingerprint=binding.device_fingerprint,
+            device_id=binding.device_id,
         )
         devices.append(
             _device_response(
@@ -454,7 +451,7 @@ async def device_summary(
     running_count = 0
 
     for binding, _user, project, _authorization in rows:
-        redis_data = redis_online_map.get((project.id, binding.user_id, binding.device_fingerprint))
+        redis_data = redis_online_map.get((project.id, binding.user_id, binding.device_id))
         is_online, _is_online_redis, status_val, _last_seen, _game_data = _runtime_status_and_last_seen(
             binding=binding,
             redis_data=redis_data,
@@ -526,7 +523,7 @@ async def search_all_devices(
             redis,
             game_id=project.id,
             user_id=binding.user_id,
-            device_fingerprint=binding.device_fingerprint,
+            device_id=binding.device_id,
         )
         item = _device_response(
             binding=binding,

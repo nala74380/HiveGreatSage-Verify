@@ -1,7 +1,7 @@
 """add user token_version
 
 Revision ID: 0020_user_token_version
-Revises: 0019_login_log_hash
+Revises: 0019_login_log_device_id_index
 Create Date: 2026-05-09
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "0020_user_token_version"
-down_revision = "0019_login_log_hash"
+down_revision = "0019_login_log_device_id_index"
 branch_labels = None
 depends_on = None
 

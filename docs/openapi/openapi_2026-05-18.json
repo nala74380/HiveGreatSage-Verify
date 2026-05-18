@@ -283,18 +283,18 @@
         ],
         "parameters": [
           {
-            "name": "device_fingerprint",
+            "name": "device_id",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
-              "description": "要查询的设备内部稳定绑定键",
+              "description": "要查询的设备编号",
               "examples": [
-                "a1b2c3d4e5f6"
+                "A118"
               ],
-              "title": "Device Fingerprint"
+              "title": "Device Id"
             },
-            "description": "要查询的设备内部稳定绑定键"
+            "description": "要查询的设备编号"
           }
         ],
         "responses": {
@@ -11228,19 +11228,8 @@
       },
       "DeviceDataResponse": {
         "properties": {
-          "device_fingerprint": {
-            "type": "string",
-            "title": "Device Fingerprint"
-          },
           "device_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Device Id"
           },
           "connection_type": {
@@ -11319,7 +11308,7 @@
         },
         "type": "object",
         "required": [
-          "device_fingerprint",
+          "device_id",
           "user_id",
           "status",
           "last_seen",
@@ -11423,22 +11412,10 @@
       },
       "DeviceStatus": {
         "properties": {
-          "device_fingerprint": {
-            "type": "string",
-            "title": "Device Fingerprint",
-            "description": "设备内部稳定绑定键"
-          },
           "device_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Device Id",
-            "description": "用户自定义设备编号"
+            "description": "设备编号"
           },
           "connection_type": {
             "anyOf": [
@@ -11514,7 +11491,7 @@
         },
         "type": "object",
         "required": [
-          "device_fingerprint",
+          "device_id",
           "user_id",
           "status",
           "last_seen",
@@ -11538,31 +11515,14 @@
       },
       "HeartbeatRequest": {
         "properties": {
-          "device_fingerprint": {
-            "type": "string",
-            "maxLength": 256,
-            "minLength": 4,
-            "title": "Device Fingerprint",
-            "description": "设备内部稳定绑定键，与登录时的 device_fingerprint 一致",
-            "examples": [
-              "a1b2c3d4e5f6"
-            ]
-          },
           "device_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Device Id",
-            "description": "用户自定义设备编号（业务展示字段）",
+            "description": "设备编号；同一账号、同一项目下唯一",
             "examples": [
-              "A-001"
+              "A118"
             ]
           },
           "connection_type": {
@@ -11623,7 +11583,7 @@
         },
         "type": "object",
         "required": [
-          "device_fingerprint",
+          "device_id",
           "status"
         ],
         "title": "HeartbeatRequest"
@@ -11672,31 +11632,14 @@
               "550e8400-e29b-41d4-a716-446655440000"
             ]
           },
-          "device_fingerprint": {
-            "type": "string",
-            "maxLength": 256,
-            "minLength": 8,
-            "title": "Device Fingerprint",
-            "description": "设备内部稳定绑定键",
-            "examples": [
-              "a1b2c3d4e5f6"
-            ]
-          },
           "device_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Device Id",
-            "description": "用户自定义设备编号（业务展示字段）",
+            "description": "设备编号；同一账号、同一项目下唯一",
             "examples": [
-              "A-001"
+              "A118"
             ]
           },
           "connection_type": {
@@ -11747,7 +11690,7 @@
           "username",
           "password",
           "project_uuid",
-          "device_fingerprint",
+          "device_id",
           "client_type"
         ],
         "title": "LoginRequest"
@@ -13357,12 +13300,12 @@
             "title": "Refresh Token",
             "description": "登录时获取的 Refresh Token"
           },
-          "device_fingerprint": {
+          "device_id": {
             "type": "string",
-            "maxLength": 256,
-            "minLength": 8,
-            "title": "Device Fingerprint",
-            "description": "当前设备指纹，必须与 RT 绑定设备一致"
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Device Id",
+            "description": "当前设备编号，必须与 RT 绑定设备一致"
           },
           "client_type": {
             "type": "string",
@@ -13374,7 +13317,7 @@
         "type": "object",
         "required": [
           "refresh_token",
-          "device_fingerprint",
+          "device_id",
           "client_type"
         ],
         "title": "RefreshRequest"

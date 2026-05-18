@@ -69,13 +69,14 @@ def _setup_logging() -> None:
             encoding="utf-8",
         )
 
-    class _InvalidRequestFilter(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
-            return "Invalid HTTP request received" not in record.getMessage()
+    if settings.ENVIRONMENT == "production":
+        class _InvalidRequestFilter(logging.Filter):
+            def filter(self, record: logging.LogRecord) -> bool:
+                return "Invalid HTTP request received" not in record.getMessage()
 
-    for _name in ("uvicorn.error", "uvicorn", "uvicorn.access"):
-        _logger = logging.getLogger(_name)
-        _logger.addFilter(_InvalidRequestFilter())
+        for _name in ("uvicorn.error", "uvicorn", "uvicorn.access"):
+            _logger = logging.getLogger(_name)
+            _logger.addFilter(_InvalidRequestFilter())
 
     _sa_log_level = getattr(logging, getattr(settings, "SQLALCHEMY_LOG_LEVEL", "WARNING"), logging.WARNING)
 

@@ -19,14 +19,11 @@ r"""
       - 支持同样的过滤参数
 
     当前设备标识口径：
-      - device_fingerprint = 内部稳定绑定键
-      - device_id = 用户自定义设备编号
+      - device_id = 设备编号，同一账号、同一项目下唯一
       - connection_type / connection_label = 连接标识
 
 改进历史:
-    V1.3.0 - 删除旧脱敏 / 摘要字段口径，统一返回设备原文字段。
-    V1.2.0 - 项目维度设备列表移除 device_id 原文输出
-    V1.1.0 - 项目维度设备列表补充 device_id / device_fingerprint / connection 标识字段
+    V1.4.0 - 设备监控统一使用设备编号。
     V1.0.0 - 初始版本（T026）
 """
 
@@ -109,10 +106,9 @@ async def get_agent_device_list(
     )
 
 
-def _device_identity_fields(device_fingerprint: str, device_id: str | None = None) -> dict:
+def _device_identity_fields(device_id: str) -> dict:
     return {
         "device_id": device_id,
-        "device_fingerprint": device_fingerprint,
     }
 
 
@@ -140,7 +136,7 @@ async def _build_device_list(
             continue
         if status_filter and hb["data"].get("status") != status_filter:
             continue
-        online_map[hb["device_fp"]] = hb["data"]
+        online_map[hb["device_id"]] = hb["data"]
 
     offline_records: list[dict] = []
     if not online_only:
@@ -154,10 +150,10 @@ async def _build_device_list(
 
     all_devices: list[dict] = []
 
-    for device_fp, data in online_map.items():
+    for device_id, data in online_map.items():
         last_seen_ts = data.get("last_seen", 0)
         all_devices.append({
-            **_device_identity_fields(device_fp, data.get("device_id")),
+            **_device_identity_fields(device_id),
             "connection_type": data.get("connection_type"),
             "connection_label": data.get("connection_label"),
             "user_id": data.get("user_id"),
@@ -170,9 +166,8 @@ async def _build_device_list(
         })
 
     for rec in offline_records:
-        device_fingerprint = rec["device_fingerprint"]
         all_devices.append({
-            **_device_identity_fields(device_fingerprint, rec.get("device_id")),
+            **_device_identity_fields(rec["device_id"]),
             "connection_type": rec.get("connection_type"),
             "connection_label": rec.get("connection_label"),
             "user_id": rec["user_id"],
@@ -233,7 +228,6 @@ async def _fetch_offline_from_db(
 
         return [
             {
-                "device_fingerprint": r.device_fingerprint,
                 "device_id": r.device_id,
                 "connection_type": r.connection_type,
                 "connection_label": r.connection_label,
@@ -243,7 +237,7 @@ async def _fetch_offline_from_db(
                 "game_data": r.game_data,
             }
             for r in records
-            if r.device_fingerprint not in exclude_device_ids
+            if r.device_id not in exclude_device_ids
         ]
     except Exception as e:
         logger.warning("游戏库离线设备查询失败（优雅降级）: %s", e)

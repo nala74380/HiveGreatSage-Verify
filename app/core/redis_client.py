@@ -83,7 +83,7 @@ async def store_refresh_token(
     user_id: int,
     jti: str,
     rt_value: str,
-    device_fingerprint: str | None,
+    device_id: str | None,
     ttl_seconds: int,
 ) -> None:
     """
@@ -94,7 +94,7 @@ async def store_refresh_token(
         "rt_value": rt_value,
         "user_id": user_id,
         "jti": jti,
-        "device_fingerprint": device_fingerprint,
+        "device_id": device_id,
     })
     await redis.setex(f"refresh:{user_id}:{jti}", ttl_seconds, data)
 
@@ -138,7 +138,7 @@ async def delete_all_refresh_tokens(
 
 
 # ── 设备心跳缓冲 ──────────────────────────────────────────────
-# 心跳数据 Key: device:runtime:{game_id}:{user_id}:{device_fp}, TTL=120s
+# 心跳数据 Key: device:runtime:{game_id}:{user_id}:{device_id}, TTL=120s
 # 在线设备集合: device:online:{game_id} / device:online:{game_id}:{user_id}
 #   集合用于 O(1) 查询替代 SCAN；SADD 时刷新 TTL=300s，超时自动清理。
 
@@ -150,7 +150,7 @@ async def set_heartbeat(
     redis: aioredis.Redis,
     game_id: int,
     user_id: int,
-    device_fp: str,
+    device_id: str,
     payload: dict,
 ) -> None:
     """
@@ -158,20 +158,20 @@ async def set_heartbeat(
 
     原子操作（pipeline）:
       1. SET 心跳数据 Key（TTL=120s）
-      2. SADD "{user_id}:{device_fp}" 到游戏级在线集合
-      3. SADD device_fp 到游戏×用户级在线集合
+      2. SADD "{user_id}:{device_id}" 到游戏级在线集合
+      3. SADD device_id 到游戏×用户级在线集合
       4. EXPIRE 两个集合 Key（TTL=300s，每次 SADD 刷新）
     """
-    data_key = f"device:runtime:{game_id}:{user_id}:{device_fp}"
+    data_key = f"device:runtime:{game_id}:{user_id}:{device_id}"
     online_key = f"device:online:{game_id}"
     user_online_key = f"device:online:{game_id}:{user_id}"
-    member = f"{user_id}:{device_fp}"
+    member = f"{user_id}:{device_id}"
 
     pipe = redis.pipeline()
     pipe.setex(data_key, _HEARTBEAT_TTL, json.dumps(payload))
     pipe.sadd(online_key, member)
     pipe.expire(online_key, _ONLINE_SET_TTL)
-    pipe.sadd(user_online_key, device_fp)
+    pipe.sadd(user_online_key, device_id)
     pipe.expire(user_online_key, _ONLINE_SET_TTL)
     await pipe.execute()
 
@@ -180,10 +180,10 @@ async def get_heartbeat(
     redis: aioredis.Redis,
     game_id: int,
     user_id: int,
-    device_fp: str,
+    device_id: str,
 ) -> dict | None:
     """获取单台设备的最新心跳数据（PC中控查询时优先走此路径）。"""
-    key = f"device:runtime:{game_id}:{user_id}:{device_fp}"
+    key = f"device:runtime:{game_id}:{user_id}:{device_id}"
     raw = await redis.get(key)
     if raw is None:
         return None
@@ -208,16 +208,16 @@ async def get_user_heartbeats(
         return []
 
     pipe = redis.pipeline()
-    for fp in members:
-        pipe.get(f"device:runtime:{game_id}:{user_id}:{fp}")
+    for device_id in members:
+        pipe.get(f"device:runtime:{game_id}:{user_id}:{device_id}")
     raw_values = await pipe.execute()
 
     results = []
-    for fp, raw in zip(members, raw_values):
+    for device_id, raw in zip(members, raw_values):
         if raw:
             results.append({
                 "user_id": user_id,
-                "device_fp": fp,
+                "device_id": device_id,
                 "data": json.loads(raw),
             })
     return results
@@ -231,7 +231,7 @@ async def get_all_heartbeats_for_game(
     获取指定游戏的所有在线设备心跳数据（基于集合，无 SCAN）。
 
     Celery 批量落库时调用。
-    集合成员格式为 "{user_id}:{device_fp}"，直接解析后 pipeline GET。
+    集合成员格式为 "{user_id}:{device_id}"，直接解析后 pipeline GET。
     过期成员（心跳 Key 已 TTL 过期）在 GET 时自然过滤。
     """
     online_key = f"device:online:{game_id}"
@@ -244,18 +244,18 @@ async def get_all_heartbeats_for_game(
     for member in members:
         if ":" not in member:
             continue
-        uid_str, fp = member.split(":", 1)
-        key = f"device:runtime:{game_id}:{uid_str}:{fp}"
+        uid_str, device_id = member.split(":", 1)
+        key = f"device:runtime:{game_id}:{uid_str}:{device_id}"
         pipe.get(key)
-        parsed.append((int(uid_str), fp))
+        parsed.append((int(uid_str), device_id))
     raw_values = await pipe.execute()
 
     results = []
-    for (uid, fp), raw in zip(parsed, raw_values):
+    for (uid, device_id), raw in zip(parsed, raw_values):
         if raw:
             results.append({
                 "user_id": uid,
-                "device_fp": fp,
+                "device_id": device_id,
                 "data": json.loads(raw),
             })
     return results
@@ -301,7 +301,7 @@ async def store_refresh_token_v2(
     user_id: int,
     jti: str,
     rt_value: str,
-    device_fingerprint: str | None,
+    device_id: str | None,
     client_type: str,
     game_project_code: str,
     token_version: int,
@@ -321,7 +321,7 @@ async def store_refresh_token_v2(
         "rt_value": rt_value,
         "user_id": user_id,
         "jti": jti,
-        "device_fingerprint": device_fingerprint,
+        "device_id": device_id,
         "client_type": client_type,
         "game_project_code": game_project_code,   # v2 新增，修复 refresh 丢失 project 问题
         "token_version": int(token_version),

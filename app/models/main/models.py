@@ -25,15 +25,15 @@ r"""
       - BalanceTransaction → AccountingLedgerEntry
 
 重要模型调整:
-    v2.3.1 (2026-05-18):
-      - LoginLog 当前以 device_fingerprint 原文字段为主，旧摘要字段仅保留历史兼容。
+    v2.4.0 (2026-05-18):
+      - 设备绑定统一改为 user_id + game_project_id + device_id。
+      - LoginLog 记录 device_id，设备绑定身份统一为账号 + 项目 + 设备编号。
 
     v2.3.0 (2026-05-09):
       - VersionRecord 新增 partial unique index：每项目每客户端类型仅一个 active 版本。
 
     v2.2.0 (2026-05-07):
       - LoginLog 新增历史兼容字段。
-      - 登录日志当时停止继续保存设备指纹原文。
 
     v2.1.0 (2026-05-07):
       - VersionRecord 新增 released_by_admin_id / original_filename / file_size / request_id。
@@ -51,7 +51,7 @@ r"""
 
     v1.0.6:
       - DeviceBinding 新增 game_project_id。
-      - 设备绑定口径调整为 user_id + game_project_id + device_fingerprint。
+      - 设备绑定口径调整为 user_id + game_project_id + device_id。
 
     v1.0.5:
       - 新增 AuthorizationCharge 授权扣点快照表（v2.0.0 已删除，改用 AuthorizationChargeSnapshot）。
@@ -531,12 +531,12 @@ class DeviceBinding(Base):
         UniqueConstraint(
             "user_id",
             "game_project_id",
-            "device_fingerprint",
+            "device_id",
             name="uq_user_project_device",
         ),
         Index("idx_device_binding_user_project", "user_id", "game_project_id"),
         Index("idx_device_binding_project_last_seen", "game_project_id", "last_seen_at"),
-        Index("idx_device_binding_device", "device_fingerprint"),
+        Index("idx_device_binding_device", "device_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -553,15 +553,10 @@ class DeviceBinding(Base):
         comment="绑定所属项目",
     )
 
-    device_fingerprint: Mapped[str] = mapped_column(
-        String(256),
-        nullable=False,
-        comment="设备内部稳定绑定键；用于绑定唯一约束、心跳归属与运行时数据关联",
-    )
-    device_id: Mapped[str | None] = mapped_column(
+    device_id: Mapped[str] = mapped_column(
         String(64),
-        nullable=True,
-        comment="用户自定义设备编号（业务展示字段，不参与绑定唯一性判断）",
+        nullable=False,
+        comment="设备编号；用户 + 项目 + 设备编号唯一，作为设备绑定主体",
     )
     connection_type: Mapped[str | None] = mapped_column(
         String(16),
@@ -601,7 +596,7 @@ class DeviceBinding(Base):
     def __repr__(self) -> str:
         return (
             f"<DeviceBinding user={self.user_id} project={self.game_project_id} "
-            f"fp={self.device_fingerprint[:16]}...>"
+            f"device_id={self.device_id}>"
         )
 
 
@@ -712,10 +707,10 @@ class LoginLog(Base):
         ForeignKey("user.id"),
         nullable=True,
     )
-    device_fingerprint: Mapped[str | None] = mapped_column(
-        String(256),
+    device_id: Mapped[str | None] = mapped_column(
+        String(64),
         nullable=True,
-        comment="登录设备内部稳定绑定键",
+        comment="登录设备编号",
     )
     ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
     client_type: Mapped[str | None] = mapped_column(String(20), nullable=True)

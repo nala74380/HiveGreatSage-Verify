@@ -101,7 +101,7 @@ async def _login_user(
     *,
     username: str,
     password: str,
-    device_fingerprint: str | None = None,
+    device_id: str | None = None,
     client_type: str = "android",
 ):
     """执行用户登录请求。"""
@@ -111,7 +111,7 @@ async def _login_user(
             "username": username,
             "password": password,
             "project_uuid": PROJECT_UUID,
-            "device_fingerprint": device_fingerprint or f"device_{uuid.uuid4().hex[:8]}",
+            "device_id": device_id or f"device_{uuid.uuid4().hex[:8]}",
             "client_type": client_type,
         },
     )
@@ -173,7 +173,7 @@ class TestLogin:
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint="test_device_auth_001",
+            device_id="test_device_auth_001",
         )
 
         assert response.status_code == 200
@@ -200,7 +200,7 @@ class TestLogin:
             client,
             username=user["username"],
             password="WrongPassword!",
-            device_fingerprint="device_wrong_password",
+            device_id="device_wrong_password",
         )
 
         assert response.status_code == 401
@@ -211,7 +211,7 @@ class TestLogin:
             client,
             username="no_such_user_xyz",
             password="any_password",
-            device_fingerprint="device_nonexistent",
+            device_id="device_nonexistent",
         )
 
         assert response.status_code == 401
@@ -226,7 +226,7 @@ class TestLogin:
                 "username": user["username"],
                 "password": user["password"],
                 "project_uuid": "ffffffff-ffff-ffff-ffff-ffffffffffff",
-                "device_fingerprint": "device_invalid_project",
+                "device_id": "device_invalid_project",
                 "client_type": "android",
             },
         )
@@ -253,7 +253,7 @@ class TestLogin:
             client,
             username=username,
             password=password,
-            device_fingerprint="device_no_auth",
+            device_id="device_no_auth",
         )
 
         assert response.status_code == 403
@@ -277,7 +277,7 @@ class TestLogin:
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint="device_auth_suspended_login",
+            device_id="device_auth_suspended_login",
         )
         assert response.status_code == 403
 
@@ -291,7 +291,7 @@ class TestLogin:
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint="device_auth_resumed_login",
+            device_id="device_auth_resumed_login",
         )
         assert response_after_enable.status_code == 200, response_after_enable.text
 
@@ -310,7 +310,7 @@ class TestLogin:
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint="device_suspended",
+            device_id="device_suspended",
         )
 
         assert response.status_code == 403
@@ -330,7 +330,7 @@ class TestLogin:
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint="device_soft_deleted_login",
+            device_id="device_soft_deleted_login",
         )
 
         assert response.status_code == 401
@@ -355,12 +355,12 @@ class TestRefreshAndMe:
             authorized_devices=authorized_devices,
         )
 
-        device_fingerprint = f"device_{uuid.uuid4().hex[:8]}"
+        device_id = f"device_{uuid.uuid4().hex[:8]}"
         response = await _login_user(
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint=device_fingerprint,
+            device_id=device_id,
             client_type=client_type,
         )
 
@@ -369,7 +369,7 @@ class TestRefreshAndMe:
         return {
             **user,
             **response.json(),
-            "device_fingerprint": device_fingerprint,
+            "device_id": device_id,
             "client_type": client_type,
         }
 
@@ -447,7 +447,7 @@ class TestRefreshAndMe:
             "/api/auth/refresh",
             json={
                 "refresh_token": tokens["refresh_token"],
-                "device_fingerprint": tokens["device_fingerprint"],
+                "device_id": tokens["device_id"],
                 "client_type": tokens["client_type"],
             },
         )
@@ -467,7 +467,7 @@ class TestRefreshAndMe:
             "/api/auth/refresh",
             json={
                 "refresh_token": tokens["refresh_token"],
-                "device_fingerprint": tokens["device_fingerprint"],
+                "device_id": tokens["device_id"],
                 "client_type": tokens["client_type"],
             },
         )
@@ -489,7 +489,7 @@ class TestRefreshAndMe:
             "/api/auth/refresh",
             json={
                 "refresh_token": tokens["refresh_token"],
-                "device_fingerprint": tokens["device_fingerprint"],
+                "device_id": tokens["device_id"],
                 "client_type": tokens["client_type"],
             },
         )
@@ -502,14 +502,14 @@ class TestRefreshAndMe:
         admin_headers,
         project_id,
     ):
-        """Refresh Token 必须绑定登录时的设备指纹与客户端类型。"""
+        """Refresh Token 必须绑定登录时的设备编号与客户端类型。"""
         tokens = await self._do_login(client, admin_headers, project_id)
 
         response = await client.post(
             "/api/auth/refresh",
             json={
                 "refresh_token": tokens["refresh_token"],
-                "device_fingerprint": "wrong_device_fp",
+                "device_id": "wrong_device_id",
                 "client_type": tokens["client_type"],
             },
         )
@@ -535,7 +535,7 @@ class TestRefreshAndMe:
             "/api/auth/refresh",
             json={
                 "refresh_token": tokens["refresh_token"],
-                "device_fingerprint": tokens["device_fingerprint"],
+                "device_id": tokens["device_id"],
                 "client_type": tokens["client_type"],
             },
         )
@@ -551,7 +551,7 @@ class TestRefreshAndMe:
             "/api/auth/refresh",
             json={
                 "refresh_token": tokens["refresh_token"],
-                "device_fingerprint": tokens["device_fingerprint"],
+                "device_id": tokens["device_id"],
                 "client_type": tokens["client_type"],
             },
         )
@@ -592,13 +592,13 @@ class TestRefreshAndMe:
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint=device_a,
+            device_id=device_a,
         )
         login_b = await _login_user(
             client,
             username=user["username"],
             password=user["password"],
-            device_fingerprint=device_b,
+            device_id=device_b,
         )
         assert login_a.status_code == 200
         assert login_b.status_code == 200
@@ -626,7 +626,7 @@ class TestRefreshAndMe:
             "/api/auth/refresh",
             json={
                 "refresh_token": tokens_b["refresh_token"],
-                "device_fingerprint": device_b,
+                "device_id": device_b,
                 "client_type": "android",
             },
         )

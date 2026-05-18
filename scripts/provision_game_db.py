@@ -21,10 +21,14 @@ import argparse
 import asyncio
 import os
 import re
+import sys
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config import settings
 from app.models.game.models import GameBase
@@ -83,12 +87,57 @@ async def _grant_permissions(admin_url: str, db_name: str, db_user: str | None) 
 
 
 async def _create_game_tables(game_db_url: str) -> None:
-    engine = create_async_engine(game_db_url)
+    engine = create_async_engine(game_db_url, connect_args={"ssl": False})
     try:
         async with engine.begin() as conn:
             await conn.run_sync(GameBase.metadata.create_all)
+            await _sync_device_runtime_schema(conn)
     finally:
         await engine.dispose()
+
+
+async def _sync_device_runtime_schema(conn) -> None:
+    """
+    确保已存在游戏库的 device_runtime 结构与当前模型一致。
+
+    背景：GameBase.metadata.create_all() 不会修改已存在表。当前统一为
+    device_id 作为设备运行态主键。
+    """
+    table_exists = await conn.scalar(text("""
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'device_runtime'
+        )
+    """))
+    if not table_exists:
+        return
+
+    rows = await conn.execute(text("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'device_runtime'
+    """))
+    columns = {row[0] for row in rows}
+
+    if "device_id" not in columns:
+        await conn.execute(text("ALTER TABLE device_runtime ADD COLUMN device_id VARCHAR(64)"))
+        columns.add("device_id")
+
+    if "connection_type" not in columns:
+        await conn.execute(text("ALTER TABLE device_runtime ADD COLUMN connection_type VARCHAR(16)"))
+
+    if "connection_label" not in columns:
+        await conn.execute(text("ALTER TABLE device_runtime ADD COLUMN connection_label VARCHAR(255)"))
+
+    await conn.execute(text("ALTER TABLE device_runtime DROP CONSTRAINT IF EXISTS device_runtime_pkey"))
+    await conn.execute(text("ALTER TABLE device_runtime ALTER COLUMN device_id TYPE VARCHAR(64)"))
+    await conn.execute(text("ALTER TABLE device_runtime ALTER COLUMN device_id SET NOT NULL"))
+    await conn.execute(text("ALTER TABLE device_runtime ADD CONSTRAINT device_runtime_pkey PRIMARY KEY (device_id)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_device_runtime_user ON device_runtime (user_id)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_device_runtime_last_seen ON device_runtime (last_seen)"))
 
 
 async def provision_game_db(code: str, db_name: str | None = None) -> None:

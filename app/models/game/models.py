@@ -190,14 +190,13 @@ class DeviceRuntime(GameBase):
 
     数据流：
       安卓脚本每 30 秒上报
-        → FastAPI 写入 Redis（Key: device:runtime:{game_id}:{user_id}:{device_fp}）
+        → FastAPI 写入 Redis（Key: device:runtime:{game_id}:{user_id}:{device_id}）
         → Celery Beat 每 30 秒执行批量 UPSERT 到本表
         → PC 中控优先读 Redis，Redis 无数据时回落本表
 
     当前设备标识口径：
-      1. device_fingerprint = 内部稳定绑定键，对应 hive_platform.device_binding.device_fingerprint。
-      2. device_id = 用户自定义设备编号。
-      3. connection_type / connection_label = 连接标识。
+      1. device_id = 设备编号，同一账号、同一项目下唯一。
+      2. connection_type / connection_label = 连接标识。
     """
     __tablename__ = "device_runtime"
     __table_args__ = (
@@ -205,13 +204,9 @@ class DeviceRuntime(GameBase):
         Index("idx_device_runtime_last_seen", "last_seen"),
     )
 
-    device_fingerprint: Mapped[str] = mapped_column(
-        String(128), primary_key=True,
-        comment="设备内部稳定绑定键，对应 device_binding.device_fingerprint",
-    )
-    device_id: Mapped[str | None] = mapped_column(
-        String(64), nullable=True,
-        comment="用户自定义设备编号（业务展示字段）",
+    device_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True,
+        comment="设备编号",
     )
     connection_type: Mapped[str | None] = mapped_column(
         String(16), nullable=True,
@@ -244,7 +239,7 @@ class DeviceRuntime(GameBase):
     )
 
     def __repr__(self) -> str:
-        return f"<DeviceRuntime device={self.device_fingerprint[:16]}... user={self.user_id}>"
+        return f"<DeviceRuntime device={self.device_id} user={self.user_id}>"
 
 
 # 注意：热更新版本记录表 VersionRecord 已迁移到主库 app/models/main/models.py。

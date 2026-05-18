@@ -19,7 +19,7 @@ r"""
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -30,19 +30,12 @@ class LoginRequest(BaseModel):
         description="游戏项目 UUID（由管理员分配给客户端）",
         examples=["550e8400-e29b-41d4-a716-446655440000"],
     )
-    device_fingerprint: str = Field(
+    device_id: str = Field(
         ...,
-        min_length=8,
-        max_length=256,
-        description="设备内部稳定绑定键",
-        examples=["a1b2c3d4e5f6"],
-    )
-    device_id: str | None = Field(
-        default=None,
         min_length=1,
         max_length=64,
-        description="用户自定义设备编号（业务展示字段）",
-        examples=["A-001"],
+        description="设备编号；同一账号、同一项目下唯一",
+        examples=["A118"],
     )
     connection_type: str | None = Field(
         default=None,
@@ -64,10 +57,20 @@ class LoginRequest(BaseModel):
         pattern="^(pc|android)$",
     )
 
+    @field_validator("device_id", "connection_type", "connection_label", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., description="登录时获取的 Refresh Token")
-    device_fingerprint: str = Field(..., min_length=8, max_length=256, description="当前设备指纹，必须与 RT 绑定设备一致")
+    device_id: str = Field(..., min_length=1, max_length=64, description="当前设备编号，必须与 RT 绑定设备一致")
     client_type: str = Field(..., pattern="^(pc|android)$", description="当前客户端类型，必须与 RT 绑定客户端一致")
 
 

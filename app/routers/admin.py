@@ -10,13 +10,13 @@ r"""
       GET  /admin/api/dashboard    — 平台统计概览
 
 改进历史:
-    V2.0.0 (2026-05-18): 登录日志当前直接返回 device_fingerprint 原文字段。
-    V1.3.0 (2026-05-07): 用户设备列表与解绑审计中的设备指纹脱敏。
+    V2.1.0 (2026-05-18): 登录日志和设备列表统一返回设备编号。
     V1.2.0 (2026-05-07): 管理员手动解绑设备接入 audit_log。
     V1.1.0 (2026-05-07): Admin 登录成功 / 失败接入 audit_log。
     V1.0.0 - 从存根重写，增加管理员登录和仪表盘统计
 """
 
+import json
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -42,15 +42,15 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _device_fingerprint_fields(value: str | None) -> dict:
+def _device_binding_identity_fields(binding: DeviceBinding) -> dict:
     return {
-        "device_id": value,
+        "device_id": binding.device_id,
     }
 
 
 def _login_log_device_fields(log: LoginLog) -> dict:
     return {
-        "device_fingerprint": log.device_fingerprint,
+        "device_id": log.device_id,
     }
 
 
@@ -198,7 +198,7 @@ async def debug_device_bindings(
         "bindings": [
             {
                 "id":                 b.id,
-                **_device_fingerprint_fields(b.device_fingerprint),
+                **_device_binding_identity_fields(b),
                 "status":             b.status,
                 "last_seen_at":       b.last_seen_at.isoformat() if b.last_seen_at else None,
                 "bound_at":           b.bound_at.isoformat() if b.bound_at else None,
@@ -213,6 +213,7 @@ async def get_user_devices(
     user_id: int,
     _: Admin = Depends(get_current_admin),
     db: AsyncSession = Depends(get_main_db),
+    redis = Depends(get_redis),
 ) -> dict:
     """查询指定用户的设备绑定列表（管理员专用）。"""
     result = await db.execute(
@@ -224,25 +225,55 @@ async def get_user_devices(
 
     logger.info(f"[get_user_devices] user_id={user_id}, 查询到 {len(bindings)} 条 DeviceBinding")
     for b in bindings:
-        logger.debug(f"  -> id={b.id} fp={b.device_fingerprint} status={b.status!r} last_seen={b.last_seen_at}")
+        logger.debug(f"  -> id={b.id} device_id={b.device_id} status={b.status!r} last_seen={b.last_seen_at}")
 
     now = datetime.now(timezone.utc)
     online_threshold = timedelta(seconds=90)
+    heartbeats_by_binding_id: dict[int, dict] = {}
+    if bindings:
+        pipe = redis.pipeline()
+        for b in bindings:
+            key = f"device:runtime:{b.game_project_id}:{b.user_id}:{b.device_id}"
+            pipe.get(key)
+        heartbeat_raw_list = await pipe.execute()
+        for b, raw in zip(bindings, heartbeat_raw_list):
+            if not raw:
+                continue
+            try:
+                heartbeats_by_binding_id[b.id] = json.loads(raw)
+            except Exception:
+                logger.warning(
+                    "[get_user_devices] 无法解析心跳 JSON | user_id=%s binding_id=%s",
+                    user_id,
+                    b.id,
+                )
 
     return {
         "devices": [
             {
                 "id":                 b.id,
-                **_device_fingerprint_fields(b.device_fingerprint),
+                **_device_binding_identity_fields(b),
+                "game_project_id":    b.game_project_id,
                 "bound_at":           b.bound_at.isoformat() if b.bound_at else None,
-                "last_seen_at":       b.last_seen_at.isoformat() if b.last_seen_at else None,
+                "last_seen_at": (
+                    datetime.fromtimestamp(
+                        int(heartbeats_by_binding_id[b.id].get("last_seen", 0)),
+                        tz=timezone.utc,
+                    ).isoformat()
+                    if b.id in heartbeats_by_binding_id
+                    and heartbeats_by_binding_id[b.id].get("last_seen")
+                    else (b.last_seen_at.isoformat() if b.last_seen_at else None)
+                ),
                 "status":             b.status,
                 "is_online": (
-                    b.last_seen_at is not None
-                    and (now - (
-                        b.last_seen_at if b.last_seen_at.tzinfo
-                        else b.last_seen_at.replace(tzinfo=timezone.utc)
-                    )) <= online_threshold
+                    (b.id in heartbeats_by_binding_id)
+                    or (
+                        b.last_seen_at is not None
+                        and (now - (
+                            b.last_seen_at if b.last_seen_at.tzinfo
+                            else b.last_seen_at.replace(tzinfo=timezone.utc)
+                        )) <= online_threshold
+                    )
                 ),
             }
             for b in bindings
@@ -284,7 +315,7 @@ async def unbind_device(
             "binding_id": binding.id,
             "user_id": user_id,
             "game_project_id": binding.game_project_id,
-            "device_fingerprint": binding.device_fingerprint,
+            "device_id": binding.device_id,
             "old_status": old_status,
             "new_status": binding.status,
             "last_seen_at": binding.last_seen_at.isoformat() if binding.last_seen_at else None,

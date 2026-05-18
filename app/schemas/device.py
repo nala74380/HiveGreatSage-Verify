@@ -12,35 +12,27 @@ r"""
       - GET  /api/device/data       : PC 中控拉取单台设备详情
 
     当前设备标识口径：
-      1. device_fingerprint = 设备内部稳定绑定键。
-      2. device_id = 用户自定义设备编号（业务展示字段）。
-      3. connection_type / connection_label = 连接标识。
+      1. device_id = 设备编号；同一账号、同一项目下唯一。
+      2. connection_type / connection_label = 连接标识。
 
 改进历史:
     V1.2.0 (2026-05-17) - 删除 IMSI 上传契约；新增 device_id / connection_type / connection_label 字段。
-    V1.1.0 (2026-05-07) - ImsiUploadResponse 移除 device_fingerprint / imsi 原文回显。
+    V1.1.0 (2026-05-07) - ImsiUploadResponse 移除旧设备字段。
     V1.0.0 - 初始版本
 """
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class HeartbeatRequest(BaseModel):
-    device_fingerprint: str = Field(
+    device_id: str = Field(
         ...,
-        min_length=4,
-        max_length=256,
-        description="设备内部稳定绑定键，与登录时的 device_fingerprint 一致",
-        examples=["a1b2c3d4e5f6"],
-    )
-    device_id: str | None = Field(
-        default=None,
         min_length=1,
         max_length=64,
-        description="用户自定义设备编号（业务展示字段）",
-        examples=["A-001"],
+        description="设备编号；同一账号、同一项目下唯一",
+        examples=["A118"],
     )
     connection_type: str | None = Field(
         default=None,
@@ -67,6 +59,16 @@ class HeartbeatRequest(BaseModel):
         examples=[{"map": "北境", "gold": 1024, "task": "日常采集"}],
     )
 
+    @field_validator("device_id", "connection_type", "connection_label", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
 
 class HeartbeatResponse(BaseModel):
     code: int = 0
@@ -74,8 +76,7 @@ class HeartbeatResponse(BaseModel):
 
 
 class DeviceStatus(BaseModel):
-    device_fingerprint: str = Field(description="设备内部稳定绑定键")
-    device_id: str | None = Field(default=None, description="用户自定义设备编号")
+    device_id: str = Field(description="设备编号")
     connection_type: str | None = Field(default=None, description="连接类型：usb / tcp / unknown")
     connection_label: str | None = Field(default=None, description="连接标识展示串")
     user_id: int
@@ -95,8 +96,7 @@ class DeviceListResponse(BaseModel):
 
 
 class DeviceDataResponse(BaseModel):
-    device_fingerprint: str
-    device_id: str | None = None
+    device_id: str
     connection_type: str | None = None
     connection_label: str | None = None
     user_id: int

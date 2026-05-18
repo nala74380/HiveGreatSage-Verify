@@ -9,7 +9,7 @@ r"""
     全部使用聚合 SQL，避免 N+1 查询。
 
 当前口径:
-    - DeviceBinding 已按 user_id + game_project_id + device_fingerprint 建模。
+    - DeviceBinding 已按 user_id + game_project_id + device_id 建模。
     - 用户 / 代理项目统计中的设备数必须按项目维度聚合，不能再按用户全局绑定数复用到每个项目。
 """
 

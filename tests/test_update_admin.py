@@ -214,7 +214,7 @@ class TestUploadVersion:
             "username": username,
             "password": _TEST_LOGIN_SECRET,
             "project_uuid": GAME_PROJECT_UUID,
-            "device_fingerprint": f"adm_dev_{_uuid.uuid4().hex[:12]}",
+            "device_id": f"adm_dev_{_uuid.uuid4().hex[:12]}",
             "client_type": "android",
         })
         assert r.status_code == 200

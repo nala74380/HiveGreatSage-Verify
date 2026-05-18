@@ -11,14 +11,13 @@ r"""
       - get_device_data()    PC 中控拉取单台设备详情
 
     当前设备标识口径：
-      1. device_fingerprint = 设备内部稳定绑定键。
-      2. device_id = 用户自定义设备编号（业务展示字段）。
-      3. connection_type / connection_label = 连接标识。
+      1. device_id = 设备编号，同一账号、同一项目下唯一。
+      2. connection_type / connection_label = 连接标识。
 
 改进历史:
     V1.3.0 (2026-05-18) - 移除旧脱敏日志调用；维持新设备标识主链。
     V1.2.0 (2026-05-17) - 删除 IMSI 上传链；心跳与查询链路新增 device_id / connection_type / connection_label。
-    V1.1.0 (2026-05-07) - upload_imsi 响应移除 IMSI / 设备指纹原文回显。
+    V1.1.0 (2026-05-07) - 移除旧 IMSI 响应字段。
     V1.0.1 - 设备绑定校验改为用户 × 项目 × 设备维度
     V1.0.0 - 初始版本
 """
@@ -70,7 +69,7 @@ async def process_heartbeat(
         db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
-        device_fingerprint=body.device_fingerprint,
+        device_id=body.device_id,
     )
     if not binding:
         raise HTTPException(
@@ -78,14 +77,13 @@ async def process_heartbeat(
             detail="设备未绑定到当前项目，拒绝上报",
         )
 
-    if body.device_id is not None:
-        binding.device_id = body.device_id
     if body.connection_type is not None:
         binding.connection_type = body.connection_type
     if body.connection_label is not None:
         binding.connection_label = body.connection_label
 
     now_ts = datetime.now(timezone.utc)
+    binding.last_seen_at = now_ts
     payload = {
         "status": body.status,
         "last_seen": int(now_ts.timestamp()),
@@ -100,7 +98,7 @@ async def process_heartbeat(
         redis=redis,
         game_id=game_project.id,
         user_id=current_user.id,
-        device_fp=body.device_fingerprint,
+        device_id=body.device_id,
         payload=payload,
     )
     return HeartbeatResponse()
@@ -120,15 +118,14 @@ async def get_device_list(
     )
 
     online_hbs = await get_user_heartbeats(redis, game_project.id, current_user.id)
-    online_device_fingerprints: set[str] = set()
+    online_device_ids: set[str] = set()
     devices: list[DeviceStatus] = []
 
     for hb in online_hbs:
         data = hb["data"]
         last_seen_ts = data.get("last_seen", 0)
         devices.append(DeviceStatus(
-            device_fingerprint=hb["device_fp"],
-            device_id=data.get("device_id"),
+            device_id=hb["device_id"],
             connection_type=data.get("connection_type"),
             connection_label=data.get("connection_label"),
             user_id=current_user.id,
@@ -137,34 +134,34 @@ async def get_device_list(
             game_data=data.get("game_data"),
             is_online=True,
         ))
-        online_device_fingerprints.add(hb["device_fp"])
+        online_device_ids.add(hb["device_id"])
 
     offline_from_game_db = await _get_offline_devices_from_db(
         game_project_code=game_project_code,
         user_id=current_user.id,
-        exclude_device_fingerprints=online_device_fingerprints,
+        exclude_device_ids=online_device_ids,
     )
     for d in offline_from_game_db:
-        online_device_fingerprints.add(d.device_fingerprint)
+        online_device_ids.add(d.device_id)
     devices.extend(offline_from_game_db)
 
     main_bindings = await _get_devices_from_main_db(
         main_db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
-        exclude_device_fingerprints=online_device_fingerprints,
+        exclude_device_ids=online_device_ids,
     )
     devices.extend(main_bindings)
 
     return DeviceListResponse(
         devices=devices,
         total=len(devices),
-        online_count=len(online_device_fingerprints),
+        online_count=len(online_device_ids),
     )
 
 
 async def get_device_data(
-    device_fingerprint: str,
+    device_id: str,
     current_user: User,
     game_project_code: str,
     main_db: AsyncSession,
@@ -180,7 +177,7 @@ async def get_device_data(
         db=main_db,
         user_id=current_user.id,
         game_project_id=game_project.id,
-        device_fingerprint=device_fingerprint,
+        device_id=device_id,
     )
     if not binding:
         raise HTTPException(
@@ -192,13 +189,12 @@ async def get_device_data(
         redis=redis,
         game_id=game_project.id,
         user_id=current_user.id,
-        device_fp=device_fingerprint,
+        device_id=device_id,
     )
     if cached:
         last_seen_ts = cached.get("last_seen", 0)
         return DeviceDataResponse(
-            device_fingerprint=device_fingerprint,
-            device_id=cached.get("device_id", binding.device_id),
+            device_id=device_id,
             connection_type=cached.get("connection_type", binding.connection_type),
             connection_label=cached.get("connection_label", binding.connection_label),
             user_id=current_user.id,
@@ -212,11 +208,10 @@ async def get_device_data(
     db_record = await _get_device_runtime_from_db(
         game_project_code=game_project_code,
         user_id=current_user.id,
-        device_fingerprint=device_fingerprint,
+        device_id=device_id,
     )
     if db_record:
         return DeviceDataResponse(
-            device_fingerprint=db_record.device_fingerprint,
             device_id=db_record.device_id,
             connection_type=db_record.connection_type,
             connection_label=db_record.connection_label,
@@ -229,7 +224,6 @@ async def get_device_data(
         )
 
     return DeviceDataResponse(
-        device_fingerprint=device_fingerprint,
         device_id=binding.device_id,
         connection_type=binding.connection_type,
         connection_label=binding.connection_label,
@@ -276,13 +270,13 @@ async def _get_active_binding(
     db: AsyncSession,
     user_id: int,
     game_project_id: int,
-    device_fingerprint: str,
+    device_id: str,
 ) -> DeviceBinding | None:
     result = await db.execute(
         select(DeviceBinding).where(
             DeviceBinding.user_id == user_id,
             DeviceBinding.game_project_id == game_project_id,
-            DeviceBinding.device_fingerprint == device_fingerprint,
+            DeviceBinding.device_id == device_id,
             DeviceBinding.status == "active",
         )
     )
@@ -292,7 +286,7 @@ async def _get_active_binding(
 async def _get_offline_devices_from_db(
     game_project_code: str,
     user_id: int,
-    exclude_device_fingerprints: set[str],
+    exclude_device_ids: set[str],
 ) -> list[DeviceStatus]:
     try:
         _get_game_engine(game_project_code)
@@ -306,9 +300,8 @@ async def _get_offline_devices_from_db(
 
         offline = []
         for rec in records:
-            if rec.device_fingerprint not in exclude_device_fingerprints:
+            if rec.device_id not in exclude_device_ids:
                 offline.append(DeviceStatus(
-                    device_fingerprint=rec.device_fingerprint,
                     device_id=rec.device_id,
                     connection_type=rec.connection_type,
                     connection_label=rec.connection_label,
@@ -328,7 +321,7 @@ async def _get_offline_devices_from_db(
 async def _get_device_runtime_from_db(
     game_project_code: str,
     user_id: int,
-    device_fingerprint: str,
+    device_id: str,
 ) -> DeviceRuntime | None:
     try:
         _get_game_engine(game_project_code)
@@ -336,16 +329,16 @@ async def _get_device_runtime_from_db(
             result = await session.execute(
                 select(DeviceRuntime).where(
                     DeviceRuntime.user_id == user_id,
-                    DeviceRuntime.device_fingerprint == device_fingerprint,
+                    DeviceRuntime.device_id == device_id,
                 )
             )
             return result.scalar_one_or_none()
     except Exception as exc:
         logger.warning(
-            "游戏库设备运行时查询失败 (%s, uid=%s, device_fingerprint=%s): %s",
+            "游戏库设备运行时查询失败 (%s, uid=%s, device_id=%s): %s",
             game_project_code,
             user_id,
-            device_fingerprint,
+            device_id,
             exc,
         )
         return None
@@ -355,7 +348,7 @@ async def _get_devices_from_main_db(
     main_db: AsyncSession,
     user_id: int,
     game_project_id: int,
-    exclude_device_fingerprints: set[str],
+    exclude_device_ids: set[str],
 ) -> list[DeviceStatus]:
     result = await main_db.execute(
         select(DeviceBinding).where(
@@ -370,7 +363,7 @@ async def _get_devices_from_main_db(
     offline_threshold = timedelta(seconds=_OFFLINE_THRESHOLD_SECONDS)
     devices = []
     for b in bindings:
-        if b.device_fingerprint in exclude_device_fingerprints:
+        if b.device_id in exclude_device_ids:
             continue
         is_online = False
         if b.last_seen_at:
@@ -379,10 +372,9 @@ async def _get_devices_from_main_db(
                 lsa = lsa.replace(tzinfo=timezone.utc)
             is_online = (now - lsa) <= offline_threshold
         if is_online:
-            exclude_device_fingerprints.add(b.device_fingerprint)
+            exclude_device_ids.add(b.device_id)
 
         devices.append(DeviceStatus(
-            device_fingerprint=b.device_fingerprint,
             device_id=b.device_id,
             connection_type=b.connection_type,
             connection_label=b.connection_label,

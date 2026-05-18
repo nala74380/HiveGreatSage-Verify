@@ -10,7 +10,7 @@ r"""
     调度频率：每 30 秒执行一次（D2 决策）
 
     执行逻辑：
-      1. 从主库查询所有激活中的游戏项目
+      1. 从主库查询所有激活且已配置游戏库的游戏项目
       2. 对每个游戏项目，扫描 Redis 中的 device:runtime:{game_id}:* 键
       3. 将扫描到的设备数据批量 UPSERT 到对应游戏库的 device_runtime 表
          ON CONFLICT (device_id) DO UPDATE — 只保留最新状态，不插入重复行
@@ -130,7 +130,7 @@ def _set_health_check_key() -> None:
 
 async def _async_flush_all() -> dict:
     """
-    遍历所有激活游戏项目，逐一将 Redis 心跳数据批量落库。
+    遍历所有激活且已配置游戏库的游戏项目，逐一将 Redis 心跳数据批量落库。
     单个项目失败时记录日志并继续，不中断整体任务。
 
     Redis 客户端在此处按需创建（不复用模块级连接池），
@@ -171,7 +171,7 @@ async def _async_flush_all() -> dict:
 
 async def _get_active_projects() -> list[GameProject]:
     """
-    从主库查询所有激活中的游戏项目。
+    从主库查询所有激活且已配置游戏库的游戏项目。
     使用 NullPool 引擎，避免连接池跨事件循环失效。
     """
     engine = _make_task_engine(settings.DATABASE_MAIN_URL)
@@ -179,7 +179,11 @@ async def _get_active_projects() -> list[GameProject]:
         factory = async_sessionmaker(bind=engine, expire_on_commit=False)
         async with factory() as session:
             result = await session.execute(
-                select(GameProject).where(GameProject.is_active == True)
+                select(GameProject).where(
+                    GameProject.is_active == True,
+                    GameProject.project_type == "game",
+                    GameProject.db_name.is_not(None),
+                )
             )
             # scalars().all() 在 session 关闭前调用，确保数据已加载
             return result.scalars().all()
@@ -218,17 +222,16 @@ def _build_upsert_records(heartbeats: list[dict]) -> list[dict]:
     for hb in heartbeats:
         data = hb.get("data", {})
         user_id = hb.get("user_id") or data.get("user_id")
-        device_fp = hb.get("device_fp")
+        device_id = hb.get("device_id")
 
-        if not user_id or not device_fp:
+        if not user_id or not device_id:
             # 数据不完整，跳过（通常不应出现，属防御性检查）
             logger.warning(f"[heartbeat_flush] 跳过不完整心跳: {hb}")
             continue
 
         last_seen_ts = data.get("last_seen", 0)
         records.append({
-            "device_fingerprint": device_fp,
-            "device_id": data.get("device_id"),
+            "device_id": device_id,
             "connection_type": data.get("connection_type"),
             "connection_label": data.get("connection_label"),
             "user_id": int(user_id),
@@ -261,7 +264,7 @@ async def _upsert_to_game_db(db_name: str, records: list[dict]) -> None:
         async with factory() as session:
             stmt = pg_insert(DeviceRuntime).values(records)
             upsert_stmt = stmt.on_conflict_do_update(
-                index_elements=["device_fingerprint"],
+                index_elements=["device_id"],
                 set_={
                     "device_id": stmt.excluded.device_id,
                     "connection_type": stmt.excluded.connection_type,
@@ -292,7 +295,7 @@ async def _update_main_device_last_seen(project_id: int, records: list[dict]) ->
         {
             "project_id": project_id,
             "user_id": record["user_id"],
-            "device_fingerprint": record["device_fingerprint"],
+            "device_id": record["device_id"],
             "last_seen_at": record["last_seen"],
         }
         for record in records
@@ -311,7 +314,7 @@ async def _update_main_device_last_seen(project_id: int, records: list[dict]) ->
                     SET last_seen_at = :last_seen_at
                     WHERE game_project_id = :project_id
                       AND user_id = :user_id
-                      AND device_fingerprint = :device_fingerprint
+                      AND device_id = :device_id
                       AND status = 'active'
                     """
                 ),

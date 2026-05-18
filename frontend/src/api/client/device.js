@@ -21,9 +21,9 @@ export const clientDeviceApi = {
     return http.get('/api/device/list', { _skipAuthRedirect: true })
   },
 
-  data(deviceFingerprint) {
+  data(deviceId) {
     return http.get('/api/device/data', {
-      params: { device_fingerprint: deviceFingerprint },
+      params: { device_id: deviceId },
       _skipAuthRedirect: true,
     })
   },

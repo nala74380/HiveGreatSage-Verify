@@ -18,10 +18,10 @@ r"""
       3. User.user_level 已不再作为授权等级来源。
       4. 登录成功 / 失败写入 audit_log。
       5. 登出 / 踢出所有会话成功或失败写入 audit_log。
-      6. 审计日志不记录密码、Token、Refresh Token、密码哈希或设备指纹原文。
+      6. 审计日志不记录密码、Token、Refresh Token 或密码哈希。
 
 改进历史:
-    V1.4.0 (2026-05-07) - User 登录审计移除设备指纹原文，改写 masked/hash。
+    V1.5.0 (2026-05-18) - User 登录审计统一记录设备编号。
     V1.3.0 (2026-05-07) - User 登出 / 踢出所有会话接入 audit_log。
     V1.2.0 (2026-05-07) - User 登录成功 / 失败接入 audit_log。
     V1.1.0 (2026-05-02) - /me 改为 Authorization 授权摘要口径。
@@ -76,12 +76,11 @@ def _client_ip(request: Request) -> str:
 
 def _login_metadata(body: LoginRequest, *, client_ip: str, success: bool, reason: str | None = None) -> dict:
     """生成用户登录审计元数据。严禁记录 password / token / refresh_token。"""
-    device_fingerprint = getattr(body, "device_fingerprint", None)
     return {
         "username": body.username,
         "client_ip": client_ip,
         "client_type": getattr(body, "client_type", None),
-        "device_fingerprint": device_fingerprint,
+        "device_id": getattr(body, "device_id", None),
         "game_project_code": getattr(body, "game_project_code", None) or getattr(body, "project_code", None),
         "success": success,
         "reason": reason,

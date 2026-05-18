@@ -14,9 +14,12 @@ r"""
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from httpx import AsyncClient
+from sqlalchemy import update
 
+from app.models.main.models import DeviceBinding
 
 from tests.conftest import GAME_PROJECT_CODE
 
@@ -32,7 +35,7 @@ async def _create_and_login(
 ) -> dict:
     suffix = uuid.uuid4().hex[:8]
     username = f"da_test_{suffix}"
-    device_fp = f"da_dev_{uuid.uuid4().hex[:16]}"
+    device_id = f"DA-{uuid.uuid4().hex[:8]}"
 
     r = await client.post("/api/users/", json={
         "username": username,
@@ -55,15 +58,14 @@ async def _create_and_login(
         "username": username,
         "password": "Device@2026!",
         "project_uuid": "00000000-0000-0000-0000-000000000001",
-        "device_fingerprint": device_fp,
-        "device_id": "A-001",
+        "device_id": device_id,
         "connection_type": "usb",
         "connection_label": "SN:TEST1234",
         "client_type": "android",
     })
     assert r.status_code == 200
     result = r.json()
-    result["device_fingerprint"] = device_fp
+    result["device_id"] = device_id
     return result
 
 
@@ -151,11 +153,10 @@ class TestAdminDeviceList:
     ):
         login_data = await _create_and_login(client, admin_headers, project_id)
         user_token = login_data["access_token"]
-        device_fp = login_data["device_fingerprint"]
+        device_id = login_data["device_id"]
 
         await client.post("/api/device/heartbeat", json={
-            "device_fingerprint": device_fp,
-            "device_id": "A-001",
+            "device_id": device_id,
             "connection_type": "usb",
             "connection_label": "SN:TEST1234",
             "status": "running",
@@ -170,12 +171,11 @@ class TestAdminDeviceList:
         data = r.json()
 
         our_device = next(
-            (d for d in data["devices"] if d.get("device_fingerprint") == device_fp),
+            (d for d in data["devices"] if d.get("device_id") == device_id),
             None,
         )
         assert our_device is not None, "刚上报的设备未出现在监控列表中"
-        assert our_device["device_id"] == "A-001"
-        assert our_device["device_fingerprint"] == device_fp
+        assert our_device["device_id"] == device_id
         assert our_device["connection_type"] == "usb"
         assert our_device["connection_label"] == "SN:TEST1234"
         assert "user_id" in our_device
@@ -185,3 +185,52 @@ class TestAdminDeviceList:
         assert "source" in our_device
         assert our_device["is_online"] is True
         assert our_device["status"] == "running"
+
+    async def test_user_device_bindings_reports_realtime_online_and_identity(
+        self,
+        client,
+        admin_headers,
+        project_id,
+        session_factory,
+    ):
+        login_data = await _create_and_login(client, admin_headers, project_id)
+        user_id = login_data["user_id"]
+        user_token = login_data["access_token"]
+        device_id = login_data["device_id"]
+
+        async with session_factory() as session:
+            await session.execute(
+                update(DeviceBinding)
+                .where(
+                    DeviceBinding.user_id == user_id,
+                    DeviceBinding.game_project_id == project_id,
+                    DeviceBinding.device_id == device_id,
+                )
+                .values(last_seen_at=datetime.now(timezone.utc) - timedelta(minutes=10))
+            )
+            await session.commit()
+
+        hb = await client.post(
+            "/api/device/heartbeat",
+            json={
+                "device_id": device_id,
+                "connection_type": "usb",
+                "connection_label": "SN:TEST1234",
+                "status": "running",
+                "game_data": {"case": "user_devices"},
+            },
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert hb.status_code == 200, hb.text
+
+        r = await client.get(
+            f"/admin/api/users/{user_id}/devices",
+            headers=admin_headers,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        row = next((d for d in data["devices"] if d.get("device_id") == device_id), None)
+        assert row is not None, "设备绑定接口未返回目标设备编号"
+        assert row["device_id"] == device_id
+        assert row["is_online"] is True
+        assert row["last_seen_at"] is not None
